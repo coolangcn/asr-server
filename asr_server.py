@@ -4,12 +4,13 @@
 import os, sys, logging, json, threading, subprocess, time, traceback, tempfile
 import numpy as np
 from scipy.spatial.distance import cosine
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 from funasr import AutoModel  # ASR 用 FunASR
 from modelscope.pipelines import pipeline  # SV 用 ModelScope
 from modelscope.utils.constant import Tasks
 import torch
 import torchaudio
+import shutil
 
 # =================【 配置 】=================
 class Config:
@@ -45,7 +46,28 @@ EMOTION_TAGS = {
     "<|neutral|>": "neutral", "<|laughter|>": "laughter", "<|fearful|>": "fearful",
     "<|disgusted|>": "disgusted", "<|surprised|>": "surprised", "<|EMO_UNKNOWN|>": "neutral"
 }
-INVALID_TAGS = {"<|nospeech|>". "<|BGM|>". "<|Event_UNK|>". "<|music|>".}
+INVALID_TAGS = {"<|nospeech|>", "<|BGM|>", "<|Event_UNK|>", "<|music|>"}
+
+# 新增：定义说话人数据结构
+# {
+#   "speaker_name": {
+#     "samples": [
+#       {
+#         "id": "sample_id",
+#         "filename": "file_name.wav",
+#         "timestamp": "2023-01-01 12:00:00",
+#         "embeddings": {
+#           "eres2net_large": [...],
+#           "rdino_ecapa": [...]
+#         }
+#       }
+#     ],
+#     "avg_embeddings": {
+#       "eres2net_large": [...],
+#       "rdino_ecapa": [...]
+#     }
+#   }
+# }
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
 logger = logging.getLogger()
@@ -86,8 +108,24 @@ def load_speaker_db():
         if os.path.exists(Config.SPEAKER_DB_FILE):
             try:
                 with open(Config.SPEAKER_DB_FILE, 'r', encoding='utf-8') as f:
-                    speaker_db = json.load(f)
-                print(f"📚 声纹库已挂载: {len(speaker_db)} 人")
+                    loaded_db = json.load(f)
+                
+                # 兼容旧数据结构
+                converted_db = {}
+                for name, data in loaded_db.items():
+                    if "samples" in data and "avg_embeddings" in data:
+                        # 新数据结构，直接使用
+                        converted_db[name] = data
+                    else:
+                        # 旧数据结构，转换为新结构
+                        logger.info(f"🔄 转换旧数据结构 for speaker: {name}")
+                        converted_db[name] = {
+                            "samples": [],  # 旧数据结构没有样本信息
+                            "avg_embeddings": data  # 旧数据结构直接是嵌入字典
+                        }
+                
+                speaker_db = converted_db
+                logger.info(f"📚 声纹库已挂载: {len(speaker_db)} 人")
             except Exception as e:
                 logger.error(f"声纹库损坏: {e}")
                 speaker_db = {}
@@ -161,9 +199,11 @@ def identify_speaker_fusion(segment_path):
         threshold = conf['threshold']
         gap = conf['gap']
 
-        for name, db_embs in speaker_db.items():
-            if model_name not in db_embs: continue
-            emb_b = np.array(db_embs[model_name]).flatten()
+        for name, speaker_data in speaker_db.items():
+            # 使用平均嵌入进行比较
+            if "avg_embeddings" not in speaker_data or model_name not in speaker_data["avg_embeddings"]: 
+                continue
+            emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
             score = 1 - cosine(emb_a.flatten(), emb_b)
             scores.append((name, score))
 
@@ -201,6 +241,158 @@ def home():
 def register_page():
     return render_template("register.html")
 
+@app.route("/manage")
+def manage_page():
+    return render_template("manage.html")
+
+@app.route("/speakers", methods=["GET"])
+def get_speakers():
+    """获取所有说话人列表"""
+    try:
+        # 重新加载声纹数据库以确保数据是最新的
+        load_speaker_db()
+        # 返回说话人列表（不包含具体的embedding数据）
+        speakers_summary = {}
+        for name, data in speaker_db.items():
+            sample_count = len(data.get("samples", []))
+            model_names = list(data.get("avg_embeddings", {}).keys())
+            speakers_summary[name] = {
+                "sample_count": sample_count,
+                "models": model_names
+            }
+        return jsonify({"speakers": speakers_summary})
+    except Exception as e:
+        logger.error(f"获取说话人列表失败: {str(e)}")
+        return jsonify({"error": "Failed to retrieve speakers"}), 500
+
+@app.route("/speaker/<speaker_name>", methods=["GET"])
+def get_speaker_samples(speaker_name):
+    """获取指定说话人的样本列表"""
+    try:
+        # 重新加载声纹数据库以确保数据是最新的
+        load_speaker_db()
+        if speaker_name not in speaker_db:
+            return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
+            
+        speaker_data = speaker_db[speaker_name]
+        # 返回样本信息（不包含具体的embedding数据）
+        samples_info = []
+        for sample in speaker_data.get("samples", []):
+            samples_info.append({
+                "id": sample["id"],
+                "filename": sample["filename"],
+                "timestamp": sample["timestamp"]
+            })
+        
+        return jsonify({
+            "speaker_name": speaker_name,
+            "sample_count": len(samples_info),
+            "samples": samples_info,
+            "models": list(speaker_data.get("avg_embeddings", {}).keys())
+        })
+    except Exception as e:
+        logger.error(f"获取说话人样本列表失败: {str(e)}")
+        return jsonify({"error": "Failed to retrieve speaker samples"}), 500
+
+@app.route("/speaker/<speaker_name>", methods=["DELETE"])
+def delete_speaker(speaker_name):
+    """删除指定说话人"""
+    try:
+        with db_lock:
+            if speaker_name in speaker_db:
+                del speaker_db[speaker_name]
+                # 保存更新后的数据库
+                with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(speaker_db, f, indent=2, ensure_ascii=False)
+                logger.info(f"✅ 成功删除说话人: {speaker_name}")
+                return jsonify({"message": f"Speaker '{speaker_name}' deleted successfully."})
+            else:
+                return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
+    except Exception as e:
+        logger.error(f"删除说话人失败: {str(e)}")
+        return jsonify({"error": "Failed to delete speaker"}), 500
+
+@app.route("/speaker/<speaker_name>/sample/<sample_id>", methods=["DELETE"])
+def delete_speaker_sample(speaker_name, sample_id):
+    """删除指定说话人的特定样本"""
+    try:
+        with db_lock:
+            if speaker_name not in speaker_db:
+                return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
+                
+            speaker_data = speaker_db[speaker_name]
+            if "samples" not in speaker_data:
+                return jsonify({"error": f"No samples found for speaker '{speaker_name}'."}), 404
+                
+            # 查找并删除指定样本
+            samples = speaker_data["samples"]
+            sample_to_remove = None
+            sample_index = -1
+            for i, sample in enumerate(samples):
+                if sample["id"] == sample_id:
+                    sample_to_remove = sample
+                    sample_index = i
+                    break
+                    
+            if sample_to_remove is None:
+                return jsonify({"error": f"Sample '{sample_id}' not found for speaker '{speaker_name}'."}), 404
+                
+            # 删除样本的音频文件
+            if "audio_path" in sample_to_remove and os.path.exists(sample_to_remove["audio_path"]):
+                try:
+                    os.remove(sample_to_remove["audio_path"])
+                    logger.info(f"🗑️ 删除了音频文件: {sample_to_remove['audio_path']}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 删除音频文件失败: {sample_to_remove['audio_path']}, 错误: {str(e)}")
+            
+            # 从数据库中移除样本记录
+            del samples[sample_index]
+                
+            # 如果删除样本后没有剩余样本，则删除整个说话人
+            if len(samples) == 0:
+                del speaker_db[speaker_name]
+                # 删除说话人的目录
+                speaker_dir = os.path.join("speaker_samples", speaker_name)
+                if os.path.exists(speaker_dir):
+                    try:
+                        shutil.rmtree(speaker_dir)
+                        logger.info(f"🗑️ 删除了说话人目录: {speaker_dir}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 删除说话人目录失败: {speaker_dir}, 错误: {str(e)}")
+                
+                with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(speaker_db, f, indent=2, ensure_ascii=False)
+                logger.info(f"🗑️ 删除了说话人 {speaker_name}（最后一个样本已删除）")
+                return jsonify({"message": f"Speaker '{speaker_name}' deleted (last sample removed)."})
+
+            # 重新计算平均嵌入
+            all_model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
+            for sample in samples:
+                for model_name, emb in sample["embeddings"].items():
+                    all_model_embeddings[model_name].append(np.array(emb))
+            
+            # 计算新的平均嵌入
+            new_avg_embeddings = {}
+            for model_name, emb_list in all_model_embeddings.items():
+                if emb_list:
+                    avg_emb = np.mean(emb_list, axis=0)
+                    new_avg_embeddings[model_name] = avg_emb.tolist()
+            
+            speaker_db[speaker_name]["avg_embeddings"] = new_avg_embeddings
+            
+            # 保存更新后的数据库
+            with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
+                json.dump(speaker_db, f, indent=2, ensure_ascii=False)
+                
+            logger.info(f"🗑️ 删除了说话人 {speaker_name} 的样本 {sample_id}")
+            return jsonify({
+                "message": f"Sample '{sample_id}' deleted from speaker '{speaker_name}'.",
+                "remaining_samples": len(samples)
+            })
+    except Exception as e:
+        logger.error(f"删除说话人样本失败: {str(e)}")
+        return jsonify({"error": "Failed to delete speaker sample"}), 500
+
 @app.route("/register", methods=["POST"])
 def register_speaker():
     temp_files = []
@@ -211,12 +403,23 @@ def register_speaker():
             
             speaker_name = request.form['speaker_name']
             audio_files = request.files.getlist('audio_files')
+            
+            # 自动检测是否需要增强模式
+            enhance_mode = speaker_name in speaker_db
 
             if not audio_files:
                 return jsonify({"error": "At least one audio file is required"}), 400
 
-            logger.info(f"📥 开始注册新声纹: {speaker_name} | 文件数: {len(audio_files)}")
+            action = "增强" if enhance_mode else "注册"
+            logger.info(f"📥 开始{action}新声纹: {speaker_name} | 文件数: {len(audio_files)}")
             
+            # 创建说话人样本目录
+            speaker_dir = os.path.join("speaker_samples", speaker_name)
+            if not os.path.exists(speaker_dir):
+                os.makedirs(speaker_dir)
+            
+            # 收集新样本数据
+            new_samples = []
             model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
 
             for file in audio_files:
@@ -231,30 +434,88 @@ def register_speaker():
                     logger.warning(f"⚠️ 文件 {file.filename} 预处理失败，已跳过。")
                     continue
 
+                # 为每个模型提取嵌入
+                sample_embeddings = {}
                 for model_name, sv_pipe in sv_pipelines.items():
                     emb = extract_embedding_from_file(sv_pipe, proc_temp)
                     if emb is not None:
+                        sample_embeddings[model_name] = emb.tolist()
                         model_embeddings[model_name].append(emb)
                     else:
                         logger.warning(f"⚠️ 从 {file.filename} 提取 {model_name} embedding 失败。")
 
-            final_embeddings = {}
+                # 保存样本信息和音频文件
+                if sample_embeddings:  # 只有当至少有一个模型成功提取嵌入时才保存样本
+                    # 生成唯一的样本ID
+                    sample_id = f"{int(time.time())}_{hash(file.filename) % 10000}"
+                    
+                    # 保存处理后的音频文件
+                    sample_audio_path = os.path.join(speaker_dir, f"{sample_id}.wav")
+                    shutil.copy2(proc_temp, sample_audio_path)
+                    
+                    sample_info = {
+                        "id": sample_id,
+                        "filename": file.filename,
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "audio_path": sample_audio_path,
+                        "embeddings": sample_embeddings
+                    }
+                    new_samples.append(sample_info)
+
+            # 计算每个模型的平均嵌入
+            avg_embeddings = {}
             for model_name, emb_list in model_embeddings.items():
                 if not emb_list:
-                    return jsonify({"error": f"Failed to extract any valid embeddings for model {model_name}"}), 500
-                
-                # 平均 a list of numpy arrays
+                    continue
                 avg_emb = np.mean(emb_list, axis=0)
-                final_embeddings[model_name] = avg_emb.tolist()
-                logger.info(f"  - 模型 [{model_name}] 融合了 {len(emb_list)} 个样本, 生成最终声纹。")
+                avg_embeddings[model_name] = avg_emb.tolist()
+                logger.info(f"  - 模型 [{model_name}] 处理了 {len(emb_list)} 个样本")
+
+            if not avg_embeddings:
+                return jsonify({"error": "Failed to extract embeddings from any samples"}), 500
 
             with db_lock:
-                speaker_db[speaker_name] = final_embeddings
+                # 如果说话人已存在，则添加新样本并更新平均嵌入
+                if enhance_mode and speaker_name in speaker_db:
+                    # 添加新样本到现有样本列表
+                    if "samples" not in speaker_db[speaker_name]:
+                        speaker_db[speaker_name]["samples"] = []
+                    speaker_db[speaker_name]["samples"].extend(new_samples)
+                    
+                    # 重新计算所有样本的平均嵌入
+                    all_model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
+                    
+                    # 添加现有样本的嵌入
+                    for sample in speaker_db[speaker_name]["samples"]:
+                        for model_name, emb in sample["embeddings"].items():
+                            all_model_embeddings[model_name].append(np.array(emb))
+                    
+                    # 重新计算平均嵌入
+                    new_avg_embeddings = {}
+                    for model_name, emb_list in all_model_embeddings.items():
+                        if emb_list:
+                            avg_emb = np.mean(emb_list, axis=0)
+                            new_avg_embeddings[model_name] = avg_emb.tolist()
+                    
+                    speaker_db[speaker_name]["avg_embeddings"] = new_avg_embeddings
+                    logger.info(f"🔄 增强了说话人 {speaker_name} 的声纹，新增 {len(new_samples)} 个样本")
+                else:
+                    # 创建新的说话人条目
+                    speaker_db[speaker_name] = {
+                        "samples": new_samples,
+                        "avg_embeddings": avg_embeddings
+                    }
+                    logger.info(f"🆕 创建了新说话人 {speaker_name} 的声纹，包含 {len(new_samples)} 个样本")
+                    
+                # 保存更新后的数据库
                 with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
                     json.dump(speaker_db, f, indent=2, ensure_ascii=False)
             
-            logger.info(f"✅ 声纹注册成功: {speaker_name}")
-            return jsonify({"message": f"Speaker '{speaker_name}' registered successfully."})
+            logger.info(f"✅ 声纹{action}成功: {speaker_name}")
+            return jsonify({
+                "message": f"Speaker '{speaker_name}' {action} successfully.",
+                "samples_added": len(new_samples)
+            })
 
         except Exception as e:
             logger.error(f"❌ 注册异常: {str(e)}")
@@ -310,7 +571,7 @@ def transcribe_audio():
                     emotion = next((emo_code for tag, emo_code in EMOTION_TAGS.items() if tag in raw_text), "neutral")
 
                     clean_text = raw_text
-                    for tag in (list(EMOTION_TAGS.keys()) + list(INVALID_TAGS) + ["<|zh|>". "<|en|>". "<|yue|>". "<|withitn|>". "<|speech|>"]):
+                    for tag in (list(EMOTION_TAGS.keys()) + list(INVALID_TAGS) + ["<|zh|>", "<|en|>", "<|yue|>", "<|withitn|>", "<|speech|>"]):
                         clean_text = clean_text.replace(tag, "")
                     clean_text = clean_text.strip()
                     if not clean_text: continue
@@ -349,6 +610,32 @@ def transcribe_audio():
                 if os.path.exists(f):
                     try: os.remove(f)
                     except: pass
+
+@app.route("/speaker/<speaker_name>/sample/<sample_id>/audio")
+def get_sample_audio(speaker_name, sample_id):
+    """获取指定说话人样本的音频文件"""
+    try:
+        # 重新加载声纹数据库以确保数据是最新的
+        load_speaker_db()
+        if speaker_name not in speaker_db:
+            return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
+            
+        speaker_data = speaker_db[speaker_name]
+        if "samples" not in speaker_data:
+            return jsonify({"error": f"No samples found for speaker '{speaker_name}'."}), 404
+            
+        # 查找指定样本
+        for sample in speaker_data["samples"]:
+            if sample["id"] == sample_id:
+                if "audio_path" in sample and os.path.exists(sample["audio_path"]):
+                    return send_file(sample["audio_path"], as_attachment=True, download_name=sample["filename"])
+                else:
+                    return jsonify({"error": f"Audio file for sample '{sample_id}' not found."}), 404
+        
+        return jsonify({"error": f"Sample '{sample_id}' not found for speaker '{speaker_name}'."}), 404
+    except Exception as e:
+        logger.error(f"获取样本音频文件失败: {str(e)}")
+        return jsonify({"error": "Failed to retrieve sample audio"}), 500
 
 # =================== 启动 ===================
 if __name__ == "__main__":

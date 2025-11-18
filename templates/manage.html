@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>声纹管理</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f9; color: #333; margin: 0; }
+        .container { background: #fff; padding: 2rem 3rem; border-radius: 12px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1); width: 100%; max-width: 1000px; margin: 2rem auto; }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 1.5rem; }
+        .nav { display: flex; justify-content: center; margin-bottom: 2rem; }
+        .nav a { padding: 0.8rem 1.5rem; margin: 0 0.5rem; text-decoration: none; background: #007bff; color: white; border-radius: 6px; }
+        .nav a:hover { background: #0056b3; }
+        .speaker-list { margin-top: 2rem; }
+        .speaker-item { display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid #eee; border-radius: 6px; margin-bottom: 1rem; background: #f8f9fa; }
+        .speaker-info { flex-grow: 1; }
+        .speaker-name { font-weight: 600; font-size: 1.1rem; }
+        .speaker-details { font-size: 0.9rem; color: #666; }
+        .speaker-actions { display: flex; gap: 0.5rem; }
+        .btn { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background-color 0.3s; }
+        .btn-delete { background: #dc3545; color: white; }
+        .btn-delete:hover { background: #c82333; }
+        .btn-view { background: #007bff; color: white; }
+        .btn-view:hover { background: #0056b3; }
+        .btn-download { background: #28a745; color: white; }
+        .btn-download:hover { background: #218838; }
+        .samples-list { margin-top: 1rem; padding: 1rem; background: #fff; border: 1px solid #eee; border-radius: 6px; }
+        .sample-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; border-bottom: 1px solid #eee; }
+        .sample-info { flex-grow: 1; }
+        .sample-name { font-size: 0.9rem; }
+        .sample-time { font-size: 0.8rem; color: #999; }
+        .sample-actions { display: flex; gap: 0.5rem; }
+        .status { text-align: center; margin-top: 1.5rem; font-weight: 600; min-height: 24px; }
+        .status.success { color: #28a745; }
+        .status.error { color: #dc3545; }
+        .instructions { font-size: 0.9rem; color: #666; background: #f8f9fa; padding: 1rem; border-radius: 6px; margin-top: 2rem; }
+        .instructions ul { padding-left: 1.2rem; margin: 0; }
+        .instructions li { margin-bottom: 0.5rem; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/register_page">声纹注册</a>
+            <a href="/manage">声纹管理</a>
+        </div>
+        
+        <h1>声纹管理</h1>
+        
+        <div id="speakerList" class="speaker-list">
+            <!-- 声纹列表将通过JavaScript动态加载 -->
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="instructions">
+            <strong>管理说明:</strong>
+            <ul>
+                <li>在此页面可以查看所有已注册的声纹。</li>
+                <li>点击"查看样本"可以查看说话人的所有音频样本。</li>
+                <li>点击"下载"可以下载原始音频文件。</li>
+                <li>点击"删除"按钮可以移除指定说话人的声纹数据。</li>
+                <li>在样本详情中，可以删除特定的音频样本。</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const speakerListDiv = document.getElementById('speakerList');
+        const statusDiv = document.getElementById('status');
+
+        // 页面加载时获取声纹列表
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadSpeakers();
+        });
+
+        async function loadSpeakers() {
+            try {
+                const response = await fetch('/speakers');
+                const result = await response.json();
+                
+                if (response.ok) {
+                    renderSpeakerList(result.speakers);
+                } else {
+                    showStatus(`❌ 获取声纹列表失败: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ 发生网络错误: ${error.message}`, 'error');
+            }
+        }
+
+        function renderSpeakerList(speakers) {
+            if (Object.keys(speakers).length === 0) {
+                speakerListDiv.innerHTML = '<p style="text-align: center; color: #666;">暂无已注册的声纹</p>';
+                return;
+            }
+
+            let html = '';
+            for (const [name, data] of Object.entries(speakers)) {
+                const sampleCount = data.sample_count || 0;
+                const modelNames = data.models ? data.models.join(', ') : 'N/A';
+                html += `
+                    <div class="speaker-item">
+                        <div class="speaker-info">
+                            <div class="speaker-name">${name}</div>
+                            <div class="speaker-details">样本数: ${sampleCount} | 模型: ${modelNames}</div>
+                        </div>
+                        <div class="speaker-actions">
+                            <button class="btn btn-view" onclick="viewSpeakerSamples('${name}')">查看样本</button>
+                            <button class="btn btn-delete" onclick="deleteSpeaker('${name}')">删除</button>
+                        </div>
+                    </div>
+                    <div id="samples-${name}" class="samples-list hidden">
+                        <!-- 样本列表将通过JavaScript动态加载 -->
+                    </div>
+                `;
+            }
+            speakerListDiv.innerHTML = html;
+        }
+
+        async function viewSpeakerSamples(name) {
+            try {
+                const response = await fetch(`/speaker/${name}`);
+                const result = await response.json();
+                
+                if (response.ok) {
+                    renderSpeakerSamples(name, result);
+                } else {
+                    showStatus(`❌ 获取样本列表失败: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ 发生网络错误: ${error.message}`, 'error');
+            }
+        }
+
+        function renderSpeakerSamples(speakerName, data) {
+            const samplesDiv = document.getElementById(`samples-${speakerName}`);
+            if (!samplesDiv) return;
+            
+            if (data.samples.length === 0) {
+                samplesDiv.innerHTML = '<p style="text-align: center; color: #666;">暂无样本</p>';
+                samplesDiv.classList.remove('hidden');
+                return;
+            }
+            
+            let html = '';
+            for (const sample of data.samples) {
+                html += `
+                    <div class="sample-item">
+                        <div class="sample-info">
+                            <div class="sample-name">${sample.filename}</div>
+                            <div class="sample-time">${sample.timestamp}</div>
+                        </div>
+                        <div class="sample-actions">
+                            <button class="btn btn-download" onclick="downloadSample('${speakerName}', '${sample.id}')">下载</button>
+                            <button class="btn btn-delete" onclick="deleteSpeakerSample('${speakerName}', '${sample.id}')">删除</button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            samplesDiv.innerHTML = html;
+            samplesDiv.classList.remove('hidden');
+        }
+
+        function downloadSample(speakerName, sampleId) {
+            // 创建下载链接
+            const downloadUrl = `/speaker/${speakerName}/sample/${sampleId}/audio`;
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = ''; // 让浏览器使用服务器指定的文件名
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function deleteSpeaker(name) {
+            if (!confirm(`确定要删除说话人 "${name}" 的所有声纹数据吗？此操作不可恢复。`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/speaker/${name}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showStatus(`✅ 成功删除说话人: ${name}`, 'success');
+                    // 重新加载声纹列表
+                    await loadSpeakers();
+                } else {
+                    showStatus(`❌ 删除失败: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ 发生网络错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteSpeakerSample(speakerName, sampleId) {
+            if (!confirm(`确定要删除这个样本吗？此操作不可恢复。`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/speaker/${speakerName}/sample/${sampleId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showStatus(`✅ 成功删除样本`, 'success');
+                    // 重新加载该说话人的样本列表
+                    await viewSpeakerSamples(speakerName);
+                    // 重新加载声纹列表以更新样本计数
+                    await loadSpeakers();
+                } else {
+                    showStatus(`❌ 删除失败: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ 发生网络错误: ${error.message}`, 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            
+            // 3秒后自动清除状态消息
+            setTimeout(() => {
+                statusDiv.textContent = '';
+                statusDiv.className = 'status';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
