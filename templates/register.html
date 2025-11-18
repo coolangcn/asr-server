@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>声纹注册</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f9; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: #fff; padding: 2rem 3rem; border-radius: 12px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1); width: 100%; max-width: 500px; }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 1.5rem; }
+        .form-group { margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 600; color: #555; }
+        input[type="text"], input[type="file"] { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; transition: border-color 0.3s; }
+        input[type="text"]:focus, input[type="file"]:focus { border-color: #007bff; outline: none; }
+        input::file-selector-button { background: #007bff; color: white; padding: 0.8rem 1rem; border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.3s; margin-right: 1rem;}
+        input::file-selector-button:hover { background: #0056b3; }
+        button { width: 100%; padding: 1rem; background-color: #28a745; color: white; border: none; border-radius: 6px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background-color 0.3s; }
+        button:hover { background-color: #218838; }
+        button:disabled { background-color: #aaa; cursor: not-allowed; }
+        .status { text-align: center; margin-top: 1.5rem; font-weight: 600; min-height: 24px; }
+        .status.success { color: #28a745; }
+        .status.error { color: #dc3545; }
+        .instructions { font-size: 0.9rem; color: #666; background: #f8f9fa; padding: 1rem; border-radius: 6px; margin-top: 2rem; }
+        .instructions ul { padding-left: 1.2rem; margin: 0; }
+        .instructions li { margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>声纹注册</h1>
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="speakerName">说话人名称:</label>
+                <input type="text" id="speakerName" name="speakerName" required>
+            </div>
+            <div class="form-group">
+                <label for="audioFiles">音频文件 (可多选):</label>
+                <input type="file" id="audioFiles" name="audioFiles" accept="audio/*" multiple required>
+            </div>
+            <button type="submit" id="submitBtn">注册声纹</button>
+        </form>
+        <div id="status" class="status"></div>
+        <div class="instructions">
+            <strong>最佳实践:</strong>
+            <ul>
+                <li>在安静环境下录音。</li>
+                <li>上传 3-5 段纯净的个人语音，每段 5-10 秒。</li>
+                <li>内容应为自然的语句，而非单个词语。</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('registerForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusDiv = document.getElementById('status');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const speakerName = document.getElementById('speakerName').value;
+            const audioFiles = document.getElementById('audioFiles').files;
+
+            if (!speakerName || audioFiles.length === 0) {
+                showStatus('请填写名称并选择文件', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('speaker_name', speakerName);
+            for (const file of audioFiles) {
+                formData.append('audio_files', file);
+            }
+
+            setLoading(true);
+            showStatus('正在上传和处理音频，请稍候...', '');
+
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showStatus(`✅ ${result.message}`, 'success');
+                } else {
+                    showStatus(`❌ 注册失败: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ 发生网络错误: ${error.message}`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        function showStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+
+        function setLoading(isLoading) {
+            submitBtn.disabled = isLoading;
+            if (isLoading) {
+                submitBtn.textContent = '处理中...';
+            } else {
+                submitBtn.textContent = '注册声纹';
+            }
+        }
+    </script>
+</body>
+</html>
