@@ -2,7 +2,7 @@
 
 # ================= 配置区域 =================
 PYTHON_PATH="/bin/python3"
-SCRIPT_DIR="/volume1/docker/scripts/nas_ai_audio_notes/nas-audio-notes-client"
+SCRIPT_DIR="/volume1/docker/scripts/asr-server/nas-audio-notes-client"
 
 # 需要运行的两个核心脚本
 WEB_SCRIPT="web_viewer.py"
