@@ -1,31 +1,33 @@
-# 核心依赖（本地环境版本）
+# 核心依赖（本地环境版本） - D:\AI\asr_env
 modelscope==1.9.5
-# funasr包本地未安装，保留原始版本
-datasets==2.14.6
+funasr==1.1.18
+datasets==2.13.0
 huggingface_hub==0.20.3
 
 # 数值 / 科学计算
 numpy==1.26.4
-scipy==1.11.4
+scipy==1.16.3
 
 # Web 服务
 flask==3.0.3
-werkzeug==3.0.2
+werkzeug==3.1.3
 
 # 语音处理
-soundfile==0.12.1
-librosa==0.10.1
-# torchaudio未在本地环境中找到，保留原始版本
+soundfile==0.13.1
+librosa==0.11.0
+torchaudio==2.2.2+cu118
 
-# PyTorch（请替换成你 CUDA 对应版本）
-# torch未在本地环境中找到，保留原始版本
-# torch==2.2.2
-# 如果你是 CUDA 11.8，用这行：
-# torch==2.2.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html
+# PyTorch（CUDA 11.8）
+torch==2.2.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html
 
 # 工具
-tqdm==4.66.2
-requests==2.31.0
+tqdm==4.67.1
+requests==2.32.5
 
 # 本地环境额外的相关包
 audioread==3.1.0
+transformers==4.57.1
+sentencepiece==0.2.1
+tensorboardX==2.6.4
+torch-complex==0.4.4
+pytorch-wpe==0.0.1
