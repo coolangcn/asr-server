@@ -16,7 +16,7 @@ import shutil
 class Config:
     DEVICE = "cuda:0"
     HOST = '0.0.0.0'
-    PORT = 5009
+    PORT = 5008
     SPEAKER_DB_FILE = "speaker_db_multi.json"
     
     ONLY_REGISTERED_SPEAKERS = True
@@ -721,5 +721,5 @@ if __name__ == "__main__":
         sys.exit(1)
 
     load_models()
-    print("🎉 服务启动成功！请访问 http://127.0.0.1:5009/register_page 进行声纹注册。")
+    print("🎉 服务启动成功！请访问 http://127.0.0.1:5008/register_page 进行声纹注册。")
     app.run(host=Config.HOST, port=Config.PORT, debug=False, threaded=True)
