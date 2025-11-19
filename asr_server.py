@@ -4,7 +4,7 @@
 import os, sys, logging, json, threading, subprocess, time, traceback, tempfile
 import numpy as np
 from scipy.spatial.distance import cosine
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, render_template, send_file, Response
 from funasr import AutoModel  # ASR 用 FunASR
 from modelscope.pipelines import pipeline  # SV 用 ModelScope
 from modelscope.utils.constant import Tasks
@@ -76,8 +76,47 @@ INVALID_TAGS = {"<|nospeech|>", "<|BGM|>", "<|Event_UNK|>", "<|music|>"}
 #   }
 # }
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
+# 创建日志队列用于SSE
+export_logger = logging.getLogger('export_logger')
+export_logger.setLevel(logging.INFO)
+
+# 自定义日志处理器，将日志消息发送到SSE连接
+class SSEHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.clients = set()
+    
+    def add_client(self, client):
+        self.clients.add(client)
+    
+    def remove_client(self, client):
+        self.clients.remove(client)
+    
+    def emit(self, record):
+        msg = self.format(record)
+        for client in list(self.clients):
+            try:
+                client.write(f"data: {json.dumps({'message': msg, 'level': record.levelname})}\n\n")
+            except Exception:
+                self.remove_client(client)
+
+# 创建日志处理器
+log_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+console_handler.setLevel(logging.INFO)
+
+# 创建并配置SSE处理器
+sse_handler = SSEHandler()
+sse_handler.setFormatter(log_formatter)
+sse_handler.setLevel(logging.INFO)
+
+# 配置根日志记录器
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(console_handler)
+logger.addHandler(sse_handler)
+
 app = Flask(__name__)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
@@ -711,9 +750,20 @@ def transcribe_audio():
 
             process_time = time.time() - request_start
             rtf = process_time / audio_duration if audio_duration > 0 else 0
-            logger.info(f"✅ 完成! 音频:{audio_duration:.1f}s | 耗时:{process_time:.2f}s | RTF:{rtf:.3f}")
+            # RTF(Real-Time Factor)是实时因子，评估系统处理速度与音频时长的比率
+            # RTF < 1表示可以实时处理，RTF越低系统性能越好
+            logger.info(f"✅ 完成! 音频:{audio_duration:.1f}s | 耗时:{process_time:.2f}s | RTF:{rtf:.3f} (RTF < 1表示可实时处理，值越低性能越好)")
 
-            return jsonify({"full_text": full_text, "segments": segments, "meta": {"process_time": process_time, "audio_duration": audio_duration, "rtf": rtf}})
+            return jsonify({
+                "full_text": full_text,
+                "segments": segments,
+                "meta": {
+                    "process_time": process_time,
+                    "audio_duration": audio_duration,
+                    "rtf": rtf,
+                    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+                }
+            })
 
         except Exception as e:
             logger.error(f"❌ 处理异常: {str(e)}")
@@ -750,6 +800,25 @@ def get_sample_audio(speaker_name, sample_id):
     except Exception as e:
         logger.error(f"获取样本音频文件失败: {str(e)}")
         return jsonify({"error": "Failed to retrieve sample audio"}), 500
+
+@app.route("/logs/stream")
+def stream_logs():
+    """SSE endpoint for real-time log streaming"""
+    def generate_logs():
+        # 创建一个新的客户端连接
+        client = type('Client', (), {'write': lambda self, msg: print(msg, end='', flush=True) or msg})
+        
+        # 添加客户端到SSE处理器
+        sse_handler.add_client(client)
+        try:
+            # 保持连接打开
+            while True:
+                time.sleep(1)
+        except GeneratorExit:
+            # 客户端断开连接时移除客户端
+            sse_handler.remove_client(client)
+    
+    return Response(generate_logs(), mimetype='text/event-stream')
 
 # =================== 启动 ===================
 if __name__ == "__main__":
