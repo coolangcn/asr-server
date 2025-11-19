@@ -20,6 +20,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_PATH = "/volume2/download/records/Sony-2/transcripts.db"
 DEFAULT_SOURCE_DIR = "/volume2/download/records/Sony-2"
 DEFAULT_ASR_API_URL = "http://192.168.1.111:5008/transcribe"
+DEFAULT_ASR_LOG_STREAM_URL = "http://192.168.1.111:5008/logs/stream"
 DEFAULT_LOG_FILE_PATH = os.path.join(SCRIPT_DIR, "transcribe.log")
 DEFAULT_WEB_PORT = 5009 
 
@@ -28,6 +29,7 @@ CONFIG = {
     "DB_PATH": DEFAULT_DB_PATH,
     "SOURCE_DIR": DEFAULT_SOURCE_DIR,
     "ASR_API_URL": DEFAULT_ASR_API_URL,
+    "ASR_LOG_STREAM_URL": DEFAULT_ASR_LOG_STREAM_URL,
     "LOG_FILE_PATH": DEFAULT_LOG_FILE_PATH,
     "WEB_PORT": DEFAULT_WEB_PORT
 }
@@ -46,6 +48,7 @@ def parse_args():
     parser.add_argument('--source-path', type=str, help='源音频文件路径')
     parser.add_argument('--port', type=int, help='Web端口', default=DEFAULT_WEB_PORT)
     parser.add_argument('--asr-url', type=str, help='ASR服务API地址', default=DEFAULT_ASR_API_URL)
+    parser.add_argument('--asr-log-url', type=str, help='ASR服务日志流地址', default=DEFAULT_ASR_LOG_STREAM_URL)
     return parser.parse_args()
 
 def update_config(args):
@@ -62,6 +65,10 @@ def update_config(args):
     if args.asr_url:
         CONFIG["ASR_API_URL"] = args.asr_url
         print(f"[配置] 使用自定义ASR服务地址: {args.asr_url}")
+    
+    if args.asr_log_url:
+        CONFIG["ASR_LOG_STREAM_URL"] = args.asr_log_url
+        print(f"[配置] 使用自定义ASR日志流地址: {args.asr_log_url}")
 
 # -----------------
 
@@ -1094,7 +1101,9 @@ HTML_TEMPLATE = """
         // 连接到SSE日志流
         function connectToLogsStream() {
             try {
-                logsEventSource = new EventSource('/logs/stream');
+                // 使用服务端的SSE日志流URL
+                const asrLogStreamUrl = '{{ CONFIG["ASR_LOG_STREAM_URL"] }}';
+                logsEventSource = new EventSource(asrLogStreamUrl);
                 
                 logsEventSource.onopen = function() {
                     isLogsConnected = true;
@@ -1427,7 +1436,7 @@ def stream_logs():
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML_TEMPLATE, CONFIG=CONFIG)
 
 if __name__ == "__main__":
     args = parse_args()
