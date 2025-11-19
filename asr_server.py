@@ -26,19 +26,26 @@ class Config:
         "eres2net_large": {
             "id": "iic/speech_eres2net_large_200k_sv_zh-cn_16k-common",
             "rev": "v1.0.0",
-            "threshold": 0.50,
-            "gap": 0.10
+            "threshold": 0.60,  # 提高阈值
+            "gap": 0.15         # 增加置信度间隔
         },
         "rdino_ecapa": {
             "id": "iic/speech_rdino_ecapa_tdnn_sv_zh-cn_cnceleb_16k",
             "rev": "v1.0.0",
-            "threshold": 0.50,
-            "gap": 0.10
+            "threshold": 0.60,  # 提高阈值
+            "gap": 0.15         # 增加置信度间隔
+        },
+        "camplusplus": {
+            "id": "iic/speech_campplus_sv_zh-cn_16k-common",
+            "rev": "v1.0.0",
+            "threshold": 0.60,  # 提高阈值
+            "gap": 0.15         # 增加置信度间隔
         }
     }
     
     MIN_SPEAKER_DURATION_MS = 800
     NORMALIZE_AUDIO = True
+    DENOISE_AUDIO = True  # 启用高级降噪
 # ==========================================
 
 EMOTION_TAGS = {
@@ -135,15 +142,83 @@ def load_speaker_db():
 
 # =================== 音频预处理 ===================
 def preprocess_audio(input_path, output_path):
+    # 如果启用了高级降噪，先进行降噪处理
+    if Config.DENOISE_AUDIO:
+        denoised_path = input_path + ".denoised.wav"
+        if advanced_denoise(input_path, denoised_path):
+            input_path = denoised_path
+        else:
+            logger.warning("高级降噪处理失败，使用原始音频")
+    
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
     filters = ["loudnorm=I=-14:TP=-1.5:LRA=11"] if Config.NORMALIZE_AUDIO else []
     if filters: cmd.extend(["-af", ",".join(filters)])
     cmd.extend(["-ac", "1", "-ar", "16000", output_path])
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+        # 清理临时降噪文件
+        if Config.DENOISE_AUDIO and input_path.endswith(".denoised.wav"):
+            try:
+                os.remove(input_path)
+            except:
+                pass
         return True
     except Exception as e:
         logger.error(f"FFmpeg 预处理失败: {e}")
+        return False
+
+def advanced_denoise(input_path, output_path):
+    """使用谱减法进行高级降噪"""
+    try:
+        # 加载音频
+        waveform, sample_rate = torchaudio.load(input_path)
+        
+        # 如果采样率不是16kHz，先进行重采样
+        if sample_rate != 16000:
+            resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)
+            waveform = resampler(waveform)
+            sample_rate = 16000
+        
+        # 转换为单声道
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+        
+        # 简化的谱减法降噪
+        # 这里我们使用一个简化的实现，实际应用中可以使用更复杂的算法
+        audio_np = waveform.numpy()[0]
+        
+        # 计算短时傅里叶变换
+        from scipy import signal
+        frequencies, times, Zxx = signal.stft(audio_np, fs=sample_rate, nperseg=512)
+        
+        # 估计噪声谱（假设前100ms为噪声）
+        noise_seg_len = min(int(0.1 * sample_rate), len(audio_np))
+        noise_segment = audio_np[:noise_seg_len]
+        _, _, noise_stft = signal.stft(noise_segment, fs=sample_rate, nperseg=512)
+        noise_spectrum = np.mean(np.abs(noise_stft), axis=1)
+        
+        # 应用谱减法
+        magnitude = np.abs(Zxx)
+        phase = np.angle(Zxx)
+        
+        # 减去噪声谱的估计值
+        noise_factor = 1.5
+        magnitude_denoised = np.maximum(magnitude - noise_factor * noise_spectrum[:, np.newaxis], 0)
+        
+        # 重构信号
+        Zxx_denoised = magnitude_denoised * np.exp(1j * phase)
+        _, audio_denoised = signal.istft(Zxx_denoised, fs=sample_rate)
+        
+        # 裁剪到原始长度
+        audio_denoised = audio_denoised[:len(audio_np)]
+        
+        # 保存降噪后的音频
+        waveform_denoised = torch.tensor(audio_denoised).unsqueeze(0)
+        torchaudio.save(output_path, waveform_denoised, sample_rate)
+        
+        return True
+    except Exception as e:
+        logger.error(f"高级降噪处理失败: {e}")
         return False
 
 def extract_segment(source_path, start_ms, end_ms, output_path):
