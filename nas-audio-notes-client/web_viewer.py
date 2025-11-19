@@ -3,31 +3,30 @@
 
 import os
 import re
-import sqlite3
 import json
 from flask import Flask, render_template_string, jsonify, request
 import datetime
 import requests
 import subprocess
 import argparse
+from db_manager import init_pool, get_transcripts as db_get_transcripts
 
 # --- 配置 ---
 # 获取脚本自身所在的目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DEFAULT_DB_PATH = "/volume2/download/records/Sony-2/transcripts.db"
-DEFAULT_SOURCE_DIR = "/volume2/download/records/Sony-2"
+DEFAULT_SOURCE_DIR = "V:\\Sony-2"
 DEFAULT_ASR_API_URL = "http://192.168.1.111:5008/transcribe"
 DEFAULT_LOG_FILE_PATH = os.path.join(SCRIPT_DIR, "transcribe.log")
-DEFAULT_WEB_PORT = 5009 
+DEFAULT_WEB_PORT = 5010 
 
 # 全局配置变量
 CONFIG = {
-    "DB_PATH": DEFAULT_DB_PATH,
     "SOURCE_DIR": DEFAULT_SOURCE_DIR,
     "ASR_API_URL": DEFAULT_ASR_API_URL,
     "LOG_FILE_PATH": DEFAULT_LOG_FILE_PATH,
-    "WEB_PORT": DEFAULT_WEB_PORT
+    "WEB_PORT": DEFAULT_WEB_PORT,
+    "DATABASE_URL": "postgresql://postgres:difyai123456@192.168.1.188:5432/postgres"
 }
 
 # 从JSON文件加载配置
@@ -51,7 +50,6 @@ def update_config(args):
     if args.source_path:
         base_path = args.source_path
         CONFIG["SOURCE_DIR"] = base_path
-        CONFIG["DB_PATH"] = os.path.join(base_path, "transcripts.db")
         print(f"[配置] 使用自定义源路径: {base_path}")
     
     if args.port:
@@ -130,64 +128,53 @@ def get_system_status():
     return status
 
 def get_transcripts():
-    if not os.path.exists(CONFIG["DB_PATH"]):
-        return []
+    """获取转录记录（使用PostgreSQL）"""
     try:
-        db = sqlite3.connect(CONFIG["DB_PATH"])
-        db.row_factory = sqlite3.Row
-        cursor = db.cursor()
-        # 获取最近 100 条记录
-        cursor.execute("SELECT id, filename, created_at, full_text, segments_json FROM transcriptions ORDER BY created_at DESC LIMIT 100")
-        rows = cursor.fetchall()
-        db.close()
+        items = db_get_transcripts(limit=100)
         
         results = []
-        for row in rows:
-            data = dict(row)
-            try:
-                data['segments'] = json.loads(data['segments_json'])
-            except:
-                data['segments'] = []
-            
-            for seg in data['segments']:
+        for data in items:
+            # 格式化时间戳
+            for seg in data.get('segments', []):
                 seg['start_fmt'] = format_timestamp(seg.get('start', 0))
-                # 兼容后端传来的 spk 字段 (可能是数字，可能是字符串"爸爸")
-                seg['spk_id'] = seg.get('spk', 0) 
+                seg['spk_id'] = seg.get('spk', 0)
             
             # 解析时间
             filename = data['filename']
             dt = None
             time_patterns = [
-                r'^\s*(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\s*', 
-                r'^\s*recording-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\s*' 
+                r'^\s*(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\s*',
+                r'^\s*recording-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\s*'
             ]
             
             for pattern in time_patterns:
                 match = re.match(pattern, os.path.splitext(filename)[0])
                 if match:
                     try:
-                        if pattern == time_patterns[0]: 
+                        if pattern == time_patterns[0]:
                             date_part = match.group(1)
                             time_part = match.group(2)
                             dt_str = f"{date_part} {time_part.replace('-', ':')}"
                             dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        else: 
+                        else:
                             year, month, day, hour, minute, second = match.groups()
                             dt_str = f"{year}-{month}-{day} {hour}:{minute}:{second}"
                             dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        break 
+                        break
                     except ValueError:
-                        continue 
+                        continue
                         
             if dt is None:
-                try: dt = datetime.datetime.fromisoformat(data['created_at'])
-                except: pass
+                try:
+                    dt = datetime.datetime.fromisoformat(data['created_at'])
+                except:
+                    pass
 
             if dt is not None:
                 now = datetime.datetime.now()
                 data['is_new'] = (now - dt).total_seconds() < 300
                 data['date_group'] = dt.strftime('%Y-%m-%d')
-                data['time_simple'] = dt.strftime('%H:%M') 
+                data['time_simple'] = dt.strftime('%H:%M')
                 data['time_full'] = dt.strftime('%Y-%m-%d %H:%M:%S')
             else:
                 data['is_new'] = False
@@ -196,7 +183,8 @@ def get_transcripts():
                 data['time_full'] = ""
             results.append(data)
         return results
-    except:
+    except Exception as e:
+        print(f"[Error] 获取转录记录失败: {e}")
         return []
 
 # --- HTML 模板 ---
@@ -766,4 +754,9 @@ def index():
 if __name__ == "__main__":
     args = parse_args()
     update_config(args)
+    print("初始化数据库连接池...")
+    if not init_pool():
+        print("数据库连接池初始化失败，程序退出")
+        exit(1)
+    print(f"[Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}")
     app.run(host='0.0.0.0', port=CONFIG["WEB_PORT"], debug=False)

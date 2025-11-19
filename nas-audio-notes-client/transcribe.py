@@ -6,21 +6,21 @@ import subprocess
 import requests
 import json
 import datetime
-import sqlite3
 import time
 import argparse
 import re
+from db_manager import init_pool, init_db, save_to_db, close_pool
 
 # ---------------- 配置 ----------------
 CONFIG_FILE = "config.json"
 
 DEFAULT_CONFIG = {
-    "ASR_API_URL": "http://192.168.1.111:5009/transcribe",
-    "SOURCE_DIR": "/volume2/download/records/Sony-2",
-    "TRANSCRIPT_DIR": "/volume2/download/records/Sony-2/transcripts",
-    "PROCESSED_DIR": "/volume2/download/records/Sony-2/processed",
+    "ASR_API_URL": "http://192.168.1.111:5008/transcribe",
+    "SOURCE_DIR": "V:\\Sony-2",
+    "TRANSCRIPT_DIR": "V:\\Sony-2\\transcripts",
+    "PROCESSED_DIR": "V:\\Sony-2\\processed",
     "N8N_WEBHOOK_URL": "https://n8n.moco.fun/webhook/bea45d47-d1fc-498e-bf69-d48dc079f04a",
-    "DB_PATH": "/volume2/download/records/Sony-2/transcripts.db",
+    "DATABASE_URL": "postgresql://postgres:difyai123456@192.168.1.188:5432/postgres",
     "LOG_FILE_PATH": "transcribe.log",
     "WEB_PORT": 5010
 }
@@ -47,7 +47,6 @@ def update_config(args):
         CONFIG["SOURCE_DIR"] = base_path
         CONFIG["TRANSCRIPT_DIR"] = os.path.join(base_path, "transcripts")
         CONFIG["PROCESSED_DIR"] = os.path.join(base_path, "processed")
-        CONFIG["DB_PATH"] = os.path.join(base_path, "transcripts.db")
         print(f"[配置] 使用自定义源路径: {base_path}")
 
 # ---------------- 工具函数 ----------------
@@ -63,40 +62,7 @@ def clean_sensevoice_tags(text):
     return cleaned.strip()
 
 # ---------------- 数据库 ----------------
-def init_db():
-    try:
-        conn = sqlite3.connect(CONFIG["DB_PATH"])
-        cursor = conn.cursor()
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS transcriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            full_text TEXT,
-            segments_json TEXT
-        );
-        ''')
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"数据库初始化失败: {e}")
-
-def save_to_db(filename, full_text, segments_list):
-    try:
-        conn = sqlite3.connect(CONFIG["DB_PATH"])
-        cursor = conn.cursor()
-        segments_json = json.dumps(segments_list, ensure_ascii=False)
-        cursor.execute(
-            "INSERT INTO transcriptions (filename, full_text, segments_json) VALUES (?, ?, ?)",
-            (filename, full_text, segments_json)
-        )
-        conn.commit()
-        conn.close()
-        print(f"  [DB] Saved {filename}")
-        return True
-    except Exception as e:
-        print(f"  [DB Error] {e}")
-        return False
+# 数据库功能已迁移到 db_manager.py
 
 def notify_n8n(status, filename, details):
     if not CONFIG["N8N_WEBHOOK_URL"]: return
@@ -113,7 +79,8 @@ def notify_n8n(status, filename, details):
 
 # ---------------- 音频处理 ----------------
 def convert_audio_to_wav(audio_path, wav_path):
-    FFMPEG_PATH = "/usr/local/bin/ffmpeg"
+    # Windows下使用系统PATH中的ffmpeg
+    FFMPEG_PATH = "ffmpeg"
     command = [
         FFMPEG_PATH, '-y', '-i', audio_path, '-vn', '-map', '0:a',
         '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav_path
@@ -232,6 +199,10 @@ def main():
     update_config(args)
     print("--- 启动实时监控模式 (SenseVoice 适配版) ---")
     print(f"监控目录: {CONFIG['SOURCE_DIR']}")
+    print("初始化数据库连接池...")
+    if not init_pool():
+        print("数据库连接池初始化失败，程序退出")
+        return
     init_db()
     while True:
         try:
@@ -239,6 +210,7 @@ def main():
             time.sleep(3)
         except KeyboardInterrupt:
             print("停止监控。")
+            close_pool()
             break
         except Exception as e:
             print(f"主循环发生错误: {e}")
