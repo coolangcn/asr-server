@@ -5,13 +5,11 @@ import os
 import re
 import sqlite3
 import json
-from flask import Flask, render_template_string, jsonify, request, Response
+from flask import Flask, render_template_string, jsonify, request
 import datetime
 import requests
 import subprocess
 import argparse
-import time
-import threading
 
 # --- 配置 ---
 # 获取脚本自身所在的目录
@@ -20,7 +18,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_PATH = "/volume2/download/records/Sony-2/transcripts.db"
 DEFAULT_SOURCE_DIR = "/volume2/download/records/Sony-2"
 DEFAULT_ASR_API_URL = "http://192.168.1.111:5008/transcribe"
-DEFAULT_ASR_LOG_STREAM_URL = "http://192.168.1.111:5008/logs/stream"
 DEFAULT_LOG_FILE_PATH = os.path.join(SCRIPT_DIR, "transcribe.log")
 DEFAULT_WEB_PORT = 5009 
 
@@ -29,7 +26,6 @@ CONFIG = {
     "DB_PATH": DEFAULT_DB_PATH,
     "SOURCE_DIR": DEFAULT_SOURCE_DIR,
     "ASR_API_URL": DEFAULT_ASR_API_URL,
-    "ASR_LOG_STREAM_URL": DEFAULT_ASR_LOG_STREAM_URL,
     "LOG_FILE_PATH": DEFAULT_LOG_FILE_PATH,
     "WEB_PORT": DEFAULT_WEB_PORT
 }
@@ -48,7 +44,6 @@ def parse_args():
     parser.add_argument('--source-path', type=str, help='源音频文件路径')
     parser.add_argument('--port', type=int, help='Web端口', default=DEFAULT_WEB_PORT)
     parser.add_argument('--asr-url', type=str, help='ASR服务API地址', default=DEFAULT_ASR_API_URL)
-    parser.add_argument('--asr-log-url', type=str, help='ASR服务日志流地址', default=DEFAULT_ASR_LOG_STREAM_URL)
     return parser.parse_args()
 
 def update_config(args):
@@ -65,10 +60,6 @@ def update_config(args):
     if args.asr_url:
         CONFIG["ASR_API_URL"] = args.asr_url
         print(f"[配置] 使用自定义ASR服务地址: {args.asr_url}")
-    
-    if args.asr_log_url:
-        CONFIG["ASR_LOG_STREAM_URL"] = args.asr_log_url
-        print(f"[配置] 使用自定义ASR日志流地址: {args.asr_log_url}")
 
 # -----------------
 
@@ -208,159 +199,6 @@ def get_transcripts():
     except:
         return []
 
-# ---------------- 对话历史功能 ----------------
-def init_chat_history_db():
-    """初始化对话历史数据库表"""
-    try:
-        db = sqlite3.connect(CONFIG["DB_PATH"])
-        cursor = db.cursor()
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            speaker_id TEXT NOT NULL,
-            speaker_name TEXT NOT NULL,
-            message_text TEXT NOT NULL,
-            timestamp INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        ''')
-        # 创建索引以提高查询性能
-        cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_history(session_id);
-        ''')
-        db.commit()
-        db.close()
-        print("对话历史数据库表初始化成功")
-    except Exception as e:
-        print(f"对话历史数据库表初始化失败: {e}")
-
-def save_chat_message(session_id, speaker_id, speaker_name, message_text, timestamp):
-    """保存单条聊天消息到数据库"""
-    try:
-        db = sqlite3.connect(CONFIG["DB_PATH"])
-        cursor = db.cursor()
-        cursor.execute(
-            "INSERT INTO chat_history (session_id, speaker_id, speaker_name, message_text, timestamp) VALUES (?, ?, ?, ?, ?)",
-            (session_id, speaker_id, speaker_name, message_text, timestamp)
-        )
-        db.commit()
-        db.close()
-        return True
-    except Exception as e:
-        print(f"保存聊天消息失败: {e}")
-        return False
-
-def save_chat_session(session_id, chat_data):
-    """保存整个聊天会话到数据库"""
-    try:
-        # 首先删除已存在的会话数据
-        db = sqlite3.connect(CONFIG["DB_PATH"])
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM chat_history WHERE session_id = ?", (session_id,))
-        
-        # 然后插入新的聊天数据
-        for item in chat_data:
-            if item.get('segments'):
-                for seg in item['segments']:
-                    if seg.get('text') and seg.get('text').strip():
-                        speaker_id = seg.get('spk_id', 0)
-                        speaker_name = seg.get('speaker_name', f"说话人 {speaker_id}")
-                        timestamp = seg.get('start', 0)
-                        message_text = seg.get('text', '').strip()
-                        
-                        cursor.execute(
-                            "INSERT INTO chat_history (session_id, speaker_id, speaker_name, message_text, timestamp) VALUES (?, ?, ?, ?, ?)",
-                            (session_id, speaker_id, speaker_name, message_text, timestamp)
-                        )
-            elif item.get('full_text') and item.get('full_text').strip():
-                # 处理没有分段的情况
-                speaker_id = 0
-                speaker_name = "系统"
-                timestamp = 0
-                message_text = item.get('full_text', '').strip()
-                
-                cursor.execute(
-                    "INSERT INTO chat_history (session_id, speaker_id, speaker_name, message_text, timestamp) VALUES (?, ?, ?, ?, ?)",
-                    (session_id, speaker_id, speaker_name, message_text, timestamp)
-                )
-        
-        db.commit()
-        db.close()
-        return True
-    except Exception as e:
-        print(f"保存聊天会话失败: {e}")
-        return False
-
-def get_chat_sessions():
-    """获取所有聊天会话列表"""
-    try:
-        db = sqlite3.connect(CONFIG["DB_PATH"])
-        db.row_factory = sqlite3.Row
-        cursor = db.cursor()
-        cursor.execute('''
-        SELECT session_id, MIN(created_at) as created_at, COUNT(*) as message_count
-        FROM chat_history
-        GROUP BY session_id
-        ORDER BY created_at DESC
-        ''')
-        rows = cursor.fetchall()
-        db.close()
-        
-        sessions = []
-        for row in rows:
-            sessions.append({
-                'session_id': row['session_id'],
-                'created_at': row['created_at'],
-                'message_count': row['message_count']
-            })
-        return sessions
-    except Exception as e:
-        print(f"获取聊天会话列表失败: {e}")
-        return []
-
-def get_chat_session_messages(session_id):
-    """获取特定聊天会话的所有消息"""
-    try:
-        db = sqlite3.connect(CONFIG["DB_PATH"])
-        db.row_factory = sqlite3.Row
-        cursor = db.cursor()
-        cursor.execute('''
-        SELECT speaker_id, speaker_name, message_text, timestamp
-        FROM chat_history
-        WHERE session_id = ?
-        ORDER BY timestamp ASC
-        ''', (session_id,))
-        rows = cursor.fetchall()
-        db.close()
-        
-        messages = []
-        for row in rows:
-            messages.append({
-                'speaker_id': row['speaker_id'],
-                'speaker_name': row['speaker_name'],
-                'message_text': row['message_text'],
-                'timestamp': row['timestamp'],
-                'start_fmt': format_timestamp(row['timestamp'])
-            })
-        return messages
-    except Exception as e:
-        print(f"获取聊天会话消息失败: {e}")
-        return []
-
-def delete_chat_session(session_id):
-    """删除特定聊天会话"""
-    try:
-        db = sqlite3.connect(CONFIG["DB_PATH"])
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM chat_history WHERE session_id = ?", (session_id,))
-        db.commit()
-        db.close()
-        return True
-    except Exception as e:
-        print(f"删除聊天会话失败: {e}")
-        return False
-
 # --- HTML 模板 ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -434,26 +272,6 @@ HTML_TEMPLATE = """
         .avatar-3 { background: #8E44AD; } /* 深紫色 */
         .avatar-4 { background: #DC3545; } /* 鲜红色 */
 
-        /* === 视图 4: 实时日志样式 === */
-        .logs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-        .logs-controls { display: flex; gap: 10px; align-items: center; }
-        .logs-status { display: flex; gap: 10px; align-items: center; }
-        .logs-container { height: calc(100vh - 200px); }
-        .logs-window { 
-            background: var(--console-bg); 
-            color: var(--console-text); 
-            padding: 15px; 
-            border-radius: 8px; 
-            font-family: monospace; 
-            font-size: 0.85em; 
-            height: 100%; 
-            overflow-y: auto; 
-            white-space: pre-wrap; 
-        }
-        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        .btn-primary { background-color: var(--primary); color: white; }
-        .btn-secondary { background-color: #6c757d; color: white; }
-
     </style>
 </head>
 <body>
@@ -462,7 +280,6 @@ HTML_TEMPLATE = """
         <button class="nav-btn active" onclick="switchTab('dashboard')">️ 仪表盘</button>
         <button class="nav-btn" onclick="switchTab('chat')"> 时光对话</button>
         <button class="nav-btn" onclick="switchTab('analysis')">📊 统计分析</button>
-        <button class="nav-btn" onclick="switchTab('logs')">📄 实时日志</button>
         <button class="nav-btn" onclick="switchTab('config')">⚙️ 配置管理</button>
     </div>
 
@@ -484,16 +301,6 @@ HTML_TEMPLATE = """
     </div>
 
     <div id="view-chat" class="view-container">
-        <div style="max-width: 800px; margin: 0 auto; padding: 10px; display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin: 0; color: #007bff;">时光对话</h3>
-            <div>
-                <select id="chat-session-select" style="margin-right: 10px; padding: 5px;">
-                    <option value="">选择历史会话...</option>
-                </select>
-                <button id="save-chat-btn" class="btn btn-primary" style="padding: 5px 15px;">保存对话</button>
-                <button id="new-chat-btn" class="btn btn-secondary" style="padding: 5px 15px; margin-left: 5px;">新建会话</button>
-            </div>
-        </div>
         <div class="chat-container" id="chat-content">
             <div style="text-align: center; color: #999; margin-top: 50px;">正在生成对话流...</div>
         </div>
@@ -502,23 +309,6 @@ HTML_TEMPLATE = """
     <div id="view-analysis" class="view-container">
         <div id="analysis-content" style="max-width: 1000px; margin: 0 auto;">
             <div style="text-align: center; color: #999; margin-top: 50px;">正在分析声纹数据...</div>
-        </div>
-    </div>
-
-    <div id="view-logs" class="view-container">
-        <div class="logs-header">
-            <h2>📄 实时日志</h2>
-            <div class="logs-controls">
-                <button id="toggle-logs-btn" class="btn btn-primary">开始接收日志</button>
-                <button id="clear-logs-btn" class="btn btn-secondary">清空日志</button>
-                <div class="logs-status">
-                    <span id="logs-connection-status" class="badge bg-red">未连接</span>
-                    <span id="logs-lines-count">0 行</span>
-                </div>
-            </div>
-        </div>
-        <div class="logs-container">
-            <div id="logs-display" class="logs-window"></div>
         </div>
     </div>
 
@@ -549,17 +339,11 @@ HTML_TEMPLATE = """
             if(tabName === 'dashboard') btns[0].classList.add('active');
             else if(tabName === 'chat') btns[1].classList.add('active');
             else if(tabName === 'analysis') btns[2].classList.add('active');
-            else if(tabName === 'logs') btns[3].classList.add('active');
-            else if(tabName === 'config') btns[4].classList.add('active');
+            else if(tabName === 'config') btns[3].classList.add('active');
             
             // Load config when switching to config tab
             if (tabName === 'config') {
                 loadConfig();
-            }
-            
-            // Initialize logs when switching to logs tab
-            if (tabName === 'logs') {
-                initLogsView();
             }
         }
 
@@ -602,143 +386,6 @@ HTML_TEMPLATE = """
                     form.innerHTML = `<div style="text-align: center; color: #dc3545;">加载配置失败: ${error.message}</div>`;
                 });
         }
-
-        // 对话历史相关功能
-        let currentChatData = [];
-        let currentSessionId = null;
-
-        // 加载聊天会话列表
-        function loadChatSessions() {
-            fetch('/api/chat/sessions')
-                .then(response => response.json())
-                .then(sessions => {
-                    const select = document.getElementById('chat-session-select');
-                    select.innerHTML = '<option value="">选择历史会话...</option>';
-                    
-                    sessions.forEach(session => {
-                        const option = document.createElement('option');
-                        option.value = session.session_id;
-                        // 格式化日期显示
-                        const createdDate = new Date(session.created_at).toLocaleString();
-                        option.textContent = `${session.session_id} (${createdDate})`;
-                        select.appendChild(option);
-                    });
-                })
-                .catch(error => {
-                    console.error('加载聊天会话失败:', error);
-                });
-        }
-
-        // 保存当前对话
-        function saveChatSession() {
-            if (!currentChatData || currentChatData.length === 0) {
-                alert('没有可保存的对话内容');
-                return;
-            }
-
-            const sessionName = prompt('请输入会话名称:', `对话_${new Date().toLocaleDateString()}`);
-            if (!sessionName) return;
-
-            const sessionId = sessionName.replace(/\s+/g, '_').replace(/[^\w\u4e00-\u9fa5]/g, '');
-            
-            // 准备符合后端期望的数据结构
-            const chatData = [];
-            currentChatData.forEach(item => {
-                if (item.segments) {
-                    chatData.push({
-                        segments: item.segments
-                    });
-                } else if (item.message_text) {
-                    // 如果是已加载的历史消息，转换为segments格式
-                    chatData.push({
-                        segments: [{
-                            text: item.message_text,
-                            spk_id: item.speaker_id,
-                            speaker_name: item.speaker_name,
-                            start: item.timestamp
-                        }]
-                    });
-                }
-            });
-            
-            fetch('/api/chat/session', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    session_id: sessionId,
-                    chat_data: chatData
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('对话保存成功!');
-                    loadChatSessions(); // 重新加载会话列表
-                } else {
-                    alert('保存失败: ' + data.message);
-                }
-            })
-            .catch(error => {
-                alert('保存失败: ' + error.message);
-            });
-        }
-
-        // 加载特定会话的对话
-        function loadChatSession(sessionId) {
-            if (!sessionId) {
-                // 如果没有选择会话，则加载当前转录数据
-                updateLoop();
-                return;
-            }
-
-            fetch(`/api/chat/session/${sessionId}`)
-                .then(response => response.json())
-                .then(messages => {
-                    if (messages && messages.length > 0) {
-                        currentSessionId = sessionId;
-                        // 将消息转换为前端渲染需要的格式
-                        currentChatData = messages.map(msg => ({
-                            message_text: msg.message_text,
-                            speaker_id: msg.speaker_id,
-                            speaker_name: msg.speaker_name,
-                            timestamp: msg.timestamp,
-                            start_fmt: msg.start_fmt
-                        }));
-                        renderChat(currentChatData);
-                    } else {
-                        alert('没有找到该会话的对话内容');
-                    }
-                })
-                .catch(error => {
-                    alert('加载对话失败: ' + error.message);
-                });
-        }
-
-        // 新建会话
-        function newChatSession() {
-            currentSessionId = null;
-            document.getElementById('chat-session-select').value = '';
-            updateLoop(); // 加载当前转录数据
-        }
-
-        // 添加事件监听器
-        document.addEventListener('DOMContentLoaded', function() {
-            // 保存对话按钮
-            document.getElementById('save-chat-btn').addEventListener('click', saveChatSession);
-            
-            // 新建会话按钮
-            document.getElementById('new-chat-btn').addEventListener('click', newChatSession);
-            
-            // 会话选择下拉框
-            document.getElementById('chat-session-select').addEventListener('change', function() {
-                loadChatSession(this.value);
-            });
-            
-            // 初始加载会话列表
-            loadChatSessions();
-        });
 
         // Save configuration to API
         document.getElementById('save-config-btn')?.addEventListener('click', () => {
@@ -869,9 +516,6 @@ HTML_TEMPLATE = """
 
                 const dataRes = await fetch('/api/data');
                 let items = await dataRes.json();
-                
-                // 更新当前对话数据
-                currentChatData = items;
                 
                 items = processStats(items);
                 
@@ -1057,162 +701,6 @@ HTML_TEMPLATE = """
             container.innerHTML = html;
         }
 
-        // === 实时日志功能 ===
-        let logsEventSource = null;
-        let logsLineCount = 0;
-        let isLogsConnected = false;
-
-        // 初始化日志视图
-        function initLogsView() {
-            // 如果已经连接，不需要重新初始化
-            if (logsEventSource && isLogsConnected) {
-                return;
-            }
-            
-            // 设置按钮事件
-            const toggleBtn = document.getElementById('toggle-logs-btn');
-            const clearBtn = document.getElementById('clear-logs-btn');
-            
-            toggleBtn.onclick = toggleLogsConnection;
-            clearBtn.onclick = clearLogsDisplay;
-            
-            // 更新状态显示
-            updateLogsStatus();
-        }
-
-        // 切换日志连接状态
-        function toggleLogsConnection() {
-            const toggleBtn = document.getElementById('toggle-logs-btn');
-            
-            if (logsEventSource && isLogsConnected) {
-                // 断开连接
-                logsEventSource.close();
-                logsEventSource = null;
-                isLogsConnected = false;
-                toggleBtn.textContent = '开始接收日志';
-                updateLogsStatus();
-            } else {
-                // 建立连接
-                connectToLogsStream();
-                toggleBtn.textContent = '停止接收日志';
-            }
-        }
-
-        // 连接到SSE日志流
-        function connectToLogsStream() {
-            try {
-                // 使用服务端的SSE日志流URL
-                const asrLogStreamUrl = '{{ CONFIG["ASR_LOG_STREAM_URL"] }}';
-                logsEventSource = new EventSource(asrLogStreamUrl);
-                
-                logsEventSource.onopen = function() {
-                    isLogsConnected = true;
-                    updateLogsStatus();
-                    addLogMessage('系统', '正在连接到日志流...', 'info');
-                };
-                
-                logsEventSource.onmessage = function(event) {
-                    try {
-                        const data = JSON.parse(event.data);
-                        
-                        if (data.type === 'log') {
-                            addLogMessage('日志', data.message, 'log');
-                        } else if (data.type === 'connected') {
-                            addLogMessage('系统', data.message, 'success');
-                            isLogsConnected = true;
-                            updateLogsStatus();
-                        } else if (data.type === 'heartbeat') {
-                            // 心跳消息，不显示但更新连接状态
-                            isLogsConnected = true;
-                        } else if (data.type === 'error') {
-                            addLogMessage('错误', data.message, 'error');
-                        } else if (data.type === 'info') {
-                            addLogMessage('信息', data.message, 'info');
-                        }
-                    } catch (e) {
-                        // 如果不是JSON格式，直接显示为日志
-                        addLogMessage('日志', event.data, 'log');
-                    }
-                };
-                
-                logsEventSource.onerror = function() {
-                    isLogsConnected = false;
-                    updateLogsStatus();
-                    addLogMessage('系统', '日志流连接错误，5秒后尝试重连...', 'error');
-                    
-                    // 5秒后尝试重连
-                    setTimeout(function() {
-                        if (document.getElementById('view-logs').classList.contains('active') && !isLogsConnected) {
-                            connectToLogsStream();
-                        }
-                    }, 5000);
-                };
-                
-            } catch (e) {
-                addLogMessage('错误', '无法创建日志流连接: ' + e.message, 'error');
-            }
-        }
-
-        // 添加日志消息到显示区域
-        function addLogMessage(source, message, type) {
-            const logsDisplay = document.getElementById('logs-display');
-            const timestamp = new Date().toLocaleTimeString();
-            
-            // 根据类型设置不同的颜色
-            let colorClass = '';
-            if (type === 'error') {
-                colorClass = 'color: #ff6b6b;';
-            } else if (type === 'success') {
-                colorClass = 'color: #51cf66;';
-            } else if (type === 'info') {
-                colorClass = 'color: #74c0fc;';
-            } else {
-                colorClass = 'color: var(--console-text);';
-            }
-            
-            const logEntry = document.createElement('div');
-            logEntry.style.marginBottom = '2px';
-            logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> <span style="color: #aaa;">[${source}]</span> <span style="${colorClass}">${message}</span>`;
-            
-            logsDisplay.appendChild(logEntry);
-            logsLineCount++;
-            
-            // 自动滚动到底部
-            logsDisplay.scrollTop = logsDisplay.scrollHeight;
-            
-            // 限制显示的行数，防止内存占用过多
-            const maxLines = 1000;
-            if (logsDisplay.children.length > maxLines) {
-                logsDisplay.removeChild(logsDisplay.firstChild);
-            }
-            
-            updateLogsStatus();
-        }
-
-        // 清空日志显示
-        function clearLogsDisplay() {
-            const logsDisplay = document.getElementById('logs-display');
-            logsDisplay.innerHTML = '';
-            logsLineCount = 0;
-            updateLogsStatus();
-        }
-
-        // 更新日志状态显示
-        function updateLogsStatus() {
-            const statusBadge = document.getElementById('logs-connection-status');
-            const linesCount = document.getElementById('logs-lines-count');
-            
-            if (isLogsConnected) {
-                statusBadge.textContent = '已连接';
-                statusBadge.className = 'badge bg-green';
-            } else {
-                statusBadge.textContent = '未连接';
-                statusBadge.className = 'badge bg-red';
-            }
-            
-            linesCount.textContent = `${logsLineCount} 行`;
-        }
-
         setInterval(updateLoop, 3000);
         updateLoop();
     </script>
@@ -1271,178 +759,11 @@ def api_update_config():
         log_file.write(log_message + '\n')
     return jsonify(success=False, message="Invalid JSON data"), 400
 
-# 对话历史API端点
-@app.route('/api/chat/sessions', methods=['GET'])
-def api_get_chat_sessions():
-    """获取所有聊天会话列表"""
-    try:
-        # 确保对话历史表已初始化
-        init_chat_history_db()
-        sessions = get_chat_sessions()
-        return jsonify(sessions)
-    except Exception as e:
-        return jsonify(error=str(e)), 500
-
-@app.route('/api/chat/session/<session_id>', methods=['GET'])
-def api_get_chat_session(session_id):
-    """获取特定聊天会话的所有消息"""
-    try:
-        # 确保对话历史表已初始化
-        init_chat_history_db()
-        messages = get_chat_session_messages(session_id)
-        return jsonify(messages)
-    except Exception as e:
-        return jsonify(error=str(e)), 500
-
-@app.route('/api/chat/session', methods=['POST'])
-def api_save_chat_session():
-    """保存聊天会话"""
-    try:
-        # 确保对话历史表已初始化
-        init_chat_history_db()
-        
-        data = request.get_json(silent=True)
-        if not data or 'session_id' not in data or 'chat_data' not in data:
-            return jsonify(success=False, message="Missing required fields: session_id, chat_data"), 400
-        
-        session_id = data['session_id']
-        chat_data = data['chat_data']
-        
-        success = save_chat_session(session_id, chat_data)
-        if success:
-            return jsonify(success=True, message="Chat session saved successfully")
-        else:
-            return jsonify(success=False, message="Failed to save chat session"), 500
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
-
-@app.route('/api/chat/session/<session_id>', methods=['DELETE'])
-def api_delete_chat_session(session_id):
-    """删除特定聊天会话"""
-    try:
-        # 确保对话历史表已初始化
-        init_chat_history_db()
-        
-        success = delete_chat_session(session_id)
-        if success:
-            return jsonify(success=True, message="Chat session deleted successfully")
-        else:
-            return jsonify(success=False, message="Failed to delete chat session"), 500
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
-
-# SSE日志流接口
-@app.route('/logs/stream')
-def stream_logs():
-    """SSE日志流接口，实时传递服务端日志"""
-    def generate():
-        # 确定日志文件路径，先尝试CONFIG中的路径，然后尝试常见位置
-        log_paths = [
-            CONFIG["LOG_FILE_PATH"],
-            "transcribe.log",
-            "asr_server.log",
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "transcribe.log"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "asr_server.log")
-        ]
-        
-        log_path = None
-        for path in log_paths:
-            if os.path.exists(path):
-                log_path = path
-                break
-        
-        # 如果没有找到日志文件，使用默认路径
-        if not log_path:
-            log_path = "transcribe.log"
-            # 尝试创建一个空日志文件
-            try:
-                with open(log_path, 'w', encoding='utf-8') as f:
-                    f.write(f"# 日志文件创建于 {datetime.datetime.now()}\n")
-            except:
-                pass
-        
-        # 获取日志文件的初始大小
-        last_size = 0
-        try:
-            if os.path.exists(log_path):
-                last_size = os.path.getsize(log_path)
-        except:
-            pass
-        
-        # 发送连接确认
-        yield f"data: {json.dumps({'type': 'connected', 'message': f'已连接到日志流: {log_path}'})}\n\n"
-        
-        # 读取最后几行作为初始内容
-        try:
-            if os.path.exists(log_path) and last_size > 0:
-                with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = f.readlines()
-                    # 只发送最后10行作为初始内容
-                    for line in lines[-10:]:
-                        if line.strip():  # 只发送非空行
-                            yield f"data: {json.dumps({'type': 'log', 'message': line.strip()})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'读取初始日志内容失败: {str(e)}'})}\n\n"
-        
-        # 持续监控日志文件
-        last_heartbeat = time.time()
-        while True:
-            try:
-                current_time = time.time()
-                
-                # 每30秒发送一次心跳
-                if current_time - last_heartbeat > 30:
-                    yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': int(current_time)})}\n\n"
-                    last_heartbeat = current_time
-                
-                # 检查文件是否存在
-                if os.path.exists(log_path):
-                    try:
-                        current_size = os.path.getsize(log_path)
-                        
-                        # 如果文件大小增加，读取新内容
-                        if current_size > last_size:
-                            with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                f.seek(last_size)
-                                new_lines = f.readlines()
-                                for line in new_lines:
-                                    if line.strip():  # 只发送非空行
-                                        yield f"data: {json.dumps({'type': 'log', 'message': line.strip()})}\n\n"
-                            last_size = current_size
-                    except Exception as e:
-                        yield f"data: {json.dumps({'type': 'error', 'message': f'读取新日志内容失败: {str(e)}'})}\n\n"
-                else:
-                    # 文件不存在，尝试重新创建
-                    try:
-                        with open(log_path, 'w', encoding='utf-8') as f:
-                            f.write(f"# 日志文件重新创建于 {datetime.datetime.now()}\n")
-                        last_size = 0
-                        yield f"data: {json.dumps({'type': 'info', 'message': '日志文件已重新创建'})}\n\n"
-                    except Exception as e:
-                        yield f"data: {json.dumps({'type': 'error', 'message': f'无法创建日志文件: {str(e)}'})}\n\n"
-                
-                # 短暂休眠，减少CPU使用
-                time.sleep(1)
-                
-            except GeneratorExit:
-                # 客户端断开连接
-                break
-            except Exception as e:
-                # 发送错误信息
-                yield f"data: {json.dumps({'type': 'error', 'message': f'日志监控错误: {str(e)}'})}\n\n"
-                time.sleep(5)  # 出错时等待更长时间
-    
-    return Response(generate(), mimetype='text/event-stream')
-
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE, CONFIG=CONFIG)
+    return render_template_string(HTML_TEMPLATE)
 
 if __name__ == "__main__":
     args = parse_args()
     update_config(args)
-    
-    # 初始化对话历史数据库表
-    init_chat_history_db()
-    
     app.run(host='0.0.0.0', port=CONFIG["WEB_PORT"], debug=False)

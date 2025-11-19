@@ -1,6 +1,5 @@
 {
   "ASR_API_URL": "http://192.168.1.111:5008/transcribe",
-  "ASR_LOG_STREAM_URL": "http://192.168.1.111:5008/logs/stream",
   "SOURCE_DIR": "/volume2/download/records/Sony-2",
   "TRANSCRIPT_DIR": "/volume2/download/records/Sony-2/transcripts",
   "PROCESSED_DIR": "/volume2/download/records/Sony-2/processed",
