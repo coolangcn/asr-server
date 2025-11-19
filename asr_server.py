@@ -258,14 +258,21 @@ def extract_embedding_from_file(sv_pipe, wav_path):
 # =================== 多模型交叉验证 ===================
 def identify_speaker_fusion(segment_path):
     if not speaker_db: 
-        return None, 0.0
+        logger.info("🤷‍♂️ 声纹数据库为空，无法进行识别")
+        return None, 0.0, []
 
     model_votes = {}
     model_scores = {}
 
+    logger.info(f"🎯 开始声纹识别: 音频段路径={segment_path}")
+    logger.info(f"📋 声纹数据库包含 {len(speaker_db)} 个说话人")
+
     for model_name, sv_pipe in sv_pipelines.items():
+        logger.info(f"🔍 开始使用模型: {model_name}")
+        
         emb_a = extract_embedding_from_file(sv_pipe, segment_path)
         if emb_a is None:
+            logger.error(f"❌ 模型 {model_name} 特征提取失败")
             model_votes[model_name] = "Failed"
             continue
 
@@ -273,6 +280,7 @@ def identify_speaker_fusion(segment_path):
         conf = Config.SV_MODELS[model_name]
         threshold = conf['threshold']
         gap = conf['gap']
+        logger.info(f"📌 模型 {model_name} 阈值: {threshold}, 置信度间隔: {gap}")
 
         for name, speaker_data in speaker_db.items():
             # 使用平均嵌入进行比较
@@ -281,8 +289,10 @@ def identify_speaker_fusion(segment_path):
             emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
             score = 1 - cosine(emb_a.flatten(), emb_b)
             scores.append((name, score))
+            logger.info(f"💯 模型 {model_name} 与说话人 {name} 的相似度: {score:.6f}")
 
         if not scores:
+            logger.warning(f"⚠️ 模型 {model_name} 未找到匹配的说话人数据")
             model_votes[model_name] = "NoDB"
             continue
 
@@ -290,22 +300,50 @@ def identify_speaker_fusion(segment_path):
         top1_name, top1_score = scores[0]
         top2_name, top2_score = scores[1] if len(scores) > 1 else (None, 0.0)
         score_gap = top1_score - top2_score
+        
+        logger.info(f"🏆 模型 {model_name} 识别结果: 第一名 {top1_name} (得分: {top1_score:.6f}), 第二名 {top2_name} (得分: {top2_score:.6f}), 差距: {score_gap:.6f}")
 
         if top1_score >= threshold and score_gap >= gap:
             model_votes[model_name] = top1_name
             model_scores[model_name] = top1_score
+            logger.info(f"✅ 模型 {model_name} 验证通过: {top1_name} (得分: {top1_score:.6f} ≥ 阈值 {threshold})")
         else:
             model_votes[model_name] = "Unknown"
             model_scores[model_name] = top1_score
+            reason = []
+            if top1_score < threshold:
+                reason.append(f"得分 {top1_score:.6f} < 阈值 {threshold}")
+            if score_gap < gap:
+                reason.append(f"差距 {score_gap:.6f} < 置信度间隔 {gap}")
+            logger.info(f"❌ 模型 {model_name} 验证失败: {', '.join(reason)}")
 
+    logger.info(f"📊 多模型投票结果: {model_votes}")
     votes = list(model_votes.values())
-    first_vote = votes[0]
+    first_vote = votes[0] if votes else ""
+    
     if first_vote not in ["Unknown", "Failed", "NoDB"] and all(v == first_vote for v in votes):
         avg_confidence = np.mean(list(model_scores.values()))
-        logger.info(f"🔍 交叉验证成功: [{first_vote}] | Avg_Score: {avg_confidence:.3f} | Votes: {votes}")
-        return first_vote, avg_confidence
+        logger.info(f"🎉 交叉验证成功: [{first_vote}] | 平均置信度: {avg_confidence:.3f} | 所有模型一致同意")
+        # 生成识别过程详细信息
+        recognition_details = []
+        for model_name, result in model_votes.items():
+            if result in ["Unknown", "Failed", "NoDB"]:
+                recognition_details.append(f"模型 {model_name}: {result}")
+            else:
+                recognition_details.append(f"模型 {model_name}: 识别为 {result} (相似度: {model_scores[model_name]:.6f})")
+        recognition_details.append(f"最终识别结果: {first_vote} (平均置信度: {avg_confidence:.3f})")
+        
+        return first_vote, avg_confidence, recognition_details
     else:
-        return None, 0.0
+        # 生成识别失败的详细信息
+        recognition_details = []
+        for model_name, result in model_votes.items():
+            if result in ["Unknown", "Failed", "NoDB"]:
+                recognition_details.append(f"模型 {model_name}: {result}")
+        recognition_details.append(f"最终识别结果: 识别失败，模型投票不一致或识别失败")
+        
+        logger.info(f"❌ 交叉验证失败: 模型投票不一致或识别失败")
+        return None, 0.0, []
 
 # =================== Flask 接口 ===================
 @app.route("/")
@@ -656,14 +694,15 @@ def transcribe_audio():
                         seg_wav = os.path.join(tempfile.gettempdir(), f"seg_{start}_{int(time.time())}.wav")
                         if extract_segment(proc_temp, start, end, seg_wav):
                             temp_files.append(seg_wav)
-                            identity, confidence = identify_speaker_fusion(seg_wav)
+                            identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
 
                     if Config.ONLY_REGISTERED_SPEAKERS and identity is None: continue
                     
                     processed_segments.append({
                         "text": clean_text, "start": start, "end": end,
                         "spk": identity or "Unknown", "emotion": emotion,
-                        "confidence": float(f"{confidence:.3f}")
+                        "confidence": float(f"{confidence:.3f}"),
+                        "recognition_details": recognition_details
                     })
 
                 segments = processed_segments

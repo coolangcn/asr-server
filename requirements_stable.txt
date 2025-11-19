@@ -1,6 +1,6 @@
-# 核心依赖（固定版本）
+# 核心依赖（本地环境版本）
 modelscope==1.9.5
-funasr==1.1.10
+# funasr包本地未安装，保留原始版本
 datasets==2.14.6
 huggingface_hub==0.20.3
 
@@ -15,13 +15,17 @@ werkzeug==3.0.2
 # 语音处理
 soundfile==0.12.1
 librosa==0.10.1
-torchaudio==2.2.2
+# torchaudio未在本地环境中找到，保留原始版本
 
 # PyTorch（请替换成你 CUDA 对应版本）
-torch==2.2.2
+# torch未在本地环境中找到，保留原始版本
+# torch==2.2.2
 # 如果你是 CUDA 11.8，用这行：
 # torch==2.2.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html
 
 # 工具
 tqdm==4.66.2
 requests==2.31.0
+
+# 本地环境额外的相关包
+audioread==3.1.0
