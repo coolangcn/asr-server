@@ -721,5 +721,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     load_models()
-    print("🎉 服务启动成功！请访问 http://127.0.0.1:5008/register_page 进行声纹注册。")
+    print("🎉 服务启动成功！")
+    print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")
+    print("📌 语音转录API: http://127.0.0.1:5008/transcribe")
+    print("🔧 API使用方法: POST请求，参数名 'audio_file'，上传音频文件")
+    print("🔍 示例命令: curl -X POST -F \"audio_file=@your_audio.wav\" http://127.0.0.1:5008/transcribe")
     app.run(host=Config.HOST, port=Config.PORT, debug=False, threaded=True)
