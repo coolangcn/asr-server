@@ -11,6 +11,8 @@ from modelscope.utils.constant import Tasks
 import torch
 import torchaudio
 import shutil
+import re
+from collections import Counter
 
 # =================【 配置 】=================
 class Config:
@@ -19,7 +21,7 @@ class Config:
     PORT = 5008
     SPEAKER_DB_FILE = "speaker_db_multi.json"
     
-    ONLY_REGISTERED_SPEAKERS = True
+    ONLY_REGISTERED_SPEAKERS = False
     ASR_MODEL = "iic/SenseVoiceSmall"
     
     SV_MODELS = {
@@ -135,7 +137,19 @@ def load_models():
 
     # 2. 加载 ASR (FunASR)
     print(f"🧠 加载 ASR: {Config.ASR_MODEL} ...")
-    asr_pipeline = AutoModel(model=Config.ASR_MODEL, trust_remote_code=True, device=Config.DEVICE, disable_update=True)
+    asr_pipeline = AutoModel(
+        model=Config.ASR_MODEL, 
+        vad_model="fsmn-vad",
+        vad_kwargs={
+            "max_single_segment_time": 30000,
+            "max_end_silence_time": 800,
+            "sil_to_speech_time_thres": 50,
+            "speech_to_sil_time_thres": 150
+        },
+        trust_remote_code=True, 
+        device=Config.DEVICE, 
+        disable_update=True
+    )
 
     # 3. 加载 SV 模型
     for name, conf in Config.SV_MODELS.items():
@@ -357,31 +371,43 @@ def identify_speaker_fusion(segment_path):
             logger.info(f"❌ 模型 {model_name} 验证失败: {', '.join(reason)}")
 
     logger.info(f"📊 多模型投票结果: {model_votes}")
-    votes = list(model_votes.values())
-    first_vote = votes[0] if votes else ""
     
-    if first_vote not in ["Unknown", "Failed", "NoDB"] and all(v == first_vote for v in votes):
-        avg_confidence = np.mean(list(model_scores.values()))
-        logger.info(f"🎉 交叉验证成功: [{first_vote}] | 平均置信度: {avg_confidence:.3f} | 所有模型一致同意")
-        # 生成识别过程详细信息
+    # 2/3投票逻辑
+    votes = [v for v in model_votes.values() if v not in ["Unknown", "Failed", "NoDB"]]
+    if not votes:
+        logger.info("❌ 交叉验证失败: 所有模型均未识别出有效候选人")
+        return None, 0.0, []
+
+    vote_counts = Counter(votes)
+    most_common_vote = vote_counts.most_common(1)[0]
+    winner, count = most_common_vote
+    
+    # 至少需要2票
+    if count >= 2:
+        # 计算获胜者的平均置信度
+        winning_scores = [model_scores[model] for model, vote in model_votes.items() if vote == winner]
+        avg_confidence = np.mean(winning_scores)
+        
+        logger.info(f"🎉 交叉验证成功 (多数票): [{winner}] 获得 {count} 票 | 平均置信度: {avg_confidence:.3f}")
+        
+        # 生成详细信息
         recognition_details = []
         for model_name, result in model_votes.items():
             if result in ["Unknown", "Failed", "NoDB"]:
                 recognition_details.append(f"模型 {model_name}: {result}")
             else:
-                recognition_details.append(f"模型 {model_name}: 识别为 {result} (相似度: {model_scores[model_name]:.6f})")
-        recognition_details.append(f"最终识别结果: {first_vote} (平均置信度: {avg_confidence:.3f})")
+                recognition_details.append(f"模型 {model_name}: 识别为 {result} (相似度: {model_scores.get(model_name, 0):.6f})")
+        recognition_details.append(f"最终识别结果: {winner} (多数票: {count} 票, 平均置信度: {avg_confidence:.3f})")
         
-        return first_vote, avg_confidence, recognition_details
+        return winner, avg_confidence, recognition_details
     else:
         # 生成识别失败的详细信息
         recognition_details = []
         for model_name, result in model_votes.items():
-            if result in ["Unknown", "Failed", "NoDB"]:
-                recognition_details.append(f"模型 {model_name}: {result}")
-        recognition_details.append(f"最终识别结果: 识别失败，模型投票不一致或识别失败")
+            recognition_details.append(f"模型 {model_name}: {result} (相似度: {model_scores.get(model_name, 0):.6f})")
+        recognition_details.append("最终识别结果: 识别失败，没有候选人获得足够票数 (多数票 ≥ 2)")
         
-        logger.info(f"❌ 交叉验证失败: 模型投票不一致或识别失败")
+        logger.info(f"❌ 交叉验证失败: 没有候选人获得足够票数 (多数票 ≥ 2)")
         return None, 0.0, []
 
 # =================== Flask 接口 ===================
@@ -712,7 +738,9 @@ def transcribe_audio():
             if res and isinstance(res, list) and len(res) > 0:
                 item = res[0]
                 full_text = item.get("text", "")
-                raw_segments = item.get("sentence_info", [{"text": full_text, "start": 0, "end": int(audio_duration * 1000)}])
+                raw_segments = item.get("sentence_info", [])
+                if not raw_segments and full_text:
+                    raw_segments = [{"text": full_text, "start": 0, "end": int(audio_duration * 1000)}]
 
                 processed_segments = []
                 for seg in raw_segments:
@@ -720,15 +748,24 @@ def transcribe_audio():
                     start, end = seg.get("start", 0), seg.get("end", 0)
                     if any(tag in raw_text for tag in INVALID_TAGS): continue
 
-                    emotion = next((emo_code for tag, emo_code in EMOTION_TAGS.items() if tag in raw_text), "neutral")
+                    # Case-insensitive emotion detection
+                    emotion = "neutral"
+                    raw_text_lower = raw_text.lower()
+                    for tag, emo_code in EMOTION_TAGS.items():
+                        if tag.lower() in raw_text_lower:
+                            emotion = emo_code
+                            if "laughter" in tag.lower():
+                                emotion = "laughter" # Prioritize laughter
+                                break
+                    if "<|cry|>" in raw_text_lower:
+                        emotion = "sad"
 
-                    clean_text = raw_text
-                    for tag in (list(EMOTION_TAGS.keys()) + list(INVALID_TAGS) + ["<|zh|>", "<|en|>", "<|yue|>", "<|withitn|>", "<|speech|>"]):
-                        clean_text = clean_text.replace(tag, "")
-                    clean_text = clean_text.strip()
+                    # Case-insensitive, universal tag removal
+                    clean_text = re.sub(r'<\|.*?\|>', '', raw_text).replace(" ", "").strip()
                     if not clean_text: continue
 
                     identity, confidence = None, 0.0
+                    recognition_details = []
                     if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
                         seg_wav = os.path.join(tempfile.gettempdir(), f"seg_{start}_{int(time.time())}.wav")
                         if extract_segment(proc_temp, start, end, seg_wav):
@@ -745,8 +782,7 @@ def transcribe_audio():
                     })
 
                 segments = processed_segments
-                if Config.ONLY_REGISTERED_SPEAKERS:
-                    full_text = "".join([s["text"] for s in segments])
+                full_text = "".join([s["text"] for s in segments]) # Reconstruct from clean segments
 
             process_time = time.time() - request_start
             rtf = process_time / audio_duration if audio_duration > 0 else 0
@@ -754,7 +790,7 @@ def transcribe_audio():
             # RTF < 1表示可以实时处理，RTF越低系统性能越好
             logger.info(f"✅ 完成! 音频:{audio_duration:.1f}s | 耗时:{process_time:.2f}s | RTF:{rtf:.3f} (RTF < 1表示可实时处理，值越低性能越好)")
 
-            return jsonify({
+            response_data = {
                 "full_text": full_text,
                 "segments": segments,
                 "meta": {
@@ -763,7 +799,9 @@ def transcribe_audio():
                     "rtf": rtf,
                     "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
                 }
-            })
+            }
+            logger.info(f"📤 返回 /transcribe 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            return jsonify(response_data)
 
         except Exception as e:
             logger.error(f"❌ 处理异常: {str(e)}")
@@ -836,7 +874,7 @@ def diarize():
                 language="auto",
                 use_itn=True,
                 use_punc=True,
-                batch_size_s=60 
+                batch_size_s=60
             )
 
             if not res or not isinstance(res, list) or len(res) == 0:
@@ -860,6 +898,7 @@ def diarize():
                 start_ms = int(seg.get("start", 0))
                 end_ms = int(seg.get("end", 0))
                 text = seg.get("text", "").strip()
+                text = text.replace(" ", "")
                 asr_spk_id = seg.get("speaker", "spk0") # ASR 返回的临时说话人 ID
                 
                 # 跳过空文本
@@ -905,9 +944,11 @@ def diarize():
 
             logger.info(f"✅ 说话人区分完成: {len(diarized_output)} 个有效分段")
 
-            return jsonify({
+            response_data = {
                 "diarization": diarized_output
-            })
+            }
+            logger.info(f"📤 返回 /diarize 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            return jsonify(response_data)
 
         except Exception as e:
             logger.error(f"❌ 说话人区分异常: {str(e)}")

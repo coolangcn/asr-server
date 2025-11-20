@@ -353,7 +353,7 @@ def process_one_loop():
                     
                     # === Fallback Logic ===
                     result_data = transcribe_wav(wav_path)
-                    if not result_data:
+                    if not result_data or not result_data.get("segments"):
                         print("  [Failed] 普通转录也失败，跳过此文件")
                         notify_n8n("failed", filename, "说话人分离和普通转录均失败")
                         continue
