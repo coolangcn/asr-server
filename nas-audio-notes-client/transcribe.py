@@ -9,13 +9,45 @@ import datetime
 import time
 import argparse
 import re
+import shutil
+import sys
 from db_manager import init_pool, init_db, save_to_db, close_pool
+
+# --- Logging Setup ---
+class Tee(object):
+    def __init__(self, name, mode):
+        self.file = open(name, mode, encoding='utf-8', buffering=1)
+        self.stdout = sys.stdout
+        sys.stdout = self
+
+    def __del__(self):
+        sys.stdout = self.stdout
+        self.file.close()
+
+    def write(self, data):
+        self.file.write(data)
+        self.stdout.write(data)
+        self.flush()
+
+    def flush(self):
+        self.file.flush()
+        self.stdout.flush()
+
+# Redirect stdout and stderr to log file
+log_file = "transcribe.log"
+# Only redirect if not already redirected (to avoid recursion if script reloads)
+if not isinstance(sys.stdout, Tee):
+    sys.stdout = Tee(log_file, "a")
+    sys.stderr = sys.stdout
+# ---------------------
 
 # ---------------- 配置 ----------------
 CONFIG_FILE = "config.json"
 
 DEFAULT_CONFIG = {
     "ASR_API_URL": "http://192.168.1.111:5008/transcribe",
+    "DIARIZE_API_URL": "http://192.168.1.111:5008/diarize",
+    "USE_DIARIZE": False,
     "SOURCE_DIR": "V:\\Sony-2",
     "TRANSCRIPT_DIR": "V:\\Sony-2\\transcripts",
     "PROCESSED_DIR": "V:\\Sony-2\\processed",
@@ -38,6 +70,7 @@ SUPPORTED_EXTENSIONS = ('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg', '.flac')
 def parse_args():
     parser = argparse.ArgumentParser(description='音频转录脚本')
     parser.add_argument('--source-path', type=str, help='源音频文件路径')
+    parser.add_argument('--use-diarize', action='store_true', help='启用说话人分离功能')
     return parser.parse_args()
 
 def update_config(args):
@@ -48,6 +81,10 @@ def update_config(args):
         CONFIG["TRANSCRIPT_DIR"] = os.path.join(base_path, "transcripts")
         CONFIG["PROCESSED_DIR"] = os.path.join(base_path, "processed")
         print(f"[配置] 使用自定义源路径: {base_path}")
+    
+    if args.use_diarize:
+        CONFIG["USE_DIARIZE"] = True
+        print(f"[配置] 已启用说话人分离功能")
 
 # ---------------- 工具函数 ----------------
 def format_time(ms):
@@ -89,8 +126,13 @@ def convert_audio_to_wav(audio_path, wav_path):
         subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         return True
     except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.decode().strip() if e.stderr else "Unknown error"
-        print(f"  [Convert Error] ffmpeg 转换失败: {error_msg[:200]}...")
+        error_msg = e.stderr.decode('utf-8', 'ignore').strip() if e.stderr else "Unknown error"
+        if "moov atom not found" in error_msg:
+            print("  [Convert Error] ffmpeg 转换失败. 原因: 文件已损坏或未完成录制 (moov atom not found).")
+        elif "Decoding requested, but no decoder found" in error_msg:
+            print("  [Convert Error] ffmpeg 转换失败. 原因: 文件不包含有效的音频流.")
+        else:
+            print(f"  [Convert Error] ffmpeg 转换失败. 详细错误: ... {error_msg[-500:]}")
         return False
     except Exception as e:
         print(f"  [Convert Error] {e}")
@@ -124,6 +166,56 @@ def save_transcript_with_spk(full_text, segments, txt_path):
         print(f"  [Save TXT Error] {e}")
         return False
 
+def save_diarize_result(diarization_data, txt_path):
+    """保存diarize结果到文本文件"""
+    try:
+        content_lines = []
+        content_lines.append("=== 说话人分离结果 ===\n")
+        
+        diarization = diarization_data.get('diarization', [])
+        if not diarization:
+            content_lines.append("未检测到说话人分段数据")
+        else:
+            # 按时间排序
+            diarization_sorted = sorted(diarization, key=lambda x: x.get('start_ms', 0))
+            
+            # 统计每个说话人的发言次数
+            speaker_stats = {}
+            for seg in diarization_sorted:
+                speaker = seg.get('speaker', 'Unknown')
+                speaker_stats[speaker] = speaker_stats.get(speaker, 0) + 1
+            
+            # 显示说话人统计
+            content_lines.append("=== 说话人统计 ===")
+            for speaker, count in speaker_stats.items():
+                content_lines.append(f"{speaker}: {count} 段发言")
+            content_lines.append("")
+            
+            # 显示详细分段
+            content_lines.append("=== 详细分段 ===")
+            for seg in diarization_sorted:
+                speaker = seg.get('speaker', 'Unknown')
+                text = seg.get('text', '').strip()
+                start_ms = seg.get('start_ms', 0)
+                end_ms = seg.get('end_ms', 0)
+                
+                start_str = format_time(start_ms)
+                end_str = format_time(end_ms)
+                
+                if text:
+                    line = f"[{start_str} - {end_str}] [{speaker}]: {text}"
+                    content_lines.append(line)
+                else:
+                    line = f"[{start_str} - {end_str}] [{speaker}]: [无声/非语音]"
+                    content_lines.append(line)
+        
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write("\n".join(content_lines))
+        return True
+    except Exception as e:
+        print(f"  [Save Diarize TXT Error] {e}")
+        return False
+
 # ---------------- 调用服务端 ----------------
 def transcribe_wav(wav_path):
     url = CONFIG["ASR_API_URL"]
@@ -139,6 +231,7 @@ def transcribe_wav(wav_path):
                 response = requests.post(url, files=files, timeout=3600)
             response.raise_for_status()
             data = response.json()
+            print(f"  [Info] 服务端返回 {len(data.get('segments', []))} 个语音分段。")
             if "error" in data:
                 print(f"  [Server Error] {data['error']}")
                 return None
@@ -155,6 +248,39 @@ def transcribe_wav(wav_path):
     print("  [Failed] 重试次数耗尽，跳过此文件")
     return None
 
+def diarize_wav(wav_path):
+    """调用服务端的diarize接口进行说话人分离"""
+    url = CONFIG["DIARIZE_API_URL"]
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with open(wav_path, 'rb') as f:
+                files = {'audio': (os.path.basename(wav_path), f, 'audio/wav')}
+                if attempt > 0:
+                    print(f"  [Diarize] 网络波动，正在重试 ({attempt+1}/{max_retries})...")
+                else:
+                    print(f"  [Diarize] 正在上传并等待说话人分离结果...")
+                response = requests.post(url, files=files, timeout=3600)
+            response.raise_for_status()
+            data = response.json()
+            if "error" in data:
+                print(f"  [Diarize Server Error] {data['error']}")
+                return None
+            print(f"  [Diarize Info] 服务端返回 {len(data.get('diarization', []))} 个说话人分段。")
+            return data
+        except requests.exceptions.ConnectionError:
+            print(f"  [Diarize Connection Error] 无法连接服务端，等待 5秒 后重试...")
+            time.sleep(5)
+        except requests.exceptions.Timeout:
+            print(f"  [Diarize Timeout] 请求超时，服务端仍在处理。")
+            return None
+        except Exception as e:
+            print(f"  [Diarize Request Error] {e}")
+            return None
+    print("  [Diarize Failed] 重试次数耗尽，跳过此文件")
+    return None
+
+# ---------------- 处理循环 ----------------
 # ---------------- 处理循环 ----------------
 def process_one_loop():
     processed_count = 0
@@ -169,26 +295,118 @@ def process_one_loop():
     for filename in files:
         print(f"\n>>> 处理: {filename}")
         audio_path = os.path.join(CONFIG["SOURCE_DIR"], filename)
+
+        # 在处理前再次确认文件是否存在，防止文件被移动或删除
+        if not os.path.exists(audio_path):
+            print(f"  [Error] 文件在处理前消失: {filename}。可能已被移动或删除，已跳过。")
+            continue
+
         base_name = os.path.splitext(filename)[0]
         wav_path = os.path.join(CONFIG["SOURCE_DIR"], f"{base_name}_TEMP.wav")
         txt_path = os.path.join(CONFIG["TRANSCRIPT_DIR"], f"{base_name}.txt")
         processed_audio_path = os.path.join(CONFIG["PROCESSED_DIR"], filename)
         try:
             if not convert_audio_to_wav(audio_path, wav_path): continue
-            result_data = transcribe_wav(wav_path)
-            if not result_data: continue
-            full_text = result_data.get("full_text", "")
-            segments = result_data.get("segments", [])
-            filtered_segments = [seg for seg in segments if seg.get("text","").strip()]
-            save_transcript_with_spk(full_text, filtered_segments, txt_path)
-            save_to_db(filename, full_text, filtered_segments)
+            
+            # 根据配置选择使用普通转录还是说话人分离
+            if CONFIG["USE_DIARIZE"]:
+                print(f"  使用说话人分离模式处理音频")
+                diarize_data = diarize_wav(wav_path)
+                
+                # 说话人分离成功后的处理
+                if diarize_data and diarize_data.get("diarization"):
+                    diarization = diarize_data.get("diarization", [])
+                    
+                    # 额外统计命名说话人，增强日志
+                    named_speakers = set(seg.get("speaker") for seg in diarization if seg.get("speaker") != "Unknown")
+                    print(f"  [Diarize Success] 共识别 {len(diarization)} 个分段，其中命名说话人: {', '.join(named_speakers) if named_speakers else '无'}")
+
+                    # === Normal Diarization Success Logic ===
+                    # 保存diarize结果
+                    save_diarize_result(diarize_data, txt_path)
+                    
+                    # 获取所有文本用于数据库存储
+                    full_text = " ".join([seg.get("text", "").strip() for seg in diarization if seg.get("text", "").strip()])
+                    
+                    # 转换格式以兼容数据库存储
+                    segments = []
+                    for seg in diarization:
+                        if seg.get("text", "").strip():
+                            segments.append({
+                                "text": seg.get("text", "").strip(),
+                                # 客户端信任服务端返回的 start_ms/end_ms
+                                "start": seg.get("start_ms", 0), 
+                                "end": seg.get("end_ms", 0),
+                                "spk": seg.get("speaker", "Unknown"),
+                                "emotion": "neutral"
+                            })
+                    
+                    # 保存到数据库
+                    save_to_db(filename, full_text, segments)
+                    
+                    print(f"  [完成] 说话人分离结果已保存 -> {txt_path}")
+                    notify_n8n("success", filename, f"说话人分离完成，共{len(segments)}个分段 ({len(named_speakers)}个命名说话人)")
+                
+                # 说话人分离失败时的降级处理
+                else:
+                    print("  [Info] 服务端没有返回有效的说话人分离结果 (0分段)，尝试降级为普通转录...")
+                    
+                    # === Fallback Logic ===
+                    result_data = transcribe_wav(wav_path)
+                    if not result_data:
+                        print("  [Failed] 普通转录也失败，跳过此文件")
+                        notify_n8n("failed", filename, "说话人分离和普通转录均失败")
+                        continue
+                        
+                    # Construct fallback segments from ASR result
+                    full_text = result_data.get("full_text", "")
+                    asr_segments = result_data.get("segments", [])
+                    
+                    # If ASR has no segments but has full_text, create a dummy segment
+                    if not asr_segments and full_text:
+                        asr_segments = [{"start": 0, "end": 0, "text": full_text}]
+                    
+                    # Convert ASR segments to the format expected by our DB and TXT saver
+                    fallback_segments = []
+                    for seg in asr_segments:
+                        fallback_segments.append({
+                            "start": seg.get("start", 0),
+                            "end": seg.get("end", 0),
+                            "text": seg.get("text", "").strip(),
+                            "spk": "Unknown",
+                            "emotion": "neutral"
+                        })
+                    
+                    save_transcript_with_spk(full_text, fallback_segments, txt_path)
+                    save_to_db(filename, full_text, fallback_segments)
+                    
+                    print(f"  [完成] (降级模式) 转录结果已保存 -> {txt_path}")
+                    notify_n8n("success", filename, f"[降级] {full_text[:100]}")
+            
+            # 标准转录模式 (USE_DIARIZE=False)
+            else:
+                print(f"  使用标准转录模式处理音频")
+                result_data = transcribe_wav(wav_path)
+                if not result_data or not result_data.get("segments"):
+                    print("  [Info] 服务端没有返回有效的语音分段，已跳过。")
+                    notify_n8n("skipped", filename, "服务端没有返回有效的语音分段")
+                    continue
+
+                full_text = result_data.get("full_text", "")
+                segments = result_data.get("segments", [])
+                filtered_segments = [seg for seg in segments if seg.get("text","").strip()]
+                save_transcript_with_spk(full_text, filtered_segments, txt_path)
+                save_to_db(filename, full_text, filtered_segments)
+                print(f"  [完成] 转录结果已保存 -> {txt_path}")
+                notify_n8n("success", filename, full_text[:100])
+            
+            # 移动已处理的音频文件
             if os.path.exists(processed_audio_path): os.remove(processed_audio_path)
             os.rename(audio_path, processed_audio_path)
-            print(f"  [完成] 已归档 -> {processed_audio_path}")
-            notify_n8n("success", filename, full_text[:100])
+            print(f"  [完成] 音频已归档 -> {processed_audio_path}")
             processed_count += 1
         except Exception as e:
-            print(f"  [异常] {e}")
+            print(f"  [异常] {e}")
         finally:
             if os.path.exists(wav_path): os.remove(wav_path)
     return processed_count

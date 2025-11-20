@@ -4,6 +4,7 @@
 import os
 import re
 import json
+import sys
 from flask import Flask, render_template_string, jsonify, request
 import datetime
 import requests
@@ -107,17 +108,22 @@ def get_system_status():
         if os.path.exists(log_path):
             # 读取最后 20 行
             try:
-                # 使用 tail 命令 (Linux/Mac)
-                cmd = f"tail -n 20 {log_path}" 
-                result = subprocess.check_output(cmd, shell=True).decode('utf-8')
-                # 添加当前时间戳
-                current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                status["last_log"] = f"[{current_time}] " + result
-            except:
-                # Windows 兼容或者是读文件失败，用 Python 读取
+                if sys.platform == "win32":
+                    # On Windows, read file directly
+                    with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        status["last_log"] = f"[{current_time}] " + "".join(lines[-20:])
+                else:
+                    # On other systems, use tail command
+                    cmd = f"tail -n 20 {log_path}"
+                    result = subprocess.check_output(cmd, shell=True).decode('utf-8')
+                    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    status["last_log"] = f"[{current_time}] " + result
+            except Exception:
+                # Fallback for any error (e.g., tail not found even on non-Windows)
                 with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
                     lines = f.readlines()
-                    # 添加当前时间戳
                     current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     status["last_log"] = f"[{current_time}] " + "".join(lines[-20:])
         else:
@@ -581,29 +587,51 @@ HTML_TEMPLATE = """
                 html += `<div class="file-separator">来源: ${item.filename} (${item.time_simple})</div>`;
 
                 if (item.segments && item.segments.length > 0) {
-                    item.segments.forEach(seg => {
-                        if (!hasMeaningfulContent(seg.text)) return; // 跳过无效气泡
+                    let currentSpkId = null;
+                    let currentGroup = [];
+
+                    const renderGroup = () => {
+                        if (currentGroup.length === 0) return;
                         
-                        const txt = cleanText(seg.text);
-                        const spkId = seg.spk_id !== undefined ? seg.spk_id : 0;
+                        const firstSeg = currentGroup[0];
+                        const spkId = firstSeg.spk_id !== undefined ? firstSeg.spk_id : 0;
                         let spkName = typeof spkId === 'number' ? `说话人 ${spkId}` : spkId;
                         let avatarIdx = getAvatarIndex(spkId);
                         
-                        // 截取名字的第一个字作为头像文字
                         let iconText = spkName;
                         if(iconText.length > 0) iconText = iconText.slice(0, 1);
-
+                        
+                        // Merge text
+                        const mergedText = currentGroup.map(s => cleanText(s.text)).join(" ");
+                        
                         html += `
                             <div class="chat-bubble-row">
                                 <div class="avatar avatar-${avatarIdx % 5}">${iconText}</div>
                                 <div class="bubble-content">
                                     <div class="speaker-name">${spkName}</div>
-                                    <div class="bubble">${txt}</div>
-                                    <div class="chat-time">${seg.start_fmt}</div>
+                                    <div class="bubble">${mergedText}</div>
+                                    <div class="chat-time">${firstSeg.start_fmt}</div>
                                 </div>
                             </div>
                         `;
+                    };
+
+                    item.segments.forEach(seg => {
+                        if (!hasMeaningfulContent(seg.text)) return; // 跳过无效气泡
+                        
+                        const thisSpkId = seg.spk_id !== undefined ? seg.spk_id : 0;
+                        
+                        if (currentGroup.length > 0 && thisSpkId !== currentSpkId) {
+                             renderGroup();
+                             currentGroup = [];
+                        }
+                        
+                        currentSpkId = thisSpkId;
+                        currentGroup.push(seg);
                     });
+                    
+                    // Render the last group
+                    renderGroup();
                 } else {
                     const txt = cleanText(item.full_text);
                     // 截取名字的第一个字作为头像文字

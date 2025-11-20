@@ -705,7 +705,7 @@ def transcribe_audio():
                 audio_duration = float(probe)
             except: pass
 
-            res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True)
+            res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True, use_punc=True)
             full_text = ""
             segments = []
 
@@ -800,6 +800,128 @@ def get_sample_audio(speaker_name, sample_id):
     except Exception as e:
         logger.error(f"获取样本音频文件失败: {str(e)}")
         return jsonify({"error": "Failed to retrieve sample audio"}), 500
+
+# 将此代码添加到 asr_server.py 的第 803 行之前 (在 @app.route("/logs/stream") 之前)
+
+@app.route("/diarize", methods=["POST"])
+def diarize():
+    """说话人区分接口 - 结合ASR分段和声纹识别"""
+    temp_files = []
+    
+    with gpu_lock:
+        try:
+            # 接收音频文件
+            if "audio" not in request.files:
+                return jsonify({"error": "No audio file uploaded"}), 400
+
+            audio_file = request.files["audio"]
+            
+            # 保存原始文件
+            raw_temp = os.path.join(tempfile.gettempdir(), f"diarize_raw_{int(time.time())}.wav")
+            audio_file.save(raw_temp)
+            temp_files.append(raw_temp)
+            
+            # 预处理音频
+            proc_temp = os.path.join(tempfile.gettempdir(), f"diarize_proc_{int(time.time())}.wav")
+            temp_files.append(proc_temp)
+            
+            if not preprocess_audio(raw_temp, proc_temp):
+                return jsonify({"error": "Audio preprocessing failed"}), 500
+
+            logger.info(f"📥 收到说话人区分请求")
+
+            # ASR 识别（FunASR SenseVoice 支持说话人切分）
+            res = asr_pipeline.generate(
+                input=proc_temp,
+                language="auto",
+                use_itn=True,
+                use_punc=True,
+                batch_size_s=60 
+            )
+
+            if not res or not isinstance(res, list) or len(res) == 0:
+                logger.warning("⚠️ ASR 未返回有效结果")
+                return jsonify({"diarization": []}), 200
+
+            item = res[0]
+            raw_segments = item.get("sentence_info", [])
+            
+            if not raw_segments:
+                logger.warning("⚠️ ASR 未返回任何分段")
+                return jsonify({"diarization": []}), 200
+
+            logger.info(f"🔍 ASR 返回 {len(raw_segments)} 个分段")
+
+            # 声纹识别 - 对每个说话人片段进行识别
+            diarized_output = []
+            speaker_map = {} # 缓存 ASR ID 到注册说话人名称的映射
+
+            for seg in raw_segments:
+                start_ms = int(seg.get("start", 0))
+                end_ms = int(seg.get("end", 0))
+                text = seg.get("text", "").strip()
+                asr_spk_id = seg.get("speaker", "spk0") # ASR 返回的临时说话人 ID
+                
+                # 跳过空文本
+                if not text:
+                    continue
+
+                # --- 修正后的说话人识别逻辑 (核心优化) ---
+                speaker_name = "Unknown"
+                
+                # 1. 尝试从缓存获取
+                if asr_spk_id in speaker_map:
+                    speaker_name = speaker_map[asr_spk_id]
+                else:
+                    # 2. 如果缓存中没有，进行声纹识别
+                    identity, confidence, details = None, 0.0, []
+                    
+                    # 只对足够长的片段进行声纹识别
+                    if (end_ms - start_ms) > Config.MIN_SPEAKER_DURATION_MS:
+                        seg_path = os.path.join(tempfile.gettempdir(), f"seg_{start_ms}_{end_ms}_{int(time.time())}.wav")
+                        
+                        if extract_segment(proc_temp, start_ms, end_ms, seg_path):
+                            temp_files.append(seg_path)
+                            logger.info(f"🕵️ 识别说话人片段: {asr_spk_id} ({start_ms}ms-{end_ms}ms)")
+                            identity, confidence, details = identify_speaker_fusion(seg_path)
+
+                    # 3. 缓存结果（无论成功失败，都进行缓存，防止重复识别）
+                    if identity and identity != "Unknown":
+                        speaker_name = identity
+                        speaker_map[asr_spk_id] = identity # 成功映射到注册名
+                        logger.info(f"🗺️ 映射成功并缓存: {asr_spk_id} -> {identity}")
+                    else:
+                        speaker_map[asr_spk_id] = "Unknown" # 失败或未知，缓存为 Unknown
+                        speaker_name = "Unknown"
+                        logger.info(f"🗺️ 映射失败/未知说话人，缓存为: {asr_spk_id} -> Unknown")
+                
+                
+                diarized_output.append({
+                    "speaker": speaker_name,
+                    "text": text,
+                    "start_ms": start_ms,
+                    "end_ms": end_ms
+                })
+
+            logger.info(f"✅ 说话人区分完成: {len(diarized_output)} 个有效分段")
+
+            return jsonify({
+                "diarization": diarized_output
+            })
+
+        except Exception as e:
+            logger.error(f"❌ 说话人区分异常: {str(e)}")
+            logger.error(traceback.format_exc())
+            return jsonify({"error": str(e)}), 500
+        finally:
+            # 清理临时文件
+            for f in temp_files:
+                if os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except:
+                        pass
+
 
 @app.route("/logs/stream")
 def stream_logs():

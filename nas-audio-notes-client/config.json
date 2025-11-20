@@ -1,5 +1,7 @@
 {
-  "ASR_API_URL": "http://192.168.1.111:5008/transcribe",
+  "ASR_API_URL": "http://127.0.0.1:5008/transcribe",
+  "DIARIZE_API_URL": "http://127.0.0.1:5008/diarize",
+  "USE_DIARIZE": true,
   "SOURCE_DIR": "V:\\Sony-2",
   "TRANSCRIPT_DIR": "V:\\Sony-2\\transcripts",
   "PROCESSED_DIR": "V:\\Sony-2\\processed",
