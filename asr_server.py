@@ -116,6 +116,13 @@ sse_handler.setLevel(logging.INFO)
 # 配置根日志记录器
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# 创建文件处理器，用于将日志写入文件
+file_handler = logging.FileHandler('asr-server.log', encoding='utf-8')
+file_handler.setFormatter(log_formatter)
+file_handler.setLevel(logging.INFO)
+logger.addHandler(file_handler) # 添加文件处理器
+
 logger.addHandler(console_handler)
 logger.addHandler(sse_handler)
 
@@ -722,64 +729,83 @@ def transcribe_audio():
             temp_files.append(proc_temp)
             
             logger.info(f"📥 收到转录任务: {file.filename}")
+            
+            logger.info("  [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...")
             if not preprocess_audio(raw_temp, proc_temp):
                 return jsonify({"error": "Audio preprocessing failed"}), 500
-            
+            logger.info("  [生命周期: 1. 音频预处理] 完成。")
+
             audio_duration = 0
             try:
                 probe = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', proc_temp])
                 audio_duration = float(probe)
             except: pass
 
+            logger.info("  [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...")
             res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True, use_punc=True)
+            logger.info(f"  [VAD 调试] FunASR generate() 原始返回: {json.dumps(res, ensure_ascii=False, indent=2)}")
             full_text = ""
             segments = []
 
             if res and isinstance(res, list) and len(res) > 0:
                 item = res[0]
                 full_text = item.get("text", "")
+                
                 raw_segments = item.get("sentence_info", [])
+                logger.info(f"  [生命周期: 2. VAD & ASR] 完成, VAD检出 {len(raw_segments)} 个分段。")
+
                 if not raw_segments and full_text:
                     raw_segments = [{"text": full_text, "start": 0, "end": int(audio_duration * 1000)}]
 
                 processed_segments = []
-                for seg in raw_segments:
-                    raw_text = seg.get("text", "")
-                    start, end = seg.get("start", 0), seg.get("end", 0)
-                    if any(tag in raw_text for tag in INVALID_TAGS): continue
+                
+                if raw_segments:
+                    logger.info("  [生命周期: 3. 逐段声纹识别] 开始...")
+                    for i, seg in enumerate(raw_segments):
+                        raw_text = seg.get("text", "")
+                        start, end = seg.get("start", 0), seg.get("end", 0)
+                        logger.info(f"    [3.{i+1}] 处理分段 {start}ms - {end}ms...")
+                        
+                        if any(tag in raw_text for tag in INVALID_TAGS): continue
 
-                    # Case-insensitive emotion detection
-                    emotion = "neutral"
-                    raw_text_lower = raw_text.lower()
-                    for tag, emo_code in EMOTION_TAGS.items():
-                        if tag.lower() in raw_text_lower:
-                            emotion = emo_code
-                            if "laughter" in tag.lower():
-                                emotion = "laughter" # Prioritize laughter
-                                break
-                    if "<|cry|>" in raw_text_lower:
-                        emotion = "sad"
+                        # Case-insensitive emotion detection
+                        emotion = "neutral"
+                        raw_text_lower = raw_text.lower()
+                        for tag, emo_code in EMOTION_TAGS.items():
+                            if tag.lower() in raw_text_lower:
+                                emotion = emo_code
+                                if "laughter" in tag.lower():
+                                    emotion = "laughter" # Prioritize laughter
+                                    break
+                        if "<|cry|>" in raw_text_lower:
+                            emotion = "sad"
 
-                    # Case-insensitive, universal tag removal
-                    clean_text = re.sub(r'<\|.*?\|>', '', raw_text).replace(" ", "").strip()
-                    if not clean_text: continue
+                        # Case-insensitive, universal tag removal
+                        clean_text = re.sub(r'<\|.*?\|>', '', raw_text).replace(" ", "").strip()
+                        if not clean_text: 
+                            logger.info(f"      [3.{i+1}] 分段文本在清洗后为空，已跳过。")
+                            continue
 
-                    identity, confidence = None, 0.0
-                    recognition_details = []
-                    if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
-                        seg_wav = os.path.join(tempfile.gettempdir(), f"seg_{start}_{int(time.time())}.wav")
-                        if extract_segment(proc_temp, start, end, seg_wav):
-                            temp_files.append(seg_wav)
-                            identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
+                        identity, confidence = None, 0.0
+                        recognition_details = []
+                        if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
+                            seg_wav = os.path.join(tempfile.gettempdir(), f"seg_{start}_{int(time.time())}.wav")
+                            if extract_segment(proc_temp, start, end, seg_wav):
+                                temp_files.append(seg_wav)
+                                identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
+                        else:
+                            logger.info(f"      [3.{i+1}] 分段时长过短({end-start}ms)，跳过声纹识别。")
 
-                    if Config.ONLY_REGISTERED_SPEAKERS and identity is None: continue
-                    
-                    processed_segments.append({
-                        "text": clean_text, "start": start, "end": end,
-                        "spk": identity or "Unknown", "emotion": emotion,
-                        "confidence": float(f"{confidence:.3f}"),
-                        "recognition_details": recognition_details
-                    })
+
+                        if Config.ONLY_REGISTERED_SPEAKERS and identity is None: continue
+                        
+                        processed_segments.append({
+                            "text": clean_text, "start": start, "end": end,
+                            "spk": identity or "Unknown", "emotion": emotion,
+                            "confidence": float(f"{confidence:.3f}"),
+                            "recognition_details": recognition_details
+                        })
+                    logger.info("  [生命周期: 3. 逐段声纹识别] 完成。")
 
                 segments = processed_segments
                 full_text = "".join([s["text"] for s in segments]) # Reconstruct from clean segments
@@ -790,6 +816,7 @@ def transcribe_audio():
             # RTF < 1表示可以实时处理，RTF越低系统性能越好
             logger.info(f"✅ 完成! 音频:{audio_duration:.1f}s | 耗时:{process_time:.2f}s | RTF:{rtf:.3f} (RTF < 1表示可实时处理，值越低性能越好)")
 
+            logger.info("  [生命周期: 4. 组装响应] 开始...")
             response_data = {
                 "full_text": full_text,
                 "segments": segments,
@@ -800,7 +827,7 @@ def transcribe_audio():
                     "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
                 }
             }
-            logger.info(f"📤 返回 /transcribe 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            logger.info(f"📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
             return jsonify(response_data)
 
         except Exception as e:
@@ -866,9 +893,14 @@ def diarize():
             if not preprocess_audio(raw_temp, proc_temp):
                 return jsonify({"error": "Audio preprocessing failed"}), 500
 
-            logger.info(f"📥 收到说话人区分请求")
+            logger.info(f"📥 收到说话人区分请求: {audio_file.filename}")
 
-            # ASR 识别（FunASR SenseVoice 支持说话人切分）
+            logger.info("  [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...")
+            if not preprocess_audio(raw_temp, proc_temp):
+                return jsonify({"error": "Audio preprocessing failed"}), 500
+            logger.info("  [生命周期: 1. 音频预处理] 完成。")
+
+            logger.info("  [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...")
             res = asr_pipeline.generate(
                 input=proc_temp,
                 language="auto",
@@ -876,6 +908,7 @@ def diarize():
                 use_punc=True,
                 batch_size_s=60
             )
+            logger.info(f"  [VAD 调试] FunASR generate() 原始返回: {json.dumps(res, ensure_ascii=False, indent=2)}")
 
             if not res or not isinstance(res, list) or len(res) == 0:
                 logger.warning("⚠️ ASR 未返回有效结果")
@@ -883,56 +916,52 @@ def diarize():
 
             item = res[0]
             raw_segments = item.get("sentence_info", [])
+            logger.info(f"  [生命周期: 2. VAD & ASR] 完成, VAD检出 {len(raw_segments)} 个分段。")
             
             if not raw_segments:
                 logger.warning("⚠️ ASR 未返回任何分段")
                 return jsonify({"diarization": []}), 200
 
-            logger.info(f"🔍 ASR 返回 {len(raw_segments)} 个分段")
-
-            # 声纹识别 - 对每个说话人片段进行识别
             diarized_output = []
-            speaker_map = {} # 缓存 ASR ID 到注册说话人名称的映射
+            speaker_map = {} 
 
-            for seg in raw_segments:
+            logger.info("  [生命周期: 3. 逐段声纹识别] 开始...")
+            for i, seg in enumerate(raw_segments):
                 start_ms = int(seg.get("start", 0))
                 end_ms = int(seg.get("end", 0))
                 text = seg.get("text", "").strip()
                 text = text.replace(" ", "")
-                asr_spk_id = seg.get("speaker", "spk0") # ASR 返回的临时说话人 ID
+                asr_spk_id = seg.get("speaker", "spk0") 
                 
-                # 跳过空文本
+                logger.info(f"    [3.{i+1}] 处理分段 {start_ms}ms - {end_ms}ms (ASR临时ID: {asr_spk_id})...")
+                
                 if not text:
+                    logger.info(f"      [3.{i+1}] 分段文本为空，已跳过。")
                     continue
 
-                # --- 修正后的说话人识别逻辑 (核心优化) ---
                 speaker_name = "Unknown"
-                
-                # 1. 尝试从缓存获取
                 if asr_spk_id in speaker_map:
                     speaker_name = speaker_map[asr_spk_id]
+                    logger.info(f"      [3.{i+1}] 使用缓存识别结果: {speaker_name}")
                 else:
-                    # 2. 如果缓存中没有，进行声纹识别
                     identity, confidence, details = None, 0.0, []
-                    
-                    # 只对足够长的片段进行声纹识别
                     if (end_ms - start_ms) > Config.MIN_SPEAKER_DURATION_MS:
                         seg_path = os.path.join(tempfile.gettempdir(), f"seg_{start_ms}_{end_ms}_{int(time.time())}.wav")
                         
                         if extract_segment(proc_temp, start_ms, end_ms, seg_path):
                             temp_files.append(seg_path)
-                            logger.info(f"🕵️ 识别说话人片段: {asr_spk_id} ({start_ms}ms-{end_ms}ms)")
                             identity, confidence, details = identify_speaker_fusion(seg_path)
+                    else:
+                        logger.info(f"      [3.{i+1}] 分段时长过短({end_ms-start_ms}ms)，跳过声纹识别。")
 
-                    # 3. 缓存结果（无论成功失败，都进行缓存，防止重复识别）
                     if identity and identity != "Unknown":
                         speaker_name = identity
-                        speaker_map[asr_spk_id] = identity # 成功映射到注册名
-                        logger.info(f"🗺️ 映射成功并缓存: {asr_spk_id} -> {identity}")
+                        speaker_map[asr_spk_id] = identity
+                        logger.info(f"      [3.{i+1}] 映射成功并缓存: {asr_spk_id} -> {identity}")
                     else:
-                        speaker_map[asr_spk_id] = "Unknown" # 失败或未知，缓存为 Unknown
+                        speaker_map[asr_spk_id] = "Unknown"
                         speaker_name = "Unknown"
-                        logger.info(f"🗺️ 映射失败/未知说话人，缓存为: {asr_spk_id} -> Unknown")
+                        logger.info(f"      [3.{i+1}] 映射失败/未知说话人，缓存为: {asr_spk_id} -> Unknown")
                 
                 
                 diarized_output.append({
@@ -941,13 +970,13 @@ def diarize():
                     "start_ms": start_ms,
                     "end_ms": end_ms
                 })
+            logger.info("  [生命周期: 3. 逐段声纹识别] 完成。")
 
-            logger.info(f"✅ 说话人区分完成: {len(diarized_output)} 个有效分段")
-
+            logger.info("  [生命周期: 4. 组装响应] 开始...")
             response_data = {
                 "diarization": diarized_output
             }
-            logger.info(f"📤 返回 /diarize 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            logger.info(f"📤  [生命周期: 4. 组装响应] 完成, 返回 /diarize 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
             return jsonify(response_data)
 
         except Exception as e:

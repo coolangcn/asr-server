@@ -1,0 +1,471 @@
+2025-11-20 14:16:09,009 | INFO | 📚 声纹库已挂载: 3 人
+2025-11-20 14:16:09,009 | INFO | download models from model hub: ms
+2025-11-20 14:16:09,707 | WARNING | trust_remote_code: True
+2025-11-20 14:16:11,149 | INFO | Loading pretrained params from C:\Users\Administrator\.cache\modelscope\hub\iic\SenseVoiceSmall\model.pt
+2025-11-20 14:16:11,153 | INFO | ckpt: C:\Users\Administrator\.cache\modelscope\hub\iic\SenseVoiceSmall\model.pt
+2025-11-20 14:16:12,115 | INFO | scope_map: ['module.', 'None']
+2025-11-20 14:16:12,115 | INFO | excludes: None
+2025-11-20 14:16:12,242 | INFO | Loading ckpt: C:\Users\Administrator\.cache\modelscope\hub\iic\SenseVoiceSmall\model.pt, status: <All keys matched successfully>
+2025-11-20 14:16:12,603 | INFO | Building VAD model.
+2025-11-20 14:16:12,603 | INFO | download models from model hub: ms
+2025-11-20 14:16:13,222 | WARNING | trust_remote_code: False
+2025-11-20 14:16:13,270 | INFO | Loading pretrained params from C:\Users\Administrator\.cache\modelscope\hub\iic\speech_fsmn_vad_zh-cn-16k-common-pytorch\model.pt
+2025-11-20 14:16:13,270 | INFO | ckpt: C:\Users\Administrator\.cache\modelscope\hub\iic\speech_fsmn_vad_zh-cn-16k-common-pytorch\model.pt
+2025-11-20 14:16:13,273 | INFO | scope_map: ['module.', 'None']
+2025-11-20 14:16:13,273 | INFO | excludes: None
+2025-11-20 14:16:13,274 | INFO | Loading ckpt: C:\Users\Administrator\.cache\modelscope\hub\iic\speech_fsmn_vad_zh-cn-16k-common-pytorch\model.pt, status: <All keys matched successfully>
+2025-11-20 14:16:21,030 | INFO | 📥 收到说话人区分请求: recording-20251115-131250_TEMP.wav
+2025-11-20 14:16:21,030 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:22,234 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:22,234 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:22,546 | INFO | decoding, utt: diarize_proc_1763619379, empty speech
+2025-11-20 14:16:22,546 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "diarize_proc_1763619379",
+    "text": "",
+    "timestamp": []
+  }
+]
+2025-11-20 14:16:22,547 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:22,547 | WARNING | ⚠️ ASR 未返回任何分段
+2025-11-20 14:16:22,559 | INFO | 📥 收到转录任务: recording-20251115-131250_TEMP.wav
+2025-11-20 14:16:22,560 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:23,741 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:23,762 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:24,009 | INFO | decoding, utt: proc_1763619382, empty speech
+2025-11-20 14:16:24,009 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619382",
+    "text": "",
+    "timestamp": []
+  }
+]
+2025-11-20 14:16:24,010 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:24,010 | INFO | ✅ 完成! 音频:48.2s | 耗时:1.46s | RTF:0.030 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:24,010 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:24,010 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 1.4555859565734863,
+    "audio_duration": 48.227875,
+    "rtf": 0.03018142426083435,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:16:24,256 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-16_21-46-42_TEMP.wav
+2025-11-20 14:16:24,256 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:25,426 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:25,445 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:26,544 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619384",
+    "text": "<|zh|><|NEUTRAL|><|Speech|><|withitn|>然会在你店里80的时候那，你也能根据需求啊。 <|zh|><|HAPPY|><|Speech|><|withitn|>他偷吃忘记了，他要出去外面了，我乘厕走了啊。 <|zh|><|NEUTRAL|><|Speech|><|withitn|>原来手一为是需要走不线就才会正常的保护的。这我的老师，那你的手机来是直接行飞，这不就我们的是好像其大运运营方交通爸爸在外面说好像有出。 <|zh|><|HAPPY|><|Speech|><|withitn|>妈呀，这啥呀？ <|zh|><|HAPPY|><|Speech|><|withitn|>这你买的嗯。 <|zh|><|HAPPY|><|Speech|><|withitn|>衣服呢那遥控器擦没擦看，不知道啊打开手机后再找到移动网络选项，进入后确保移动够看的呢接着找到先选直，击右上角的三个点。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>样。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>然后吧。 <|zh|><|HAPPY|><|Speech|><|withitn|>这两项都先接守GMTD下方就面讲到在。"
+  }
+]
+2025-11-20 14:16:26,545 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:26,545 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:16:26,545 | INFO |     [3.1] 处理分段 0ms - 62656ms...
+2025-11-20 14:16:26,573 | INFO | 🎯 开始声纹识别: 音频段路径=C:\Users\ADMINI~1\AppData\Local\Temp\seg_0_1763619386.wav
+2025-11-20 14:16:26,573 | INFO | 📋 声纹数据库包含 3 个说话人
+2025-11-20 14:16:26,574 | INFO | 🔍 开始使用模型: eres2net_large
+2025-11-20 14:16:32,775 | INFO | 📌 模型 eres2net_large 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:16:32,775 | INFO | 💯 模型 eres2net_large 与说话人 妈妈 的相似度: 0.671394
+2025-11-20 14:16:32,775 | INFO | 💯 模型 eres2net_large 与说话人 大可 的相似度: 0.604970
+2025-11-20 14:16:32,775 | INFO | 💯 模型 eres2net_large 与说话人 婆婆 的相似度: 0.532378
+2025-11-20 14:16:32,776 | INFO | 🏆 模型 eres2net_large 识别结果: 第一名 妈妈 (得分: 0.671394), 第二名 大可 (得分: 0.604970), 差距: 0.066424
+2025-11-20 14:16:32,776 | INFO | ❌ 模型 eres2net_large 验证失败: 差距 0.066424 < 置信度间隔 0.15
+2025-11-20 14:16:32,776 | INFO | 🔍 开始使用模型: rdino_ecapa
+2025-11-20 14:16:34,170 | INFO | 📌 模型 rdino_ecapa 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:16:34,170 | INFO | 💯 模型 rdino_ecapa 与说话人 妈妈 的相似度: 0.789617
+2025-11-20 14:16:34,170 | INFO | 💯 模型 rdino_ecapa 与说话人 大可 的相似度: 0.692553
+2025-11-20 14:16:34,170 | INFO | 💯 模型 rdino_ecapa 与说话人 婆婆 的相似度: 0.674907
+2025-11-20 14:16:34,171 | INFO | 🏆 模型 rdino_ecapa 识别结果: 第一名 妈妈 (得分: 0.789617), 第二名 大可 (得分: 0.692553), 差距: 0.097064
+2025-11-20 14:16:34,171 | INFO | ❌ 模型 rdino_ecapa 验证失败: 差距 0.097064 < 置信度间隔 0.15
+2025-11-20 14:16:34,171 | INFO | 🔍 开始使用模型: camplusplus
+2025-11-20 14:16:34,734 | INFO | 📌 模型 camplusplus 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:16:34,735 | INFO | 💯 模型 camplusplus 与说话人 妈妈 的相似度: 0.618497
+2025-11-20 14:16:34,735 | INFO | 💯 模型 camplusplus 与说话人 大可 的相似度: 0.314758
+2025-11-20 14:16:34,736 | INFO | 💯 模型 camplusplus 与说话人 婆婆 的相似度: 0.481095
+2025-11-20 14:16:34,736 | INFO | 🏆 模型 camplusplus 识别结果: 第一名 妈妈 (得分: 0.618497), 第二名 婆婆 (得分: 0.481095), 差距: 0.137402
+2025-11-20 14:16:34,736 | INFO | ❌ 模型 camplusplus 验证失败: 差距 0.137402 < 置信度间隔 0.15
+2025-11-20 14:16:34,736 | INFO | 📊 多模型投票结果: {'eres2net_large': 'Unknown', 'rdino_ecapa': 'Unknown', 'camplusplus': 'Unknown'}
+2025-11-20 14:16:34,736 | INFO | ❌ 交叉验证失败: 所有模型均未识别出有效候选人
+2025-11-20 14:16:34,736 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:16:34,737 | INFO | ✅ 完成! 音频:62.7s | 耗时:10.66s | RTF:0.170 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:34,737 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:34,737 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "然会在你店里80的时候那，你也能根据需求啊。他偷吃忘记了，他要出去外面了，我乘厕走了啊。原来手一为是需要走不线就才会正常的保护的。这我的老师，那你的手机来是直接行飞，这不就我们的是好像其大运运营方交通爸爸在外面说好像有出。妈呀，这啥呀？这你买的嗯。衣服呢那遥控器擦没擦看，不知道啊打开手机后再找到移动网络选项，进入后确保移动够看的呢接着找到先选直，击右上角的三个点。样。然后吧。这两项都先接守GMTD下方就面讲到在。",
+  "segments": [
+    {
+      "text": "然会在你店里80的时候那，你也能根据需求啊。他偷吃忘记了，他要出去外面了，我乘厕走了啊。原来手一为是需要走不线就才会正常的保护的。这我的老师，那你的手机来是直接行飞，这不就我们的是好像其大运运营方交通爸爸在外面说好像有出。妈呀，这啥呀？这你买的嗯。衣服呢那遥控器擦没擦看，不知道啊打开手机后再找到移动网络选项，进入后确保移动够看的呢接着找到先选直，击右上角的三个点。样。然后吧。这两项都先接守GMTD下方就面讲到在。",
+      "start": 0,
+      "end": 62656,
+      "spk": "Unknown",
+      "emotion": "neutral",
+      "confidence": 0.0,
+      "recognition_details": []
+    }
+  ],
+  "meta": {
+    "process_time": 10.660396099090576,
+    "audio_duration": 62.656,
+    "rtf": 0.17014166399212488,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:16:35,920 | INFO | 📥 收到说话人区分请求: recording-20251115-131344_TEMP.wav
+2025-11-20 14:16:35,920 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:37,068 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:37,068 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:38,014 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "diarize_proc_1763619394",
+    "text": "<|yue|><|EMO_UNKNOWN|><|Speech|><|withitn|>等。 <|ko|><|EMO_UNKNOWN|><|Speech|><|withitn|>그. <|zh|><|HAPPY|><|Speech|><|withitn|>你把那个爸爸我哭了的视频发给艾叶子看看，没，然后每分生来。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>是怎么告状的，就这样告诉。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>You。 <|zh|><|HAPPY|><|Speech|><|withitn|>let这样哭了，然后你肯定就要问我为什么哭啊，我就可以开始告状了。 <|zh|><|NEUTRAL|><|BGM|><|withitn|>开始早教课又开始报名了，又开始报成星期一大堂音乐课不去。 <|zh|><|NEUTRAL|><|BGM|><|withitn|>要是读绘本讲故事，我们再去音乐课不去了。 <|ko|><|EMO_UNKNOWN|><|Speech|><|withitn|>웨."
+  }
+]
+2025-11-20 14:16:38,014 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:38,014 | WARNING | ⚠️ ASR 未返回任何分段
+2025-11-20 14:16:38,022 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-19_11-04-48_TEMP.wav
+2025-11-20 14:16:38,022 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:39,229 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:39,249 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:39,841 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619398",
+    "text": "<|en|><|EMO_UNKNOWN|><|Event_UNK|><|withitn|>. <|ja|><|EMO_UNKNOWN|><|Speech|><|withitn|>あ。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>嗯。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>嗯。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>The. <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>嗯。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Event_UNK|><|withitn|>. <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>嗯。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>."
+  }
+]
+2025-11-20 14:16:39,841 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:39,841 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:16:39,841 | INFO |     [3.1] 处理分段 0ms - 62592ms...
+2025-11-20 14:16:39,841 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:16:39,841 | INFO | ✅ 完成! 音频:62.6s | 耗时:3.80s | RTF:0.061 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:39,841 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:39,842 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 3.79677677154541,
+    "audio_duration": 62.592,
+    "rtf": 0.060659138093453004,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:16:39,848 | INFO | 📥 收到转录任务: recording-20251115-131344_TEMP.wav
+2025-11-20 14:16:39,849 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:41,015 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:41,039 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:41,622 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619399",
+    "text": "<|yue|><|EMO_UNKNOWN|><|Speech|><|withitn|>等等。 <|ko|><|EMO_UNKNOWN|><|Speech|><|withitn|>그. <|zh|><|HAPPY|><|Speech|><|withitn|>你把那个爸爸我哭了的视频发给艾叶子看看，没，然后每分生来。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>是怎么告状的，就这样告诉。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>You。 <|zh|><|HAPPY|><|Speech|><|withitn|>let这样哭了，然后你肯定就要问我为什么哭啊，我就可以开始告状了。 <|zh|><|NEUTRAL|><|BGM|><|withitn|>开始早教课又开始报名了，又开始报成星期一大堂音乐课不去。 <|zh|><|NEUTRAL|><|BGM|><|withitn|>要是读绘本讲故事，我们再去音乐课不去了。 <|ko|><|EMO_UNKNOWN|><|Speech|><|withitn|>웨."
+  }
+]
+2025-11-20 14:16:41,623 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:41,623 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:16:41,623 | INFO |     [3.1] 处理分段 0ms - 59327ms...
+2025-11-20 14:16:41,623 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:16:41,623 | INFO | ✅ 完成! 音频:59.3s | 耗时:3.60s | RTF:0.061 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:41,623 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:41,623 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 3.6013495922088623,
+    "audio_duration": 59.327,
+    "rtf": 0.06070338281404525,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:16:41,631 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-16_00-36-58_TEMP.wav
+2025-11-20 14:16:41,631 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:42,818 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:42,837 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:43,200 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619401",
+    "text": "<|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>."
+  }
+]
+2025-11-20 14:16:43,200 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:43,200 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:16:43,200 | INFO |     [3.1] 处理分段 0ms - 62592ms...
+2025-11-20 14:16:43,226 | INFO | 🎯 开始声纹识别: 音频段路径=C:\Users\ADMINI~1\AppData\Local\Temp\seg_0_1763619403.wav
+2025-11-20 14:16:43,226 | INFO | 📋 声纹数据库包含 3 个说话人
+2025-11-20 14:16:43,226 | INFO | 🔍 开始使用模型: eres2net_large
+2025-11-20 14:16:49,443 | INFO | 📌 模型 eres2net_large 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:16:49,444 | INFO | 💯 模型 eres2net_large 与说话人 妈妈 的相似度: 0.100119
+2025-11-20 14:16:49,444 | INFO | 💯 模型 eres2net_large 与说话人 大可 的相似度: -0.024946
+2025-11-20 14:16:49,444 | INFO | 💯 模型 eres2net_large 与说话人 婆婆 的相似度: 0.039562
+2025-11-20 14:16:49,444 | INFO | 🏆 模型 eres2net_large 识别结果: 第一名 妈妈 (得分: 0.100119), 第二名 婆婆 (得分: 0.039562), 差距: 0.060558
+2025-11-20 14:16:49,444 | INFO | ❌ 模型 eres2net_large 验证失败: 得分 0.100119 < 阈值 0.6, 差距 0.060558 < 置信度间隔 0.15
+2025-11-20 14:16:49,444 | INFO | 🔍 开始使用模型: rdino_ecapa
+2025-11-20 14:16:50,679 | INFO | 📌 模型 rdino_ecapa 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:16:50,679 | INFO | 💯 模型 rdino_ecapa 与说话人 妈妈 的相似度: -0.098289
+2025-11-20 14:16:50,680 | INFO | 💯 模型 rdino_ecapa 与说话人 大可 的相似度: -0.089142
+2025-11-20 14:16:50,680 | INFO | 💯 模型 rdino_ecapa 与说话人 婆婆 的相似度: -0.140267
+2025-11-20 14:16:50,680 | INFO | 🏆 模型 rdino_ecapa 识别结果: 第一名 大可 (得分: -0.089142), 第二名 妈妈 (得分: -0.098289), 差距: 0.009147
+2025-11-20 14:16:50,680 | INFO | ❌ 模型 rdino_ecapa 验证失败: 得分 -0.089142 < 阈值 0.6, 差距 0.009147 < 置信度间隔 0.15
+2025-11-20 14:16:50,680 | INFO | 🔍 开始使用模型: camplusplus
+2025-11-20 14:16:51,073 | INFO | 📌 模型 camplusplus 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:16:51,074 | INFO | 💯 模型 camplusplus 与说话人 妈妈 的相似度: 0.065327
+2025-11-20 14:16:51,074 | INFO | 💯 模型 camplusplus 与说话人 大可 的相似度: 0.039727
+2025-11-20 14:16:51,074 | INFO | 💯 模型 camplusplus 与说话人 婆婆 的相似度: 0.086116
+2025-11-20 14:16:51,074 | INFO | 🏆 模型 camplusplus 识别结果: 第一名 婆婆 (得分: 0.086116), 第二名 妈妈 (得分: 0.065327), 差距: 0.020789
+2025-11-20 14:16:51,074 | INFO | ❌ 模型 camplusplus 验证失败: 得分 0.086116 < 阈值 0.6, 差距 0.020789 < 置信度间隔 0.15
+2025-11-20 14:16:51,074 | INFO | 📊 多模型投票结果: {'eres2net_large': 'Unknown', 'rdino_ecapa': 'Unknown', 'camplusplus': 'Unknown'}
+2025-11-20 14:16:51,074 | INFO | ❌ 交叉验证失败: 所有模型均未识别出有效候选人
+2025-11-20 14:16:51,074 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:16:51,075 | INFO | ✅ 完成! 音频:62.6s | 耗时:10.38s | RTF:0.166 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:51,075 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:51,075 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": ".",
+  "segments": [
+    {
+      "text": ".",
+      "start": 0,
+      "end": 62592,
+      "spk": "Unknown",
+      "emotion": "neutral",
+      "confidence": 0.0,
+      "recognition_details": []
+    }
+  ],
+  "meta": {
+    "process_time": 10.37951922416687,
+    "audio_duration": 62.592,
+    "rtf": 0.1658282084638112,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:16:52,521 | INFO | 📥 收到说话人区分请求: recording-20251115-131444_TEMP.wav
+2025-11-20 14:16:52,521 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:53,964 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:53,964 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:54,237 | INFO | decoding, utt: diarize_proc_1763619411, empty speech
+2025-11-20 14:16:54,237 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "diarize_proc_1763619411",
+    "text": "",
+    "timestamp": []
+  }
+]
+2025-11-20 14:16:54,237 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:54,237 | WARNING | ⚠️ ASR 未返回任何分段
+2025-11-20 14:16:54,246 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-17_03-31-03_TEMP.wav
+2025-11-20 14:16:54,246 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:55,429 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:55,449 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:56,402 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619414",
+    "text": "<|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>The. <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>嗯。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>Yeah. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>The. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>Yeah. <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>嗯。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>Yeah. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Event_UNK|><|withitn|>."
+  }
+]
+2025-11-20 14:16:56,402 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:56,403 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:16:56,403 | INFO |     [3.1] 处理分段 0ms - 62656ms...
+2025-11-20 14:16:56,403 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:16:56,403 | INFO | ✅ 完成! 音频:62.7s | 耗时:4.38s | RTF:0.070 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:56,403 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:56,403 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 4.378186464309692,
+    "audio_duration": 62.656,
+    "rtf": 0.06987657150647492,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:16:56,412 | INFO | 📥 收到转录任务: recording-20251115-131444_TEMP.wav
+2025-11-20 14:16:56,412 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:57,875 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:57,895 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:58,157 | INFO | decoding, utt: proc_1763619416, empty speech
+2025-11-20 14:16:58,157 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619416",
+    "text": "",
+    "timestamp": []
+  }
+]
+2025-11-20 14:16:58,157 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:58,157 | INFO | ✅ 完成! 音频:59.7s | 耗时:3.91s | RTF:0.066 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:58,157 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:58,158 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 3.911903142929077,
+    "audio_duration": 59.72175,
+    "rtf": 0.06550215194513016,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:16:58,165 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-15_23-11-39_TEMP.wav
+2025-11-20 14:16:58,165 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:16:59,434 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:16:59,453 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:16:59,731 | INFO | decoding, utt: proc_1763619418, empty speech
+2025-11-20 14:16:59,731 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619418",
+    "text": "",
+    "timestamp": []
+  }
+]
+2025-11-20 14:16:59,731 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:16:59,731 | INFO | ✅ 完成! 音频:62.6s | 耗时:2.38s | RTF:0.038 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:16:59,731 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:16:59,732 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 2.3836851119995117,
+    "audio_duration": 62.592,
+    "rtf": 0.038082903757660914,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:17:00,842 | INFO | 📥 收到说话人区分请求: recording-20251115-131544_TEMP.wav
+2025-11-20 14:17:00,842 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:17:01,961 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:17:01,961 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:17:02,961 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "diarize_proc_1763619419",
+    "text": "<|zh|><|NEUTRAL|><|BGM|><|withitn|>龟兔赛跑，他说英英文就小朋友怎么可能懂呢？他也主要是用于英语英中文啊，中文讲故事啊，他把天气、蓝天、草地那些那些东西都能读出来啊，用夸张的语气讲这个故事啊，所以小朋友们就愿意听啊，然后不就是看图，看图说话吗？ <|zh|><|EMO_UNKNOWN|><|BGM|><|withitn|>看的我都想吃了。 <|en|><|EMO_UNKNOWN|><|BGM|><|withitn|>. <|zh|><|NEUTRAL|><|BGM|><|withitn|>大哥他们在做什么东西吃啊？ <|zh|><|HAPPY|><|BGM|><|withitn|>他们在做什么呀？的吃的这叫甜甜圈。 <|zh|><|NEUTRAL|><|Speech|><|withitn|>99亲子英语时间他困了，他今天早上起的实我们可以通过英文引导孩子认识食物。"
+  }
+]
+2025-11-20 14:17:02,961 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:17:02,961 | WARNING | ⚠️ ASR 未返回任何分段
+2025-11-20 14:17:02,969 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-16_19-04-15_TEMP.wav
+2025-11-20 14:17:02,969 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:17:04,151 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:17:04,170 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:17:04,537 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619422",
+    "text": "<|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>Yeah。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>。 <|zh|><|EMO_UNKNOWN|><|Speech|><|withitn|>Yeah。"
+  }
+]
+2025-11-20 14:17:04,538 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:17:04,538 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:17:04,538 | INFO |     [3.1] 处理分段 0ms - 62656ms...
+2025-11-20 14:17:04,565 | INFO | 🎯 开始声纹识别: 音频段路径=C:\Users\ADMINI~1\AppData\Local\Temp\seg_0_1763619424.wav
+2025-11-20 14:17:04,565 | INFO | 📋 声纹数据库包含 3 个说话人
+2025-11-20 14:17:04,565 | INFO | 🔍 开始使用模型: eres2net_large
+2025-11-20 14:17:10,540 | INFO | 📌 模型 eres2net_large 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:17:10,540 | INFO | 💯 模型 eres2net_large 与说话人 妈妈 的相似度: 0.365348
+2025-11-20 14:17:10,541 | INFO | 💯 模型 eres2net_large 与说话人 大可 的相似度: 0.224518
+2025-11-20 14:17:10,541 | INFO | 💯 模型 eres2net_large 与说话人 婆婆 的相似度: 0.201389
+2025-11-20 14:17:10,541 | INFO | 🏆 模型 eres2net_large 识别结果: 第一名 妈妈 (得分: 0.365348), 第二名 大可 (得分: 0.224518), 差距: 0.140830
+2025-11-20 14:17:10,541 | INFO | ❌ 模型 eres2net_large 验证失败: 得分 0.365348 < 阈值 0.6, 差距 0.140830 < 置信度间隔 0.15
+2025-11-20 14:17:10,541 | INFO | 🔍 开始使用模型: rdino_ecapa
+2025-11-20 14:17:11,793 | INFO | 📌 模型 rdino_ecapa 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:17:11,794 | INFO | 💯 模型 rdino_ecapa 与说话人 妈妈 的相似度: 0.156131
+2025-11-20 14:17:11,794 | INFO | 💯 模型 rdino_ecapa 与说话人 大可 的相似度: 0.108034
+2025-11-20 14:17:11,794 | INFO | 💯 模型 rdino_ecapa 与说话人 婆婆 的相似度: 0.060154
+2025-11-20 14:17:11,794 | INFO | 🏆 模型 rdino_ecapa 识别结果: 第一名 妈妈 (得分: 0.156131), 第二名 大可 (得分: 0.108034), 差距: 0.048097
+2025-11-20 14:17:11,794 | INFO | ❌ 模型 rdino_ecapa 验证失败: 得分 0.156131 < 阈值 0.6, 差距 0.048097 < 置信度间隔 0.15
+2025-11-20 14:17:11,794 | INFO | 🔍 开始使用模型: camplusplus
+2025-11-20 14:17:12,149 | INFO | 📌 模型 camplusplus 阈值: 0.6, 置信度间隔: 0.15
+2025-11-20 14:17:12,149 | INFO | 💯 模型 camplusplus 与说话人 妈妈 的相似度: 0.137262
+2025-11-20 14:17:12,149 | INFO | 💯 模型 camplusplus 与说话人 大可 的相似度: 0.096636
+2025-11-20 14:17:12,150 | INFO | 💯 模型 camplusplus 与说话人 婆婆 的相似度: 0.128212
+2025-11-20 14:17:12,150 | INFO | 🏆 模型 camplusplus 识别结果: 第一名 妈妈 (得分: 0.137262), 第二名 婆婆 (得分: 0.128212), 差距: 0.009050
+2025-11-20 14:17:12,150 | INFO | ❌ 模型 camplusplus 验证失败: 得分 0.137262 < 阈值 0.6, 差距 0.009050 < 置信度间隔 0.15
+2025-11-20 14:17:12,150 | INFO | 📊 多模型投票结果: {'eres2net_large': 'Unknown', 'rdino_ecapa': 'Unknown', 'camplusplus': 'Unknown'}
+2025-11-20 14:17:12,150 | INFO | ❌ 交叉验证失败: 所有模型均未识别出有效候选人
+2025-11-20 14:17:12,150 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:17:12,150 | INFO | ✅ 完成! 音频:62.7s | 耗时:11.03s | RTF:0.176 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:17:12,150 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:17:12,152 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": ".。Yeah。。Yeah。",
+  "segments": [
+    {
+      "text": ".。Yeah。。Yeah。",
+      "start": 0,
+      "end": 62656,
+      "spk": "Unknown",
+      "emotion": "neutral",
+      "confidence": 0.0,
+      "recognition_details": []
+    }
+  ],
+  "meta": {
+    "process_time": 11.031766176223755,
+    "audio_duration": 62.656,
+    "rtf": 0.17606879111695217,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:17:12,160 | INFO | 📥 收到转录任务: recording-20251115-131544_TEMP.wav
+2025-11-20 14:17:12,160 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:17:13,355 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:17:13,374 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:17:14,134 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619432",
+    "text": "<|zh|><|NEUTRAL|><|BGM|><|withitn|>龟兔赛跑，他说英英文就小朋友怎么可能懂呢？他也主要是用于英语英中文啊，中文讲故事啊，他把天气、蓝天、草地那些那些东西都能读出来啊，用夸张的语气讲这个故事啊，所以小朋友们就愿意听啊，然后不就是看图，看图说话吗？ <|zh|><|EMO_UNKNOWN|><|BGM|><|withitn|>看的我都想吃了。 <|en|><|EMO_UNKNOWN|><|BGM|><|withitn|>. <|zh|><|NEUTRAL|><|BGM|><|withitn|>大哥他们在做什么东西吃啊？ <|zh|><|HAPPY|><|BGM|><|withitn|>他们在做什么呀？的吃的这叫甜甜圈。 <|zh|><|NEUTRAL|><|Speech|><|withitn|>99亲子英语时间他困了，他今天早上起的实我们可以通过英文引导孩子认识食物。"
+  }
+]
+2025-11-20 14:17:14,134 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:17:14,134 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:17:14,134 | INFO |     [3.1] 处理分段 0ms - 59721ms...
+2025-11-20 14:17:14,134 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:17:14,134 | INFO | ✅ 完成! 音频:59.7s | 耗时:11.16s | RTF:0.187 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:17:14,134 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:17:14,135 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 11.160818338394165,
+    "audio_duration": 59.72175,
+    "rtf": 0.18688029634754783,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:17:14,142 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-18_23-34-01_TEMP.wav
+2025-11-20 14:17:14,142 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:17:15,317 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:17:15,336 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:17:15,973 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "proc_1763619434",
+    "text": "<|nospeech|><|EMO_UNKNOWN|><|Event_UNK|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>我. <|ja|><|EMO_UNKNOWN|><|Speech|><|withitn|>あ。 <|nospeech|><|EMO_UNKNOWN|><|Event_UNK|><|withitn|>."
+  }
+]
+2025-11-20 14:17:15,973 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:17:15,973 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2025-11-20 14:17:15,973 | INFO |     [3.1] 处理分段 0ms - 62656ms...
+2025-11-20 14:17:15,973 | INFO |   [生命周期: 3. 逐段声纹识别] 完成。
+2025-11-20 14:17:15,973 | INFO | ✅ 完成! 音频:62.7s | 耗时:2.95s | RTF:0.047 (RTF < 1表示可实时处理，值越低性能越好)
+2025-11-20 14:17:15,974 | INFO |   [生命周期: 4. 组装响应] 开始...
+2025-11-20 14:17:15,974 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "meta": {
+    "process_time": 2.949303388595581,
+    "audio_duration": 62.656,
+    "rtf": 0.04707136409275378,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2025-11-20 14:17:17,103 | INFO | 📥 收到说话人区分请求: recording-20251115-131644_TEMP.wav
+2025-11-20 14:17:17,103 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:17:18,266 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2025-11-20 14:17:18,266 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2025-11-20 14:17:19,219 | INFO |   [VAD 调试] FunASR generate() 原始返回: [
+  {
+    "key": "diarize_proc_1763619435",
+    "text": "<|zh|><|NEUTRAL|><|BGM|><|withitn|>表达自己的感受。 <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>Yeah. <|en|><|EMO_UNKNOWN|><|Speech|><|withitn|>And. <|ja|><|EMO_UNKNOWN|><|Speech|><|withitn|>。 <|yue|><|EMO_UNKNOWN|><|Speech|><|withitn|>아你唔啊。 <|zh|><|NEUTRAL|><|Speech|><|withitn|>你千万不要叫大姑说话声音小，千万不能。 <|zh|><|NEUTRAL|><|BGM|><|withitn|>3元鸯跟什么时候一定要自持失足，就跟些朋友，但是大家去来一句，你不要打我也是自私失弱的，有此事有什么关系啊，你赶紧把你关小别吵我日里长假，大小点声，不要叫小点，我没他小点过声，我只是让你小点声，我从来没让他少神，一直让你收神。 <|zh|><|NEUTRAL|><|Speech|><|withitn|>你学生给他跟他面听，我说的让你把声音视频声音开小点，你怎么那么能胡搅蛮缠呢？你我你叫小一点，课堂听上去，他就认为声音就要小一点，跟两者有什么关系？我说让你把手机声音放小点。"
+  }
+]
+2025-11-20 14:17:19,220 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 0 个分段。
+2025-11-20 14:17:19,220 | WARNING | ⚠️ ASR 未返回任何分段
+2025-11-20 14:17:19,229 | INFO | 📥 收到转录任务: TermuxAudioRecording_2025-11-16_13-44-39_TEMP.wav
+2025-11-20 14:17:19,229 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2025-11-20 14:17:20,427 | ERROR | FFmpeg 预处理失败: Command '['ffmpeg', '-v', 'error', '-y', '-i', 'C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\raw_1763619439_TermuxAudioRecording_2025-11-16_13-44-39_TEMP.wav.denoised.wav', '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11', '-ac', '1', '-ar', '16000', 'C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\proc_1763619439.wav']' returned non-zero exit status 3221225786.
