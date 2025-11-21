@@ -22,7 +22,17 @@ class Config:
     SPEAKER_DB_FILE = "speaker_db_multi.json"
     
     ONLY_REGISTERED_SPEAKERS = False
-    ASR_MODEL = "iic/SenseVoiceSmall"
+    # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
+    ASR_MODEL = "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"  # 从 SenseVoiceSmall 切换到 Paraformer
+    VAD_MODEL = "fsmn-vad"       # VAD模型
+    SPK_MODEL = "cam++"          # 说话人分离模型  
+    PUNC_MODEL = "ct-punc"       # 标点恢复模型
+    
+    # VAD参数配置(为Paraformer优化)
+    VAD_MAX_SINGLE_SEGMENT = 15000  # ms - 单段最长时间
+    VAD_MAX_END_SILENCE = 300       # ms - 段尾静音阈值
+    VAD_SIL_TO_SPEECH = 50          # ms - 静音到语音阈值
+    VAD_SPEECH_TO_SIL = 80          # ms - 语音到静音阈值
     
     SV_MODELS = {
         "eres2net_large": {
@@ -144,19 +154,23 @@ def load_models():
 
     # 2. 加载 ASR (FunASR)
     print(f"🧠 加载 ASR: {Config.ASR_MODEL} ...")
+    # 2. 加载 ASR (FunASR Paraformer + VAD + 说话人分离)
+    print(f"🧠 加载 ASR: {Config.ASR_MODEL} (支持VAD分段和说话人分离) ...")
     asr_pipeline = AutoModel(
-        model=Config.ASR_MODEL, 
-        vad_model="fsmn-vad",
+        model=Config.ASR_MODEL,       # paraformer-zh
+        vad_model=Config.VAD_MODEL,   # fsmn-vad
+        punc_model=Config.PUNC_MODEL, # ct-punc (标点恢复)
+        spk_model=Config.SPK_MODEL,   # cam++ (说话人分离)
         vad_kwargs={
-            "max_single_segment_time": 30000,
-            "max_end_silence_time": 800,
-            "sil_to_speech_time_thres": 50,
-            "speech_to_sil_time_thres": 150
+            "max_single_segment_time": Config.VAD_MAX_SINGLE_SEGMENT,
+            "max_end_silence_time": Config.VAD_MAX_END_SILENCE,
+            "sil_to_speech_time_thres": Config.VAD_SIL_TO_SPEECH,
+            "speech_to_sil_time_thres": Config.VAD_SPEECH_TO_SIL
         },
-        trust_remote_code=True, 
         device=Config.DEVICE, 
         disable_update=True
     )
+    print("✅ Paraformer模型加载完成，已启用VAD分段和说话人分离功能")
 
     # 3. 加载 SV 模型
     for name, conf in Config.SV_MODELS.items():
