@@ -38,26 +38,26 @@ class Config:
         "eres2net_large": {
             "id": "iic/speech_eres2net_large_200k_sv_zh-cn_16k-common",
             "rev": "v1.0.0",
-            "threshold": 0.60,  # 提高阈值
-            "gap": 0.15         # 增加置信度间隔
+            "threshold": 0.40,  # 降低阈值以提高识别率
+            "gap": 0.08         # 降低置信度间隔要求
         },
         "rdino_ecapa": {
             "id": "iic/speech_rdino_ecapa_tdnn_sv_zh-cn_cnceleb_16k",
             "rev": "v1.0.0",
-            "threshold": 0.60,  # 提高阈值
-            "gap": 0.15         # 增加置信度间隔
+            "threshold": 0.40,  # 降低阈值以提高识别率
+            "gap": 0.08         # 降低置信度间隔要求
         },
         "camplusplus": {
             "id": "iic/speech_campplus_sv_zh-cn_16k-common",
             "rev": "v1.0.0",
-            "threshold": 0.60,  # 提高阈值
-            "gap": 0.15         # 增加置信度间隔
+            "threshold": 0.40,  # 降低阈值以提高识别率
+            "gap": 0.08         # 降低置信度间隔要求
         }
     }
     
     MIN_SPEAKER_DURATION_MS = 800
     NORMALIZE_AUDIO = True
-    DENOISE_AUDIO = True  # 启用高级降噪
+    DENOISE_AUDIO = False  # 启用高级降噪
 # ==========================================
 
 EMOTION_TAGS = {
