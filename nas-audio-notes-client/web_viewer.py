@@ -485,6 +485,7 @@ HTML_TEMPLATE = """
             return date.toLocaleString('zh-CN', {
                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
             });
+        }
 
         function parseFilenameTime(filename) {
             // 尝试从文件名解析时间
@@ -506,8 +507,6 @@ HTML_TEMPLATE = """
             }
             
             return null;
-        }
-
         }
 
         function processStats(items) {
