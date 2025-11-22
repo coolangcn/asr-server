@@ -46,7 +46,7 @@ CONFIG_FILE = "config.json"
 
 DEFAULT_CONFIG = {
     "ASR_API_URL": "http://192.168.1.111:5008/transcribe",
-    "DIARIZE_API_URL": "http://192.168.1.111:5008/diarize",
+    "DIARIZE_API_URL": "http://192.168.1.111:5008/transcribe",
     "USE_DIARIZE": False,
     "SOURCE_DIR": "V:\\Sony-2",
     "TRANSCRIPT_DIR": "V:\\Sony-2\\transcripts",
@@ -228,54 +228,84 @@ def transcribe_wav(wav_path):
                     print(f"  网络波动，正在重试 ({attempt+1}/{max_retries})...")
                 else:
                     print(f"  正在上传并等待转录结果 (超时: 3600s)...")
+                print(f"  [DEBUG] 请求URL: {url}")
+                print(f"  [DEBUG] 请求参数: files={{audio_file: '{os.path.basename(wav_path)}'}}")
                 response = requests.post(url, files=files, timeout=3600)
+            print(f"  [DEBUG] 响应状态码: {response.status_code}")
+            print(f"  [DEBUG] 响应头: {dict(response.headers)}")
+            print(f"  [DEBUG] 响应体(前1000字符): {response.text[:1000]}")
             response.raise_for_status()
             data = response.json()
+            print(f"  [DEBUG] 解析后的JSON: {json.dumps(data, ensure_ascii=False, indent=2)[:2000]}")
             print(f"  [Info] 服务端返回 {len(data.get('segments', []))} 个语音分段。")
             if "error" in data:
                 print(f"  [Server Error] {data['error']}")
                 return None
             return data if "full_text" in data else None
         except requests.exceptions.ConnectionError:
-            print(f"  [Connection Error] 无法连接服务端，等待 5秒 后重试...")
+            print(f"  [Connection Error] 无法连接服务端 ({url})，等待 5秒 后重试...")
             time.sleep(5)
         except requests.exceptions.Timeout:
             print(f"  [Timeout] 请求超时，服务端仍在处理。")
             return None
         except Exception as e:
             print(f"  [Request Error] {e}")
+            print(f"  [DEBUG] 异常详情: {type(e).__name__}: {str(e)}")
             return None
     print("  [Failed] 重试次数耗尽，跳过此文件")
     return None
 
 def diarize_wav(wav_path):
-    """调用服务端的diarize接口进行说话人分离"""
+    """调用服务端的/transcribe接口进行说话人分离"""
     url = CONFIG["DIARIZE_API_URL"]
     max_retries = 3
     for attempt in range(max_retries):
         try:
             with open(wav_path, 'rb') as f:
-                files = {'audio': (os.path.basename(wav_path), f, 'audio/wav')}
+                files = {'audio_file': (os.path.basename(wav_path), f, 'audio/wav')}
                 if attempt > 0:
                     print(f"  [Diarize] 网络波动，正在重试 ({attempt+1}/{max_retries})...")
                 else:
                     print(f"  [Diarize] 正在上传并等待说话人分离结果...")
+                print(f"  [DIARIZE DEBUG] 请求URL: {url}")
+                print(f"  [DIARIZE DEBUG] 请求参数: files={{audio_file: '{os.path.basename(wav_path)}'}}")
                 response = requests.post(url, files=files, timeout=3600)
+            print(f"  [DIARIZE DEBUG] 响应状态码: {response.status_code}")
+            print(f"  [DIARIZE DEBUG] 响应头: {dict(response.headers)}")
+            print(f"  [DIARIZE DEBUG] 响应体(前1000字符): {response.text[:1000]}")
             response.raise_for_status()
             data = response.json()
+            print(f"  [DIARIZE DEBUG] 解析后的JSON: {json.dumps(data, ensure_ascii=False, indent=2)[:2000]}")
             if "error" in data:
                 print(f"  [Diarize Server Error] {data['error']}")
                 return None
-            print(f"  [Diarize Info] 服务端返回 {len(data.get('diarization', []))} 个说话人分段。")
-            return data
+            
+            # 将 /transcribe 返回的 segments 转换为 diarization 格式
+            segments = data.get('segments', [])
+            if segments:
+                diarization = []
+                for seg in segments:
+                    diarization.append({
+                        'speaker': seg.get('spk', 'Unknown'),
+                        'text': seg.get('text', ''),
+                        'start_ms': seg.get('start', 0),
+                        'end_ms': seg.get('end', 0)
+                    })
+                converted_data = {'diarization': diarization}
+                print(f"  [Diarize Info] 服务端返回 {len(diarization)} 个说话人分段。")
+                return converted_data
+            else:
+                print(f"  [Diarize Info] 服务端返回 0 个说话人分段。")
+                return None
         except requests.exceptions.ConnectionError:
-            print(f"  [Diarize Connection Error] 无法连接服务端，等待 5秒 后重试...")
+            print(f"  [Diarize Connection Error] 无法连接服务端 ({url})，等待 5秒 后重试...")
             time.sleep(5)
         except requests.exceptions.Timeout:
             print(f"  [Diarize Timeout] 请求超时，服务端仍在处理。")
             return None
         except Exception as e:
             print(f"  [Diarize Request Error] {e}")
+            print(f"  [DIARIZE DEBUG] 异常详情: {type(e).__name__}: {str(e)}")
             return None
     print("  [Diarize Failed] 重试次数耗尽，跳过此文件")
     return None
