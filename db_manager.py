@@ -112,8 +112,8 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict]) -> bool
         if conn:
             return_connection(conn)
 
-def get_transcripts(limit: int = 100) -> List[Dict]:
-    """获取最近的转录记录"""
+def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
+    """获取最近的转录记录，支持分页"""
     conn = None
     try:
         conn = get_connection()
@@ -123,8 +123,8 @@ def get_transcripts(limit: int = 100) -> List[Dict]:
             
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, filename, created_at, full_text, segments_json FROM transcriptions ORDER BY created_at DESC LIMIT %s",
-            (limit,)
+            "SELECT id, filename, created_at, full_text, segments_json FROM transcriptions ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            (limit, offset)
         )
         
         rows = cursor.fetchall()

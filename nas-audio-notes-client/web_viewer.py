@@ -133,10 +133,10 @@ def get_system_status():
 
     return status
 
-def get_transcripts():
-    """获取转录记录（使用PostgreSQL）"""
+def get_transcripts(offset=0, limit=20):
+    """获取转录记录（使用PostgreSQL，支持分页）"""
     try:
-        items = db_get_transcripts(limit=100)
+        items = db_get_transcripts(offset=offset, limit=limit)
         
         results = []
         for data in items:
@@ -196,529 +196,639 @@ def get_transcripts():
 # --- HTML 模板 ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 录音存档</title>
+    <title>AI Audio Notes | 智能语音笔记</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        gray: {
+                            850: '#1f2937',
+                            900: '#111827',
+                            950: '#030712',
+                        },
+                        primary: {
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                        },
+                        accent: {
+                            400: '#2dd4bf',
+                            500: '#14b8a6',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-out',
+                        'slide-up': 'slideUp 0.5s ease-out',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
-        :root { --primary: #007bff; --bg: #f0f2f5; --card-bg: #ffffff; --text: #333; --console-bg: #1e1e1e; --console-text: #00ff00; --chat-me: #d9fdd3; --chat-other: #ffffff; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111827; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151; 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563; 
+        }
+
+        /* 玻璃拟态效果 */
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
         
-        /* 顶部导航 Tab */
-        .nav-header { background: var(--card-bg); padding: 10px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 100; display: flex; justify-content: center; gap: 20px; }
-        .nav-btn { padding: 8px 20px; border: none; background: none; font-size: 1em; font-weight: 600; color: #666; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; }
-        .nav-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-        .nav-btn:hover { color: var(--primary); }
-
-        /* 主内容区域 */
-        .view-container { flex: 1; overflow-y: auto; padding: 20px; display: none; }
-        .view-container.active { display: block; }
-
-        /* === 视图 1: 仪表盘样式 === */
-        .dashboard-panel { display: grid; grid-template-columns: 1fr 2fr; grid-template-rows: 1fr; gap: 20px; margin-bottom: 20px; max-width: 1000px; margin-left: auto; margin-right: auto; align-items: stretch; }
-        .status-card { background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .status-item { margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .status-item:last-child { border-bottom: none; }
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.9em; color: white; font-weight: bold; }
-        .bg-green { background-color: #28a745; } .bg-red { background-color: #dc3545; } .bg-blue { background-color: #17a2b8; }
+        .glass-card {
+            background: rgba(31, 41, 55, 0.4);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            transition: all 0.3s ease;
+        }
         
-        .console-window { background: var(--console-bg); color: var(--console-text); padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.85em; height: 150px; overflow-y: auto; white-space: pre-wrap; }
+        .glass-card:hover {
+            background: rgba(31, 41, 55, 0.6);
+            border-color: rgba(99, 102, 241, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 霓虹光效 */
+        .neon-text {
+            text-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+        }
         
-        .transcript-card { background: var(--card-bg); border-radius: 8px; margin-bottom: 15px; padding: 20px; max-width: 960px; margin-left: auto; margin-right: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .transcript-card.new-item { border-left: 4px solid #28a745; background-color: #f8fff9; }
-        .card-meta { display: flex; justify-content: space-between; color: #888; font-size: 0.85em; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-        .filename { font-weight: 600; color: #444; }
-        .segment { display: flex; gap: 10px; margin-bottom: 4px; }
-        .timestamp { font-family: monospace; color: #999; font-size: 0.8em; min-width: 80px; }
+        .status-dot {
+            box-shadow: 0 0 8px currentColor;
+        }
 
-        /* === 视图 2: 时光对话样式 (Chat) === */
-        .chat-container { max-width: 800px; margin: 0 auto; }
-        .chat-date-separator { text-align: center; margin: 20px 0; }
-        .chat-date-label { background-color: rgba(0,0,0,0.05); color: #666; padding: 4px 12px; border-radius: 12px; font-size: 0.85em; }
-        .file-separator { text-align: center; margin: 15px 0; font-size: 0.8em; color: #aaa; display: flex; align-items: center; gap: 10px; }
-        .file-separator::before, .file-separator::after { content: ""; flex: 1; height: 1px; background: #ddd; }
+        /* 聊天气泡 */
+        .chat-bubble {
+            position: relative;
+            z-index: 1;
+        }
+        .chat-bubble::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+            z-index: -1;
+            border-radius: inherit;
+        }
 
-        .chat-bubble-row { display: flex; margin-bottom: 15px; gap: 10px; }
-        .avatar { width: 40px; height: 40px; background-color: #ccc; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; color: white; font-size: 0.9em; flex-shrink: 0; }
+        body {
+            background-color: #030712;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(20, 184, 166, 0.08) 0%, transparent 25%);
+            color: #f3f4f6;
+        }
         
-        .bubble-content { max-width: 70%; display: flex; flex-direction: column; }
-        .speaker-name { font-size: 0.75em; color: #888; margin-bottom: 2px; margin-left: 5px; }
-        .bubble { background-color: var(--chat-other); padding: 10px 14px; border-radius: 0 12px 12px 12px; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.1); font-size: 1em; line-height: 1.5; }
-        .chat-time { font-size: 0.7em; color: #999; text-align: right; margin-top: 4px; margin-right: 5px; }
-
-        /* === 视图 3: 统计分析样式 (新增) === */
-        .analysis-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .analysis-card h3 { margin: 0 0 10px 0; font-size: 1.5em; }
-        .analysis-card p { margin: 0; opacity: 0.9; }
-        .speaker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .speaker-card { background: var(--card-bg); border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s; border: 1px solid #eee; }
-        .speaker-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .speaker-icon { width: 60px; height: 60px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.5em; font-weight: bold; color: white; flex-shrink: 0; }
-        .speaker-info { flex: 1; }
-        .speaker-info h4 { margin: 0 0 10px 0; color: #333; font-size: 1.1em; }
-        .speaker-stats-detail { display: flex; justify-content: space-between; background: #f8f9fa; padding: 8px 12px; border-radius: 8px; text-align: center; }
-        
-        /* 头像颜色 (限定为 5 种高对比度色) */
-        .avatar-0 { background: #1A53E0; } /* 亮蓝色 */
-        .avatar-1 { background: #28A745; } /* 鲜绿色 */
-        .avatar-2 { background: #FF7733; } /* 亮橙色 */
-        .avatar-3 { background: #8E44AD; } /* 深紫色 */
-        .avatar-4 { background: #DC3545; } /* 鲜红色 */
-
+        .line-clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
     </style>
 </head>
-<body>
+<body class="h-screen flex overflow-hidden selection:bg-primary-500 selection:text-white">
 
-    <div class="nav-header">
-        <button class="nav-btn active" onclick="switchTab('dashboard')">️ 仪表盘</button>
-        <button class="nav-btn" onclick="switchTab('chat')"> 时光对话</button>
-        <button class="nav-btn" onclick="switchTab('analysis')">📊 统计分析</button>
-        <button class="nav-btn" onclick="switchTab('config')">⚙️ 配置管理</button>
-    </div>
-
-    <div id="view-dashboard" class="view-container active">
-        <div class="dashboard-panel">
-            <div class="status-card">
-                <div class="status-item"><span class="status-label">PC 服务状态</span><span id="status-asr" class="badge bg-red">检测中...</span></div>
-                <div class="status-item"><span class="status-label">排队文件数</span><span id="status-files" class="badge bg-blue">0</span></div>
-                <div class="status-item"><span class="status-label">Web 界面</span><span class="badge bg-green">在线</span></div>
+    <!-- 侧边栏 -->
+    <aside class="w-64 glass flex flex-col border-r border-gray-800 z-20">
+        <div class="p-6 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
+                <i class="fa-solid fa-wave-square text-white text-lg"></i>
             </div>
-            <div class="console-window">
-                <div style="border-bottom:1px solid #444; margin-bottom:5px; color:#888;">root@NAS: monitor_logs (实时)</div>
-                <div id="log-display">正在连接日志流...</div>
+            <div>
+                <h1 class="font-bold text-lg tracking-tight text-white">Audio Notes</h1>
+                <p class="text-xs text-gray-400">AI 智能语音助手</p>
             </div>
         </div>
-        <div id="dashboard-content">
-            <div style="text-align: center; color: #999;">加载中...</div>
-        </div>
-    </div>
 
-    <div id="view-chat" class="view-container">
-        <div class="chat-container" id="chat-content">
-            <div style="text-align: center; color: #999; margin-top: 50px;">正在生成对话流...</div>
-        </div>
-    </div>
-    
-    <div id="view-analysis" class="view-container">
-        <div id="analysis-content" style="max-width: 1000px; margin: 0 auto;">
-            <div style="text-align: center; color: #999; margin-top: 50px;">正在分析声纹数据...</div>
-        </div>
-    </div>
+        <nav class="flex-1 px-4 space-y-2 mt-4">
+            <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group active">
+                <i class="fa-solid fa-grid-2 text-lg group-hover:text-primary-400 transition-colors"></i>
+                <span class="font-medium">仪表盘</span>
+            </button>
+            <button onclick="switchTab('chat')" id="nav-chat" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-comments text-lg group-hover:text-accent-400 transition-colors"></i>
+                <span class="font-medium">时光对话</span>
+            </button>
+            <button onclick="switchTab('analysis')" id="nav-analysis" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-chart-pie text-lg group-hover:text-purple-400 transition-colors"></i>
+                <span class="font-medium">统计分析</span>
+            </button>
+        </nav>
 
-    <div id="view-config" class="view-container">
-        <div id="config-content" style="max-width: 1000px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #007bff; margin-bottom: 20px;">系统配置</h2>
-            <div id="config-form">
-                <div style="text-align: center; color: #999;">正在加载配置...</div>
-            </div>
-            <div style="margin-top: 20px; text-align: center;">
-                <button id="save-config-btn" class="btn btn-primary" style="padding: 8px 30px; font-size: 16px;">保存配置</button>
-                <div id="save-status" style="margin-top: 10px; color: #28a745; font-weight: bold;"></div>
+        <div class="p-4 mt-auto">
+            <div class="glass-card rounded-xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium text-gray-400">ASR 服务</span>
+                    <span id="status-asr" class="flex h-2 w-2 rounded-full bg-red-500 status-dot"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium text-gray-400">待处理</span>
+                    <span id="status-files" class="text-xs font-bold text-white bg-gray-700 px-2 py-0.5 rounded-full">0</span>
+                </div>
+                <div class="h-px bg-gray-700/50 my-2"></div>
+                <div class="text-[10px] text-gray-500 font-mono truncate" id="log-display">
+                    系统就绪...
+                </div>
             </div>
         </div>
-    </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 relative overflow-hidden flex flex-col">
+        <!-- 顶部光晕 -->
+        <div class="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-primary-900/10 to-transparent pointer-events-none"></div>
+
+        <!-- 视图容器 -->
+        <div id="view-dashboard" class="view-container flex-1 overflow-y-auto p-8 space-y-8 animate-fade-in active">
+            <header class="flex justify-between items-end mb-6">
+                <div>
+                    <h2 class="text-3xl font-bold text-white mb-2">概览</h2>
+                    <p class="text-gray-400">最近的录音与转录记录</p>
+                </div>
+                <button onclick="loadMore()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 transition-colors border border-gray-700">
+                    <i class="fa-solid fa-rotate-right mr-2"></i>刷新
+                </button>
+            </header>
+            
+            <div id="dashboard-content" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-10">
+                <!-- 卡片将通过JS插入 -->
+            </div>
+            <div id="loading-indicator" class="text-center py-8 hidden">
+                <i class="fa-solid fa-circle-notch fa-spin text-primary-500 text-2xl"></i>
+            </div>
+        </div>
+
+        <div id="view-chat" class="view-container flex-1 overflow-y-auto p-0 hidden">
+            <div class="max-w-4xl mx-auto w-full h-full flex flex-col bg-gray-900/30 border-x border-gray-800/50">
+                <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i class="fa-regular fa-clock text-accent-400"></i> 时光轴
+                    </h2>
+                </header>
+                <div id="chat-content" class="flex-1 p-6 space-y-8 pb-20">
+                    <!-- 对话内容 -->
+                </div>
+            </div>
+        </div>
+
+        <div id="view-analysis" class="view-container flex-1 overflow-y-auto p-8 hidden">
+            <header class="mb-8">
+                <h2 class="text-3xl font-bold text-white mb-2">数据洞察</h2>
+                <p class="text-gray-400">说话人统计与趋势分析</p>
+            </header>
+            <div id="analysis-content" class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
+                <!-- 统计图表 -->
+            </div>
+        </div>
+    </main>
 
     <script>
+        // 状态管理
         let lastDataFingerprint = "";
         const speakerColorMap = {};
+        const colors = [
+            'text-blue-400 border-blue-500/30 bg-blue-500/10',
+            'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
+            'text-purple-400 border-purple-500/30 bg-purple-500/10',
+            'text-amber-400 border-amber-500/30 bg-amber-500/10',
+            'text-rose-400 border-rose-500/30 bg-rose-500/10',
+            'text-cyan-400 border-cyan-500/30 bg-cyan-500/10',
+        ];
         let nextColorIndex = 0;
-
-        function switchTab(tabName) {
-            document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById('view-' + tabName).classList.add('active');
-            
-            const btns = document.querySelectorAll('.nav-btn');
-            if(tabName === 'dashboard') btns[0].classList.add('active');
-            else if(tabName === 'chat') btns[1].classList.add('active');
-            else if(tabName === 'analysis') btns[2].classList.add('active');
-            else if(tabName === 'config') btns[3].classList.add('active');
-            
-            // Load config when switching to config tab
-            if (tabName === 'config') {
-                loadConfig();
-            }
-        }
-
-        // Load configuration from API
-        function loadConfig() {
-            fetch('/api/config')
-                .then(response => response.json())
-                .then(config => {
-                    const form = document.getElementById('config-form');
-                    form.innerHTML = '';
-                    
-                    for (const key in config) {
-                        const value = config[key];
-                        const div = document.createElement('div');
-                        div.style.marginBottom = '15px';
-                        
-                        const label = document.createElement('label');
-                        label.textContent = key;
-                        label.style.display = 'block';
-                        label.style.marginBottom = '5px';
-                        label.style.fontWeight = 'bold';
-                        
-                        const input = document.createElement('input');
-                        input.type = typeof value === 'number' ? 'number' : 'text';
-                        input.value = value;
-                        input.id = 'config-' + key;
-                        input.style.width = '100%';
-                        input.style.padding = '8px';
-                        input.style.border = '1px solid #ccc';
-                        input.style.borderRadius = '4px';
-                        input.style.fontSize = '14px';
-                        
-                        div.appendChild(label);
-                        div.appendChild(input);
-                        form.appendChild(div);
-                    }
-                })
-                .catch(error => {
-                    const form = document.getElementById('config-form');
-                    form.innerHTML = `<div style="text-align: center; color: #dc3545;">加载配置失败: ${error.message}</div>`;
-                });
-        }
-
-        // Save configuration to API
-        document.getElementById('save-config-btn')?.addEventListener('click', () => {
-            const form = document.getElementById('config-form');
-            const inputs = form.querySelectorAll('input');
-            const newConfig = {};
-            
-            inputs.forEach(input => {
-                const key = input.id.replace('config-', '');
-                const value = input.value;
-                
-                if (input.type === 'number') {
-                    newConfig[key] = parseInt(value) || parseFloat(value) || value;
-                } else {
-                    newConfig[key] = value;
-                }
-            });
-            
-            fetch('/api/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newConfig)
-            })
-            .then(response => {
-                if (!response.ok) {
-                    return response.text().then(text => {
-                        throw new Error(`HTTP error! status: ${response.status}, message: ${text}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                const status = document.getElementById('save-status');
-                if (data.success) {
-                    status.textContent = '配置保存成功!';
-                    status.style.color = '#28a745';
-                    setTimeout(() => status.textContent = '', 2000);
-                } else {
-                    status.textContent = '保存失败: ' + data.message;
-                    status.style.color = '#dc3545';
-                    setTimeout(() => status.textContent = '', 2000);
-                }
-            })
-            .catch(err => {
-                const status = document.getElementById('save-status');
-                status.textContent = `保存失败: ${err.message}`;
-                status.style.color = '#dc3545';
-                setTimeout(() => status.textContent = '', 2000);
-            });
-        });
         
-        // --- 核心辅助函数 ---
+        // 懒加载状态
+        let currentOffset = 0;
+        const pageSize = 20;
+        let isLoading = false;
+        let hasMore = true;
+        let allItems = [];
 
-        // 1. 深度文本清洗：去除标签、标点、空格
-        function cleanText(text) {
-            if (!text) return "";
-            // 去除 SenseVoice 标签
-            let clean = text.replace(/<\|.*?\|>/g, "");
-            return clean;
-        }
-
-        // 2. 检查是否包含有效内容 (过滤掉只有标点符号的情况)
-        function hasMeaningfulContent(text) {
-            if (!text) return false;
-            const clean = cleanText(text);
-            // 去除所有标点符号、空格、换行
-            // 匹配：英文标点, 中文标点, 空白符
-            const stripped = clean.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()。，、？！：；“”‘’\s]/g, "");
-            return stripped.length > 0;
-        }
-
-        // 3. 获取头像颜色索引 (使用映射表确保颜色稳定)
-        function getAvatarIndex(spkId) {
-            if (spkId in speakerColorMap) {
-                return speakerColorMap[spkId];
-            }
-            const colorIndex = nextColorIndex % 5;
-            speakerColorMap[spkId] = colorIndex;
-            nextColorIndex++;
-            return colorIndex;
-        }
-
-        // 4. 预处理统计数据
-        function processStats(items) {
-            items.forEach(item => {
-                const stats = {};
-                if (item.segments && item.segments.length > 0) {
-                    item.segments.forEach(seg => {
-                        // 只有有效内容才计入统计
-                        if (!hasMeaningfulContent(seg.text)) return;
-
-                        const spkId = seg.spk_id !== undefined ? seg.spk_id : 'unknown';
-                        const spkName = typeof seg.spk_id === 'number' ? `说话人 ${seg.spk_id}` : (seg.spk_id || "未知");
-                        
-                        const key = String(spkId); 
-                        if (!stats[key]) {
-                            stats[key] = {
-                                original_id: spkId,
-                                speaker_name: spkName,
-                                count: 0,
-                                total_duration: 0
-                            };
-                        }
-                        stats[key].count += 1;
-                        const dur = (seg.end && seg.start) ? (seg.end - seg.start) : 0;
-                        stats[key].total_duration += dur;
-                    });
-                }
-                item.speaker_stats = stats;
+        // 切换视图
+        function switchTab(tabName) {
+            document.querySelectorAll('.view-container').forEach(el => el.classList.add('hidden'));
+            document.getElementById('view-' + tabName).classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-btn').forEach(el => {
+                el.classList.remove('bg-white/10', 'text-white', 'shadow-lg');
+                el.classList.add('text-gray-400');
             });
-            return items;
+            
+            const activeBtn = document.getElementById('nav-' + tabName);
+            activeBtn.classList.remove('text-gray-400');
+            activeBtn.classList.add('bg-white/10', 'text-white', 'shadow-lg');
+        }
+        
+        // 初始化导航状态
+        switchTab('dashboard');
+
+        function getSpeakerStyle(spk) {
+            if (!speakerColorMap[spk]) {
+                speakerColorMap[spk] = colors[nextColorIndex % colors.length];
+                nextColorIndex++;
+            }
+            return speakerColorMap[spk];
+        }
+
+        function formatTime(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            return date.toLocaleString('zh-CN', {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function processStats(items) {
+            // 简单的数据预处理
+            return items.map(item => {
+                item.date_group = item.created_at ? item.created_at.split('T')[0] : 'Unknown';
+                return item;
+            });
+        }
+
+        // 渲染仪表盘
+        function renderDashboard(items) {
+            const container = document.getElementById('dashboard-content');
+            if (currentOffset === 0) container.innerHTML = ""; // 首次加载清空
+            
+            let html = "";
+            items.slice(currentOffset).forEach((item, index) => {
+                // 提取摘要 (前100字)
+                let summary = item.full_text || "无内容";
+                if (summary.length > 100) summary = summary.substring(0, 100) + "...";
+                
+                // 提取参与者
+                const speakers = new Set();
+                item.segments.forEach(s => speakers.add(s.spk));
+                const speakerTags = Array.from(speakers).map(s => {
+                    const style = getSpeakerStyle(s);
+                    // 提取颜色类名中的 text-xxx
+                    const colorClass = style.split(' ')[0]; 
+                    return `<span class="text-xs font-medium ${colorClass} bg-gray-800/50 px-2 py-1 rounded-md border border-gray-700/50">${s}</span>`;
+                }).join('');
+
+                html += `
+                <div class="glass-card rounded-2xl p-6 flex flex-col h-full animate-slide-up" style="animation-delay: ${index * 50}ms">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700">
+                                <i class="fa-solid fa-file-audio text-primary-400"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
+                                <span class="text-xs text-gray-500">${formatTime(item.created_at)}</span>
+                            </div>
+                        </div>
+                        <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
+                    </div>
+                    
+                    <div class="flex-1 mb-4">
+                        <p class="text-gray-400 text-sm leading-relaxed line-clamp-3">${summary}</p>
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-2 mt-auto pt-4 border-t border-gray-800/50">
+                        ${speakerTags || '<span class="text-xs text-gray-600">无说话人</span>'}
+                    </div>
+                </div>`;
+            });
+            
+            if (currentOffset === 0) {
+                container.innerHTML = html;
+            } else {
+                container.insertAdjacentHTML('beforeend', html);
+            }
+        }
+
+        // 渲染聊天视图
+        function renderChat(items) {
+            const container = document.getElementById('chat-content');
+            if (currentOffset === 0) container.innerHTML = "";
+            
+            // 按日期分组
+            const groups = {};
+            items.slice(currentOffset).forEach(item => {
+                if (!groups[item.date_group]) groups[item.date_group] = [];
+                groups[item.date_group].push(item);
+            });
+
+            let html = "";
+            
+            // 如果是追加加载，不需要重新渲染日期头（简化处理，这里可能需要优化，但暂且如此）
+            // 实际上，为了保持时间线正确，我们应该重新渲染整个列表或者精细控制。
+            // 鉴于 allItems 包含了所有数据，我们这里简单地重新渲染整个 allItems 会更安全，
+            // 但为了性能，我们只渲染新增部分。
+            // 修正：renderChat 接收的是 allItems，所以我们可以全量渲染，或者优化。
+            // 为了简单且保证顺序正确，我们清空并全量渲染 allItems。
+            
+            container.innerHTML = ""; // 清空重绘，确保顺序
+            
+            // 重新分组 allItems
+            const allGroups = {};
+            allItems.forEach(item => {
+                if (!allGroups[item.date_group]) allGroups[item.date_group] = [];
+                allGroups[item.date_group].push(item);
+            });
+
+            Object.keys(allGroups).sort().reverse().forEach(date => {
+                html += `
+                <div class="relative flex items-center justify-center my-8">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-800"></div>
+                    </div>
+                    <div class="relative bg-gray-900 px-4 py-1 rounded-full border border-gray-800 text-xs font-medium text-gray-500">
+                        ${date}
+                    </div>
+                </div>`;
+
+                allGroups[date].forEach(item => {
+                    // 文件头
+                    html += `
+                    <div class="mb-8 animate-fade-in">
+                        <div class="flex items-center gap-2 mb-4 px-4">
+                            <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
+                            <span class="text-xs font-mono text-gray-500">${item.filename}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${formatTime(item.created_at)}</span>
+                        </div>
+                    `;
+
+                    let lastSpk = null;
+                    item.segments.forEach(seg => {
+                        const style = getSpeakerStyle(seg.spk);
+                        // 提取颜色
+                        const textColor = style.match(/text-(\w+)-400/)[1]; // e.g. blue
+                        const isMe = seg.spk === 'Me'; // 假设有 'Me'，目前没有，预留
+                        
+                        const showAvatar = seg.spk !== lastSpk;
+                        lastSpk = seg.spk;
+
+                        html += `
+                        <div class="flex gap-4 mb-2 ${showAvatar ? 'mt-4' : ''} px-2 hover:bg-white/5 rounded-lg transition-colors p-2 -mx-2">
+                            <div class="w-10 flex-shrink-0 flex flex-col items-center">
+                                ${showAvatar ? `
+                                <div class="w-10 h-10 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center shadow-lg">
+                                    <span class="text-xs font-bold text-gray-300">${seg.spk.substring(0,2)}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                ${showAvatar ? `
+                                <div class="flex items-baseline gap-2 mb-1">
+                                    <span class="text-sm font-bold text-gray-200">${seg.spk}</span>
+                                    <span class="text-[10px] text-gray-600">${formatTime(item.created_at)}</span>
+                                </div>
+                                ` : ''}
+                                <div class="text-gray-300 leading-relaxed text-sm">
+                                    ${seg.text}
+                                    ${seg.emotion && seg.emotion !== 'neutral' ? 
+                                        `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-400 ml-2 border border-gray-700">
+                                            ${seg.emotion}
+                                        </span>` : ''}
+                                </div>
+                            </div>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                });
+            });
+            
+            container.innerHTML = html;
+        }
+
+        // 渲染分析视图
+        function renderAnalysis(items) {
+            const container = document.getElementById('analysis-content');
+            
+            // 统计数据
+            const stats = {};
+            allItems.forEach(item => {
+                item.segments.forEach(seg => {
+                    if (!stats[seg.spk]) {
+                        stats[seg.spk] = { count: 0, words: 0, emotions: {} };
+                    }
+                    stats[seg.spk].count++;
+                    stats[seg.spk].words += seg.text.length;
+                    
+                    const emo = seg.emotion || 'neutral';
+                    stats[seg.spk].emotions[emo] = (stats[seg.spk].emotions[emo] || 0) + 1;
+                });
+            });
+
+            // 转换为数组并排序
+            const sortedStats = Object.entries(stats)
+                .sort((a, b) => b.1.count - a.1.count);
+
+            let html = "";
+            
+            // 概览卡片
+            html += `
+            <div class="col-span-1 lg:col-span-2 glass-card rounded-2xl p-6 mb-6">
+                <h3 class="text-lg font-bold text-white mb-4">说话人活跃度排行</h3>
+                <div class="space-y-4">
+            `;
+            
+            sortedStats.forEach(([spk, data], index) => {
+                const style = getSpeakerStyle(spk);
+                const colorName = style.match(/text-(\w+)-400/)[1];
+                const percent = Math.min(100, (data.count / sortedStats[0][1].count) * 100);
+                
+                html += `
+                <div class="relative">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="font-medium text-gray-300 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-${colorName}-500"></span>
+                            ${spk}
+                        </span>
+                        <span class="text-gray-500 font-mono">${data.count} 句 / ${data.words} 字</span>
+                    </div>
+                    <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                        <div class="h-full bg-${colorName}-500 rounded-full transition-all duration-1000" style="width: ${percent}%"></div>
+                    </div>
+                </div>
+                `;
+            });
+            html += `</div></div>`;
+
+            // 情感分布 (模拟图表，实际可以用Chart.js)
+            html += `
+            <div class="glass-card rounded-2xl p-6">
+                <h3 class="text-lg font-bold text-white mb-4">情感分布</h3>
+                <div class="grid grid-cols-2 gap-4">
+            `;
+            
+            // 汇总所有情感
+            const allEmotions = {};
+            Object.values(stats).forEach(s => {
+                Object.entries(s.emotions).forEach(([e, c]) => {
+                    allEmotions[e] = (allEmotions[e] || 0) + c;
+                });
+            });
+            
+            Object.entries(allEmotions).forEach(([emo, count]) => {
+                html += `
+                <div class="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50 text-center">
+                    <div class="text-2xl mb-1">${getEmotionIcon(emo)}</div>
+                    <div class="text-xs text-gray-400 uppercase tracking-wider">${emo}</div>
+                    <div class="text-lg font-bold text-white">${count}</div>
+                </div>
+                `;
+            });
+            
+            html += `</div></div>`;
+            
+            container.innerHTML = html;
+        }
+        
+        function getEmotionIcon(emo) {
+            const map = {
+                'happy': '😊', 'sad': '😔', 'angry': '😡', 'neutral': '😐',
+                'laughter': '🤣', 'fearful': '😨', 'surprised': '😲'
+            };
+            return map[emo] || '😶';
+        }
+
+        // 加载更多数据
+        async function loadMore() {
+            if (isLoading || !hasMore) return;
+            
+            isLoading = true;
+            document.getElementById('loading-indicator').classList.remove('hidden');
+            
+            try {
+                const dataRes = await fetch(`/api/data?offset=${currentOffset}&limit=${pageSize}`);
+                let newItems = await dataRes.json();
+                
+                if (newItems.length === 0) {
+                    hasMore = false;
+                    document.getElementById('loading-indicator').classList.add('hidden');
+                    return;
+                }
+                
+                if (newItems.length < pageSize) {
+                    hasMore = false;
+                }
+                
+                newItems = processStats(newItems);
+                
+                // 追加新数据
+                allItems = allItems.concat(newItems);
+                currentOffset += newItems.length;
+                
+                // 重新渲染所有视图
+                renderDashboard(allItems); // 仪表盘支持追加
+                renderChat(allItems);      // 聊天全量重绘
+                renderAnalysis(allItems);  // 分析全量重绘
+                
+            } catch (e) { 
+                console.error('加载数据失败:', e); 
+            } finally {
+                isLoading = false;
+                document.getElementById('loading-indicator').classList.add('hidden');
+            }
         }
 
         async function updateLoop() {
             try {
                 const statusRes = await fetch('/api/status');
                 const statusData = await statusRes.json();
-                const asrBadge = document.getElementById('status-asr');
+                
+                const asrDot = document.getElementById('status-asr');
                 if (statusData.asr_server === 'online') {
-                    asrBadge.innerText = "在线"; asrBadge.className = "badge bg-green";
+                    asrDot.classList.remove('text-red-500');
+                    asrDot.classList.add('text-green-500', 'shadow-[0_0_8px_#22c55e]');
                 } else {
-                    asrBadge.innerText = "离线"; asrBadge.className = "badge bg-red";
+                    asrDot.classList.remove('text-green-500', 'shadow-[0_0_8px_#22c55e]');
+                    asrDot.classList.add('text-red-500');
                 }
+                
                 document.getElementById('status-files').innerText = statusData.pending_files;
-                document.getElementById('log-display').innerText = statusData.last_log;
-                const consoleWin = document.querySelector('.console-window');
-                consoleWin.scrollTop = consoleWin.scrollHeight;
+                document.getElementById('log-display').innerText = statusData.last_log || "无日志";
 
-                const dataRes = await fetch('/api/data');
-                let items = await dataRes.json();
+                // 只检查是否有新数据（检查最新一条）
+                const checkRes = await fetch('/api/data?offset=0&limit=1');
+                const latestItem = await checkRes.json();
                 
-                items = processStats(items);
-                
-                if (items.length === 0) return;
-                const currentFingerprint = items.length + "_" + items[0].id;
-                if (currentFingerprint === lastDataFingerprint) return;
-                lastDataFingerprint = currentFingerprint;
-
-                renderDashboard(items);
-                renderChat(items);
-                renderAnalysis(items);
+                if (latestItem.length > 0) {
+                    const latestId = latestItem[0].id;
+                    const currentLatestId = allItems.length > 0 ? allItems[0].id : null;
+                    
+                    // 如果有新数据，重新加载所有数据
+                    if (latestId !== currentLatestId) {
+                        console.log('检测到新数据，重新加载');
+                        currentOffset = 0;
+                        allItems = [];
+                        hasMore = true;
+                        await loadMore();
+                    }
+                }
 
             } catch (e) { console.error(e); }
         }
-
-        function renderDashboard(items) {
-            const container = document.getElementById('dashboard-content');
-            let html = "";
-            items.forEach(item => {
-                // === 严格过滤 ===
-                // 如果全文都没有有效内容(去标点后为空)，直接跳过整张卡片
-                let hasValidContent = false;
-                if (item.segments && item.segments.length > 0) {
-                    hasValidContent = item.segments.some(seg => hasMeaningfulContent(seg.text));
-                } else {
-                    hasValidContent = hasMeaningfulContent(item.full_text);
-                }
-                if (!hasValidContent) return; // 跳过无效文件
-                // ===============
-
-                let segHtml = "";
-                if (item.segments && item.segments.length > 0) {
-                    item.segments.forEach(seg => {
-                        if (!hasMeaningfulContent(seg.text)) return; // 跳过无效片段
-                        const txt = cleanText(seg.text);
-                        segHtml += `<div class="segment"><span class="timestamp">[${seg.start_fmt}]</span><span>${txt}</span></div>`;
-                    });
-                } else {
-                    const txt = cleanText(item.full_text);
-                    if (txt) segHtml = `<div class="segment"><span>${txt}</span></div>`;
-                }
-                
-                // 二次检查：如果过滤后没有 segHtml 了，也不渲染
-                if (!segHtml) return;
-
-                html += `
-                    <div class="transcript-card ${item.is_new ? 'new-item' : ''}">
-                        <div class="card-meta"><span class="filename">${item.filename}</span><span>${item.time_full}</span></div>
-                        <div>${segHtml}</div>
-                    </div>`;
-            });
-            container.innerHTML = html;
-        }
-
-        function renderChat(items) {
-            const container = document.getElementById('chat-content');
-            let html = "";
-            let currentDay = "";
-
-            items.forEach(item => {
-                // === 严格过滤 ===
-                let hasValidContent = false;
-                if (item.segments && item.segments.length > 0) {
-                    hasValidContent = item.segments.some(seg => hasMeaningfulContent(seg.text));
-                } else {
-                    hasValidContent = hasMeaningfulContent(item.full_text);
-                }
-                if (!hasValidContent) return; 
-                // ===============
-
-                if (item.date_group !== currentDay) {
-                    html += `<div class="chat-date-separator"><span class="chat-date-label">${item.date_group}</span></div>`;
-                    currentDay = item.date_group;
-                }
-                html += `<div class="file-separator">来源: ${item.filename} (${item.time_simple})</div>`;
-
-                if (item.segments && item.segments.length > 0) {
-                    let currentSpkId = null;
-                    let currentGroup = [];
-
-                    const renderGroup = () => {
-                        if (currentGroup.length === 0) return;
-                        
-                        const firstSeg = currentGroup[0];
-                        const spkId = firstSeg.spk_id !== undefined ? firstSeg.spk_id : 0;
-                        let spkName = typeof spkId === 'number' ? `说话人 ${spkId}` : spkId;
-                        let avatarIdx = getAvatarIndex(spkId);
-                        
-                        let iconText = spkName;
-                        if(iconText.length > 0) iconText = iconText.slice(0, 1);
-                        
-                        // Merge text
-                        const mergedText = currentGroup.map(s => cleanText(s.text)).join(" ");
-                        
-                        html += `
-                            <div class="chat-bubble-row">
-                                <div class="avatar avatar-${avatarIdx % 5}">${iconText}</div>
-                                <div class="bubble-content">
-                                    <div class="speaker-name">${spkName}</div>
-                                    <div class="bubble">${mergedText}</div>
-                                    <div class="chat-time">${firstSeg.start_fmt}</div>
-                                </div>
-                            </div>
-                        `;
-                    };
-
-                    item.segments.forEach(seg => {
-                        if (!hasMeaningfulContent(seg.text)) return; // 跳过无效气泡
-                        
-                        const thisSpkId = seg.spk_id !== undefined ? seg.spk_id : 0;
-                        
-                        if (currentGroup.length > 0 && thisSpkId !== currentSpkId) {
-                             renderGroup();
-                             currentGroup = [];
-                        }
-                        
-                        currentSpkId = thisSpkId;
-                        currentGroup.push(seg);
-                    });
-                    
-                    // Render the last group
-                    renderGroup();
-                } else {
-                    const txt = cleanText(item.full_text);
-                    // 截取名字的第一个字作为头像文字
-                    let iconText = "未知"; // Default for full_text without speaker
-                    if (item.speaker_stats && Object.keys(item.speaker_stats).length > 0) {
-                        const firstSpkId = Object.keys(item.speaker_stats)[0];
-                        const firstSpkName = item.speaker_stats[firstSpkId].speaker_name;
-                        if (firstSpkName.length > 0) iconText = firstSpkName.slice(0, 1);
+        
+        // 添加滚动监听 - 滚动到底部时加载更多
+        ['view-dashboard', 'view-chat', 'view-analysis'].forEach(containerId => {
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.addEventListener('scroll', () => {
+                    if (container.scrollTop + container.clientHeight >= container.scrollHeight - 100) {
+                        loadMore();
                     }
-                    let avatarIdx = getAvatarIndex(0); // Default avatar for full_text
-                    html += `
-                        <div class="chat-bubble-row">
-                             <div class="avatar avatar-${avatarIdx % 5}">${iconText}</div>
-                             <div class="bubble-content">
-                                <div class="bubble">${txt}</div>
-                                <div class="chat-time">来源时间: ${item.time_simple}</div>
-                             </div>
-                        </div>`;
-                }
-            });
-            container.innerHTML = html;
-        }
-
-        function renderAnalysis(items) {
-            const container = document.getElementById('analysis-content');
-            const globalSpeakerStats = {};
-            let totalFiles = items.length;
-            
-            items.forEach(item => {
-                if (item.speaker_stats) {
-                    for (const [key, stats] of Object.entries(item.speaker_stats)) {
-                        if (!globalSpeakerStats[key]) {
-                            globalSpeakerStats[key] = {
-                                original_id: stats.original_id,
-                                name: stats.speaker_name,
-                                totalCount: 0,
-                                totalDuration: 0,
-                                filesParticipated: new Set()
-                            };
-                        }
-                        globalSpeakerStats[key].totalCount += stats.count;
-                        globalSpeakerStats[key].totalDuration += stats.total_duration;
-                        globalSpeakerStats[key].filesParticipated.add(item.filename);
-                    }
-                }
-            });
-            
-            let html = `
-                <div class="analysis-card">
-                    <h3>📊 声纹识别统计分析</h3>
-                    <p>共分析 ${totalFiles} 个录音文件，识别出 ${Object.keys(globalSpeakerStats).length} 位不同的说话人</p>
-                </div>
-                <div class="speaker-grid">`;
-            
-            const sortedStats = Object.values(globalSpeakerStats).sort((a, b) => b.totalCount - a.totalCount);
-
-            for (const stats of sortedStats) {
-                const avgDuration = stats.totalCount > 0 ? (stats.totalDuration / stats.totalCount / 1000).toFixed(1) : 0;
-                const filesCount = stats.filesParticipated.size;
-                const avatarIdx = getAvatarIndex(stats.original_id);
-                
-                // 截取名字的第一个字作为头像文字
-                let iconText = stats.name;
-                if(iconText.length > 0) iconText = iconText.slice(0, 1);
-                
-                html += `
-                    <div class="speaker-card">
-                        <div class="speaker-icon avatar-${avatarIdx % 5}">
-                            ${iconText}
-                        </div>
-                        <div class="speaker-info">
-                            <h4>${stats.name}</h4>
-                            <div class="speaker-stats-detail">
-                                <div><div style="font-weight: bold;">${stats.totalCount}</div><div style="font-size: 0.8em;">发言次数</div></div>
-                                <div><div style="font-weight: bold;">${avgDuration}s</div><div style="font-size: 0.8em;">平均时长</div></div>
-                                <div><div style="font-weight: bold;">${filesCount}</div><div style="font-size: 0.8em;">参与文件</div></div>
-                            </div>
-                        </div>
-                    </div>`;
+                });
             }
-            
-            html += '</div>';
-            container.innerHTML = html;
-        }
+        });
 
-        setInterval(updateLoop, 3000);
-        updateLoop();
+        // 初始加载
+        loadMore();
+        // 定时检查新数据
+        setInterval(updateLoop, 5000);
     </script>
 </body>
 </html>
@@ -730,7 +840,10 @@ def api_status():
 
 @app.route('/api/data')
 def api_data():
-    return jsonify(get_transcripts())
+    """获取转录数据，支持分页"""
+    offset = request.args.get('offset', 0, type=int)
+    limit = request.args.get('limit', 20, type=int)
+    return jsonify(get_transcripts(offset=offset, limit=limit))
 
 @app.route('/api/config', methods=['GET'])
 def api_get_config():
@@ -743,7 +856,7 @@ def api_update_config():
         # 记录更新请求
         log_message = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] API Config Update - Received: {json.dumps(config_data)}"
         with open(CONFIG["LOG_FILE_PATH"], 'a', encoding='utf-8') as log_file:
-            log_file.write(log_message + '\n')
+            log_file.write(log_message + '\\n')
         
         # 首先从文件读取当前配置
         try:
@@ -766,13 +879,13 @@ def api_update_config():
         # 记录更新结果
         log_message = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] API Config Update - Saved to file: {json.dumps(file_config)}"
         with open(CONFIG["LOG_FILE_PATH"], 'a', encoding='utf-8') as log_file:
-            log_file.write(log_message + '\n')
+            log_file.write(log_message + '\\n')
         
         return jsonify(success=True, message="Configuration updated successfully")
     # 记录无效请求
     log_message = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] API Config Update - Invalid JSON data received"
     with open(CONFIG["LOG_FILE_PATH"], 'a', encoding='utf-8') as log_file:
-        log_file.write(log_message + '\n')
+        log_file.write(log_message + '\\n')
     return jsonify(success=False, message="Invalid JSON data"), 400
 
 @app.route('/')
@@ -780,11 +893,19 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 if __name__ == "__main__":
-    args = parse_args()
-    update_config(args)
-    print("初始化数据库连接池...")
-    if not init_pool():
-        print("数据库连接池初始化失败，程序退出")
-        exit(1)
-    print(f"[Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}")
-    app.run(host='0.0.0.0', port=CONFIG["WEB_PORT"], debug=False)
+    try:
+        # 先初始化数据库连接池
+        print("初始化数据库连接池...", flush=True)
+        if not init_pool():
+            print("数据库连接池初始化失败，程序退出", flush=True)
+            exit(1)
+
+        args = parse_args()
+        update_config(args)
+        
+        print(f"[Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}", flush=True)
+        app.run(host='0.0.0.0', port=CONFIG["WEB_PORT"], debug=False)
+    except BaseException as e:
+        print(f"启动失败 (BaseException): {e}", flush=True)
+        import traceback
+        traceback.print_exc()

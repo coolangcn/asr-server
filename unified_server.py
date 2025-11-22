@@ -208,9 +208,8 @@ def transcribe_internal(wav_path):
                         if extract_segment(processed_path, start, end, segment_path):
                             result = identify_speaker_fusion(segment_path)
                             if result:
-                                identity = result["identity"]
-                                confidence = result["confidence"]
-                                recognition_details = result.get("details", {})
+                                identity, confidence, recognition_details = result
+                                
                     except Exception as e:
                         logger.warning(f"      [3.{i+1}] 声纹识别出错: {e}")
                     finally:
