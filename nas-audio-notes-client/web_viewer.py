@@ -520,10 +520,10 @@ HTML_TEMPLATE = """
         // 渲染仪表盘
         function renderDashboard(items) {
             const container = document.getElementById('dashboard-content');
-            if (currentOffset === 0) container.innerHTML = ""; // 首次加载清空
+            container.innerHTML = ""; // 清空并重新渲染所有项
             
             let html = "";
-            items.slice(currentOffset).forEach((item, index) => {
+            items.forEach((item, index) => {
                 // 提取摘要 (前100字)
                 let summary = item.full_text || "无内容";
                 if (summary.length > 100) summary = summary.substring(0, 100) + "...";
@@ -563,11 +563,7 @@ HTML_TEMPLATE = """
                 </div>`;
             });
             
-            if (currentOffset === 0) {
-                container.innerHTML = html;
-            } else {
-                container.insertAdjacentHTML('beforeend', html);
-            }
+            container.innerHTML = html;
         }
 
         // 渲染聊天视图
