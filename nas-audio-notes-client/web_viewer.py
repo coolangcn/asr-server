@@ -81,7 +81,7 @@ def get_system_status():
     }
     try:
         try:
-            requests.get(CONFIG["ASR_API_URL"].replace("/transcribe", "/"), timeout=1)
+            requests.get(CONFIG["ASR_API_URL"].replace("/transcribe", "/"), timeout=3)
             status["asr_server"] = "online"
         except requests.exceptions.RequestException:
              status["asr_server"] = "offline"
@@ -485,6 +485,29 @@ HTML_TEMPLATE = """
             return date.toLocaleString('zh-CN', {
                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
             });
+
+        function parseFilenameTime(filename) {
+            // 尝试从文件名解析时间
+            // 支持格式: TermuxAudioRecording_2025-11-20_14-33-08
+            // 支持格式: recording-20251115-131250
+            
+            // 格式1: TermuxAudioRecording_YYYY-MM-DD_HH-mm-ss
+            let match = filename.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+            if (match) {
+                return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`;
+            }
+            
+            // 格式2: recording-YYYYMMDD-HHmmss
+            match = filename.match(/recording-(\d{8})-(\d{6})/);
+            if (match) {
+                const date = match[1];  // YYYYMMDD
+                const time = match[2];  // HHmmss
+                return `${date.substring(0,4)}-${date.substring(4,6)}-${date.substring(6,8)}T${time.substring(0,2)}:${time.substring(2,4)}:${time.substring(4,6)}`;
+            }
+            
+            return null;
+        }
+
         }
 
         function processStats(items) {
@@ -525,7 +548,7 @@ HTML_TEMPLATE = """
                             </div>
                             <div>
                                 <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(item.created_at)}</span>
+                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
                             </div>
                         </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
@@ -596,7 +619,7 @@ HTML_TEMPLATE = """
                         <div class="flex items-center gap-2 mb-4 px-4">
                             <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
                             <span class="text-xs font-mono text-gray-500">${item.filename}</span>
-                            <span class="text-xs text-gray-600 ml-auto">${formatTime(item.created_at)}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
                         </div>
                     `;
 
@@ -664,7 +687,7 @@ HTML_TEMPLATE = """
 
             // 转换为数组并排序
             const sortedStats = Object.entries(stats)
-                .sort((a, b) => b.1.count - a.1.count);
+                .sort((a, b) => b[1].count - a[1].count);
 
             let html = "";
             

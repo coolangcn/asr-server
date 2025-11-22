@@ -13,6 +13,7 @@ import torchaudio
 import shutil
 import re
 from collections import Counter
+from db_manager import save_to_db
 
 # =================【 配置 】=================
 class Config:
@@ -842,6 +843,15 @@ def transcribe_audio():
                 }
             }
             logger.info(f"📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            
+            # 保存到数据库
+            if segments:  # 只有在有分段时才保存
+                try:
+                    save_to_db(file.filename, full_text, segments)
+                    logger.info(f"💾 [数据库保存] 已保存到数据库: {file.filename}")
+                except Exception as save_err:
+                    logger.error(f"❌ [数据库保存] 保存失败: {save_err}")
+            
             return jsonify(response_data)
 
         except Exception as e:
