@@ -368,7 +368,7 @@ def process_one_loop():
                                 "start": seg.get("start_ms", 0), 
                                 "end": seg.get("end_ms", 0),
                                 "spk": seg.get("speaker", "Unknown"),
-                                "emotion": "neutral"
+                                "emotion": seg.get("emotion", "neutral")  # 从服务器读取真实emotion
                             })
                     
                     # 保存到数据库
@@ -403,8 +403,8 @@ def process_one_loop():
                             "start": seg.get("start", 0),
                             "end": seg.get("end", 0),
                             "text": seg.get("text", "").strip(),
-                            "spk": "Unknown",
-                            "emotion": "neutral"
+                            "spk": seg.get("spk", "Unknown"),  # 也从服务器读取spk
+                            "emotion": seg.get("emotion", "neutral")  # 从服务器读取真实emotion
                         })
                     
                     save_transcript_with_spk(full_text, fallback_segments, txt_path)

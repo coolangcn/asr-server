@@ -538,6 +538,25 @@ HTML_TEMPLATE = """
                     return `<span class="text-xs font-medium ${colorClass} bg-gray-800/50 px-2 py-1 rounded-md border border-gray-700/50">${s}</span>`;
                 }).join('');
 
+                // 统计情感分布
+                const emotionStats = {};
+                item.segments.forEach(s => {
+                    const emo = s.emotion || 'neutral';
+                    emotionStats[emo] = (emotionStats[emo] || 0) + 1;
+                });
+                
+                // 生成情感标签 (显示所有情感包括neutral，用于测试)
+                const emotionTags = Object.entries(emotionStats)
+                    // .filter(([emo]) => emo !== 'neutral')  // 临时注释以测试
+                    .map(([emo, count]) => {
+                        const icon = getEmotionIcon(emo);
+                        return `<span class="text-xs px-2 py-1 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                            <span>${icon}</span>
+                            <span>${emo}</span>
+                            <span class="text-[10px] opacity-70">×${count}</span>
+                        </span>`;
+                    }).join('');
+
                 html += `
                 <div class="glass-card rounded-2xl p-6 flex flex-col h-full animate-slide-up" style="animation-delay: ${index * 50}ms">
                     <div class="flex justify-between items-start mb-4">
@@ -557,8 +576,13 @@ HTML_TEMPLATE = """
                         <p class="text-gray-400 text-sm leading-relaxed line-clamp-3">${summary}</p>
                     </div>
                     
-                    <div class="flex flex-wrap gap-2 mt-auto pt-4 border-t border-gray-800/50">
-                        ${speakerTags || '<span class="text-xs text-gray-600">无说话人</span>'}
+                    <div class="space-y-2 mt-auto pt-4 border-t border-gray-800/50">
+                        <div class="flex flex-wrap gap-2">
+                            ${speakerTags || '<span class="text-xs text-gray-600">无说话人</span>'}
+                        </div>
+                        ${emotionTags ? `<div class="flex flex-wrap gap-2 pt-2 border-t border-gray-800/30">
+                            ${emotionTags}
+                        </div>` : ''}
                     </div>
                 </div>`;
             });
