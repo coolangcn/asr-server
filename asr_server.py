@@ -14,6 +14,7 @@ import shutil
 import re
 from collections import Counter
 from db_manager import save_to_db
+from logging.handlers import TimedRotatingFileHandler
 
 # =================【 配置 】=================
 class Config:
@@ -128,8 +129,14 @@ sse_handler.setLevel(logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# 创建文件处理器，用于将日志写入文件
-file_handler = logging.FileHandler('asr-server.log', encoding='utf-8')
+# 创建文件处理器，用于将日志写入文件（每10分钟轮转一次）
+file_handler = TimedRotatingFileHandler(
+    'asr-server.log', 
+    when='M',           # 按分钟轮转
+    interval=10,        # 每10分钟
+    backupCount=144,    # 保留144个文件（24小时）
+    encoding='utf-8'
+)
 file_handler.setFormatter(log_formatter)
 file_handler.setLevel(logging.INFO)
 logger.addHandler(file_handler) # 添加文件处理器
