@@ -11,7 +11,7 @@ import argparse
 import re
 import shutil
 import sys
-from db_manager import init_pool, init_db, save_to_db, close_pool
+from db_manager import init_pool, init_db, save_to_db, close_pool, parse_recording_time
 
 # --- Logging Setup ---
 class Tee(object):
@@ -355,8 +355,22 @@ def process_one_loop():
              if f.lower().endswith(SUPPORTED_EXTENSIONS) 
              and "_TEMP" not in f.upper()
              and not f.lower().endswith('.wav')]  # WAV files are only temp files
+    
     if not files: return 0
-    print(f"发现 {len(files)} 个新文件，开始处理...")
+    
+    # 按录音时间排序，优先处理最早的录音
+    def get_recording_time_for_sort(filename):
+        recording_time = parse_recording_time(filename)
+        if recording_time:
+            return recording_time
+        else:
+            # 如果无法解析时间，使用一个很晚的时间，让它排在后面
+            # 同时使用文件名作为次要排序
+            return datetime(9999, 12, 31, 23, 59, 59)
+    
+    files.sort(key=get_recording_time_for_sort)
+    print(f"发现 {len(files)} 个新文件，按录音时间排序处理...")
+    
     os.makedirs(CONFIG["TRANSCRIPT_DIR"], exist_ok=True)
     os.makedirs(CONFIG["PROCESSED_DIR"], exist_ok=True)
     for filename in files:
@@ -377,6 +391,13 @@ def process_one_loop():
         wav_path = os.path.join(CONFIG["SOURCE_DIR"], f"{base_name}_TEMP.wav")
         txt_path = os.path.join(CONFIG["TRANSCRIPT_DIR"], f"{base_name}.txt")
         processed_audio_path = os.path.join(CONFIG["PROCESSED_DIR"], filename)
+        
+        # 从文件名解析录音时间
+        recording_time = parse_recording_time(filename)
+        if recording_time:
+            print(f"  [时间] 解析到录音时间: {recording_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        else:
+            print(f"  [时间] 无法从文件名解析时间，将使用当前时间")
         try:
             if not convert_audio_to_wav(audio_path, wav_path): continue
             
@@ -414,7 +435,7 @@ def process_one_loop():
                             })
                     
                     # 保存到数据库
-                    save_to_db(filename, full_text, segments)
+                    save_to_db(filename, full_text, segments, recording_time)
                     
                     print(f"  [完成] 说话人分离结果已保存 -> {txt_path}")
                     notify_n8n("success", filename, f"说话人分离完成，共{len(segments)}个分段 ({len(named_speakers)}个命名说话人)")
@@ -450,7 +471,7 @@ def process_one_loop():
                         })
                     
                     save_transcript_with_spk(full_text, fallback_segments, txt_path)
-                    save_to_db(filename, full_text, fallback_segments)
+                    save_to_db(filename, full_text, fallback_segments, recording_time)
                     
                     print(f"  [完成] (降级模式) 转录结果已保存 -> {txt_path}")
                     notify_n8n("success", filename, f"[降级] {full_text[:100]}")
@@ -468,7 +489,7 @@ def process_one_loop():
                 segments = result_data.get("segments", [])
                 filtered_segments = [seg for seg in segments if seg.get("text","").strip()]
                 save_transcript_with_spk(full_text, filtered_segments, txt_path)
-                save_to_db(filename, full_text, filtered_segments)
+                save_to_db(filename, full_text, filtered_segments, recording_time)
                 print(f"  [完成] 转录结果已保存 -> {txt_path}")
                 notify_n8n("success", filename, full_text[:100])
             

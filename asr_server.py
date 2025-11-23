@@ -61,6 +61,10 @@ class Config:
     MIN_SPEAKER_DURATION_MS = 800
     NORMALIZE_AUDIO = True
     DENOISE_AUDIO = False  # 启用高级降噪
+    
+    # 可选功能开关
+    ENABLE_EMOTION_DETECTION = False  # 是否启用情感检测(需要SenseVoice模型)
+    ENABLE_WHISPER_COMPARISON = False  # 是否启用Whisper对比(需要Whisper模型)
 # ==========================================
 
 EMOTION_TAGS = {
@@ -151,6 +155,8 @@ logging.getLogger('werkzeug').setLevel(logging.ERROR)
 asr_pipeline = None
 sv_pipelines = {}
 speaker_db = {}
+emotion_pipeline = None  # 可选: 情感检测模型
+whisper_model = None     # 可选: Whisper对比模型
 gpu_lock = threading.Lock()
 db_lock = threading.Lock()
 

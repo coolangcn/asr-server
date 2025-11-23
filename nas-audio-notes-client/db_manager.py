@@ -4,6 +4,8 @@
 import psycopg2
 from psycopg2 import pool
 import json
+import re
+from datetime import datetime
 from typing import List, Dict, Optional
 
 # PostgreSQL 连接配置
@@ -37,6 +39,33 @@ def return_connection(conn):
     """归还连接到连接池"""
     if connection_pool and conn:
         connection_pool.putconn(conn)
+
+def parse_recording_time(filename: str) -> Optional[datetime]:
+    """
+    从文件名中解析录音时间
+    支持格式: TermuxAudioRecording_2025-11-23_12-56-54.m4a
+    
+    Args:
+        filename: 文件名
+        
+    Returns:
+        datetime对象，如果无法解析则返回None
+    """
+    # 匹配格式: YYYY-MM-DD_HH-MM-SS
+    pattern = r'(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})'
+    match = re.search(pattern, filename)
+    
+    if match:
+        year, month, day, hour, minute, second = map(int, match.groups())
+        try:
+            return datetime(year, month, day, hour, minute, second)
+        except ValueError:
+            # 日期值无效（如月份13）
+            return None
+    
+    # 如果无法解析，返回None（调用者应使用当前时间）
+    return None
+
 
 def init_db():
     """初始化数据库表结构"""
@@ -82,8 +111,17 @@ def init_db():
         if conn:
             return_connection(conn)
 
-def save_to_db(filename: str, full_text: str, segments_list: List[Dict]) -> bool:
-    """保存转录记录到数据库"""
+def save_to_db(filename: str, full_text: str, segments_list: List[Dict], 
+               recording_time: Optional[datetime] = None) -> bool:
+    """
+    保存转录记录到数据库
+    
+    Args:
+        filename: 文件名
+        full_text: 完整文本
+        segments_list: 分段列表
+        recording_time: 录音时间（可选，如果为None则使用当前时间）
+    """
     conn = None
     try:
         conn = get_connection()
@@ -94,14 +132,23 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict]) -> bool
         cursor = conn.cursor()
         segments_json = json.dumps(segments_list, ensure_ascii=False)
         
-        cursor.execute(
-            "INSERT INTO transcriptions (filename, full_text, segments_json) VALUES (%s, %s, %s)",
-            (filename, full_text, segments_json)
-        )
+        if recording_time:
+            # 使用指定的录音时间
+            cursor.execute(
+                "INSERT INTO transcriptions (filename, full_text, segments_json, created_at) VALUES (%s, %s, %s, %s)",
+                (filename, full_text, segments_json, recording_time)
+            )
+        else:
+            # 使用默认的当前时间
+            cursor.execute(
+                "INSERT INTO transcriptions (filename, full_text, segments_json) VALUES (%s, %s, %s)",
+                (filename, full_text, segments_json)
+            )
         
         conn.commit()
         cursor.close()
-        print(f"  [DB] Saved {filename}")
+        time_str = recording_time.strftime('%Y-%m-%d %H:%M:%S') if recording_time else '当前时间'
+        print(f"  [DB] Saved {filename} (录音时间: {time_str})")
         return True
     except Exception as e:
         print(f"  [DB Error] {e}")
