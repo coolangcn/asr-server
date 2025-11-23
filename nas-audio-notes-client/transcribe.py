@@ -501,13 +501,29 @@ def process_one_loop():
         except Exception as e:
             print(f"  [异常] {e}")
         finally:
-            # Clean up temporary WAV file
-            if os.path.exists(wav_path):
+            # 增强的临时文件清理 - 清理所有相关的临时文件
+            if wav_path:
                 try:
-                    os.remove(wav_path)
-                    print(f"  [清理] 已删除临时文件: {os.path.basename(wav_path)}")
+                    # 1. 清理主临时文件 (_TEMP.wav)
+                    if os.path.exists(wav_path):
+                        os.remove(wav_path)
+                        print(f"  [清理] 已删除临时文件: {os.path.basename(wav_path)}")
+                    
+                    # 2. 清理所有以该临时文件名为前缀的文件 (如 .processed.wav, .seg_*.wav 等)
+                    base_name = os.path.basename(wav_path)
+                    source_dir = os.path.dirname(wav_path)
+                    
+                    for file in os.listdir(source_dir):
+                        if file.startswith(base_name):
+                            related_file = os.path.join(source_dir, file)
+                            try:
+                                os.remove(related_file)
+                                print(f"  [清理] 已删除关联文件: {file}")
+                            except Exception as e:
+                                print(f"  [清理警告] 关联文件删除失败 {file}: {e}")
+                                
                 except Exception as e:
-                    print(f"  [清理警告] 无法删除临时文件 {os.path.basename(wav_path)}: {e}")
+                    print(f"  [清理警告] 临时文件清理失败: {e}")
     return processed_count
 
 # ---------------- 主函数 ----------------
