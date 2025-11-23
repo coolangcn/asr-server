@@ -114,6 +114,40 @@ def notify_n8n(status, filename, details):
     except:
         pass
 
+# ---------------- 临时文件清理 ----------------
+def cleanup_temp_files():
+    """Remove any orphaned temporary WAV files from previous runs"""
+    if not os.path.exists(CONFIG["SOURCE_DIR"]):
+        return
+    
+    temp_files = [f for f in os.listdir(CONFIG["SOURCE_DIR"]) 
+                  if "_TEMP" in f.upper() or f.lower().endswith('.wav')]
+    
+    if temp_files:
+        print(f"[Startup] 发现 {len(temp_files)} 个临时文件，正在清理...")
+        for filename in temp_files:
+            try:
+                file_path = os.path.join(CONFIG["SOURCE_DIR"], filename)
+                os.remove(file_path)
+                print(f"  已删除: {filename}")
+            except Exception as e:
+                print(f"  清理失败 {filename}: {e}")
+
+def is_file_ready(filepath, stable_duration=2):
+    """Check if file is stable and not being written to"""
+    try:
+        if not os.path.exists(filepath):
+            return False
+        
+        # Check if file size is stable
+        size1 = os.path.getsize(filepath)
+        time.sleep(stable_duration)
+        size2 = os.path.getsize(filepath)
+        
+        return size1 == size2 and size1 > 0
+    except:
+        return False
+
 # ---------------- 音频处理 ----------------
 def convert_audio_to_wav(audio_path, wav_path):
     # Windows下使用系统PATH中的ffmpeg
@@ -317,7 +351,10 @@ def process_one_loop():
     if not os.path.exists(CONFIG["SOURCE_DIR"]):
         print(f"源目录不存在: {CONFIG['SOURCE_DIR']}")
         return 0
-    files = [f for f in os.listdir(CONFIG["SOURCE_DIR"]) if f.lower().endswith(SUPPORTED_EXTENSIONS)]
+    files = [f for f in os.listdir(CONFIG["SOURCE_DIR"]) 
+             if f.lower().endswith(SUPPORTED_EXTENSIONS) 
+             and "_TEMP" not in f.upper()
+             and not f.lower().endswith('.wav')]  # WAV files are only temp files
     if not files: return 0
     print(f"发现 {len(files)} 个新文件，开始处理...")
     os.makedirs(CONFIG["TRANSCRIPT_DIR"], exist_ok=True)
@@ -326,9 +363,14 @@ def process_one_loop():
         print(f"\n>>> 处理: {filename}")
         audio_path = os.path.join(CONFIG["SOURCE_DIR"], filename)
 
-        # 在处理前再次确认文件是否存在，防止文件被移动或删除
+        # 在处理前再次确认文件是否存在,防止文件被移动或删除
         if not os.path.exists(audio_path):
-            print(f"  [Error] 文件在处理前消失: {filename}。可能已被移动或删除，已跳过。")
+            print(f"  [Error] 文件在处理前消失: {filename}。可能已被移动或删除,已跳过。")
+            continue
+        
+        # 检查文件是否稳定(不在写入中)
+        if not is_file_ready(audio_path):
+            print(f"  [跳过] 文件可能正在写入中: {filename}")
             continue
 
         base_name = os.path.splitext(filename)[0]
@@ -438,7 +480,13 @@ def process_one_loop():
         except Exception as e:
             print(f"  [异常] {e}")
         finally:
-            if os.path.exists(wav_path): os.remove(wav_path)
+            # Clean up temporary WAV file
+            if os.path.exists(wav_path):
+                try:
+                    os.remove(wav_path)
+                    print(f"  [清理] 已删除临时文件: {os.path.basename(wav_path)}")
+                except Exception as e:
+                    print(f"  [清理警告] 无法删除临时文件 {os.path.basename(wav_path)}: {e}")
     return processed_count
 
 # ---------------- 主函数 ----------------
@@ -447,6 +495,10 @@ def main():
     update_config(args)
     print("--- 启动实时监控模式 (SenseVoice 适配版) ---")
     print(f"监控目录: {CONFIG['SOURCE_DIR']}")
+    
+    # Clean up any orphaned temporary files from previous runs
+    cleanup_temp_files()
+    
     print("初始化数据库连接池...")
     if not init_pool():
         print("数据库连接池初始化失败，程序退出")

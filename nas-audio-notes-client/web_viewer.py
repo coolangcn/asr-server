@@ -676,6 +676,10 @@ HTML_TEMPLATE = """
                                             <span>${seg.emotion}</span>
                                         </span>` : ''}
                                 </div>
+                                ${seg.whisper_text ? 
+                                    `<div class="text-gray-500 text-xs mt-1 pl-4 border-l-2 border-gray-700/50">
+                                        <span class="text-gray-600">↪️ Whisper: </span>${seg.whisper_text}
+                                    </div>` : ''}
                             </div>
                         </div>`;
                     });

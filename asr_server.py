@@ -15,6 +15,7 @@ import re
 from collections import Counter
 from db_manager import save_to_db
 from logging.handlers import TimedRotatingFileHandler
+import whisper
 
 # =================【 配置 】=================
 class Config:
@@ -313,6 +314,79 @@ def extract_segment(source_path, start_ms, end_ms, output_path):
         return True
     except:
         return False
+
+
+
+def transcribe_with_whisper(audio_path):
+    """
+    使用Whisper识别音频片段（作为FunASR的对比参考）
+    
+    Args:
+        audio_path: 音频片段路径
+        
+    Returns:
+        str: Whisper识别的文本，如果失败返回None
+    """
+    if not Config.ENABLE_WHISPER_COMPARISON or whisper_model is None:
+        return None
+    
+    try:
+        result = whisper_model.transcribe(
+            audio_path,
+            language='zh',
+            fp16=True,  # GPU加速
+            verbose=False
+        )
+        whisper_text = result['text'].strip()
+        logger.info(f"      [Whisper对比] {whisper_text}")
+        return whisper_text
+    except Exception as e:
+        logger.warning(f"      [Whisper对比] 识别失败: {e}")
+        return None
+
+def detect_emotion_for_segment(audio_path):
+    """使用SenseVoice检测音频段的情感"""
+    if not Config.ENABLE_EMOTION_DETECTION or emotion_pipeline is None:
+        return "neutral"
+    
+    try:
+        result = emotion_pipeline(
+            audio_in=audio_path,
+            language="auto",
+            use_itn=True
+        )
+        
+        if not result or len(result) == 0:
+            return "neutral"
+        
+        raw_text = result[0].get("text", "")
+        logger.info(f"      [SenseVoice情感] 原始输出: {raw_text}")
+        
+        # 提取情感标签
+        emotion = "neutral"
+        raw_text_lower = raw_text.lower()
+        
+        EMOTION_MAP = {
+            '<|happy|>': 'happy',
+            '<|sad|>': 'sad', 
+            '<|angry|>': 'angry',
+            '<|neutral|>': 'neutral',
+            '<|fearful|>': 'fearful',
+            '<|disgusted|>': 'disgusted',
+            '<|surprised|>': 'surprised'
+        }
+        
+        for tag, emo in EMOTION_MAP.items():
+            if tag in raw_text_lower:
+                emotion = emo
+                logger.info(f"      [SenseVoice情感] 检测到情感: {emotion}")
+                break
+        
+        return emotion
+    except Exception as e:
+        logger.warning(f"      [SenseVoice情感] 检测失败: {e}")
+        return "neutral"
+
 
 # =================== 提取 embedding ===================
 def extract_embedding_from_file(sv_pipe, wav_path):
@@ -765,7 +839,7 @@ def transcribe_audio():
 
             logger.info("  [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...")
             res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True, use_punc=True)
-            logger.info(f"  [VAD 调试] FunASR generate() 原始返回: {json.dumps(res, ensure_ascii=False, indent=2)}")
+            # logger.info(f"  [VAD 调试] FunASR generate() 原始返回: {json.dumps(res, ensure_ascii=False, indent=2)}")
             full_text = ""
             segments = []
 
@@ -815,8 +889,15 @@ def transcribe_audio():
                             if extract_segment(proc_temp, start, end, seg_wav):
                                 temp_files.append(seg_wav)
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
+                                # 情感检测
+                                emotion = detect_emotion_for_segment(seg_wav)
+                                # Whisper对比识别
+                                whisper_text = transcribe_with_whisper(seg_wav)
                         else:
                             logger.info(f"      [3.{i+1}] 分段时长过短({end-start}ms)，跳过声纹识别。")
+                            # 即使跳过声纹识别，也要初始化这些变量
+                            emotion = "neutral"
+                            whisper_text = None
 
 
                         if Config.ONLY_REGISTERED_SPEAKERS and identity is None: continue
@@ -824,6 +905,7 @@ def transcribe_audio():
                         processed_segments.append({
                             "text": clean_text, "start": start, "end": end,
                             "spk": identity or "Unknown", "emotion": emotion,
+                            "whisper_text": whisper_text,
                             "confidence": float(f"{confidence:.3f}"),
                             "recognition_details": recognition_details
                         })
