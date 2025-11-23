@@ -656,8 +656,8 @@ HTML_TEMPLATE = """
                         <div class="flex gap-4 mb-2 ${showAvatar ? 'mt-4' : ''} px-2 hover:bg-white/5 rounded-lg transition-colors p-2 -mx-2">
                             <div class="w-10 flex-shrink-0 flex flex-col items-center">
                                 ${showAvatar ? `
-                                <div class="w-10 h-10 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center shadow-lg">
-                                    <span class="text-xs font-bold text-gray-300">${seg.spk.substring(0,2)}</span>
+                                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-${textColor}-500 to-${textColor}-700 border-2 border-${textColor}-400/30 flex items-center justify-center shadow-lg shadow-${textColor}-500/20">
+                                    <span class="text-sm font-bold text-white">${seg.spk.substring(0,1).toUpperCase()}</span>
                                 </div>
                                 ` : ''}
                             </div>
@@ -670,9 +670,10 @@ HTML_TEMPLATE = """
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm">
                                     ${seg.text}
-                                    ${seg.emotion && seg.emotion !== 'neutral' ? 
-                                        `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-400 ml-2 border border-gray-700">
-                                            ${seg.emotion}
+                                    ${seg.emotion ? 
+                                        `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-300 ml-2 border border-purple-500/30">
+                                            <span>${getEmotionIcon(seg.emotion)}</span>
+                                            <span>${seg.emotion}</span>
                                         </span>` : ''}
                                 </div>
                             </div>
