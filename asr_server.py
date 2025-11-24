@@ -22,7 +22,11 @@ class Config:
     DEVICE = "cuda:0"
     HOST = '0.0.0.0'
     PORT = 5008
-    SPEAKER_DB_FILE = "speaker_db_multi.json"
+    SPEAKER_DB_FILE = "speaker_db_multi.json"    
+    # 长句音频保存配置
+    SAVE_LONG_SENTENCES = True  # 是否保存长句音频
+    MIN_TEXT_LENGTH_TO_SAVE = 15  # 最少字数
+    LONG_SENTENCES_DIR = "long_sentences"  # 保存目录
     
     ONLY_REGISTERED_SPEAKERS = False
     # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
@@ -135,8 +139,10 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # 创建文件处理器，用于将日志写入文件（每10分钟轮转一次）
+# 确保日志目录存在
+os.makedirs("log", exist_ok=True)
 file_handler = TimedRotatingFileHandler(
-    'asr-server.log', 
+    'log/asr-server.log', 
     when='M',           # 按分钟轮转
     interval=10,        # 每10分钟
     backupCount=144,    # 保留144个文件（24小时）
@@ -909,6 +915,34 @@ def transcribe_audio():
                                 emotion = detect_emotion_for_segment(seg_wav)
                                 # Whisper对比识别
                                 whisper_text = transcribe_with_whisper(seg_wav)
+                                
+                                # 保存超过15个字的语句音频
+                                if Config.SAVE_LONG_SENTENCES and len(clean_text) >= Config.MIN_TEXT_LENGTH_TO_SAVE:
+                                    try:
+                                        os.makedirs(Config.LONG_SENTENCES_DIR, exist_ok=True)
+                                        timestamp = int(time.time())
+                                        speaker_name = identity or "Unknown"
+                                        saved_filename = f"{timestamp}_{speaker_name}_{len(clean_text)}chars.wav"
+                                        saved_path = os.path.join(Config.LONG_SENTENCES_DIR, saved_filename)
+                                        shutil.copy2(seg_wav, saved_path)
+                                        
+                                        # 同时保存文本信息
+                                        txt_path = saved_path.replace('.wav', '.txt')
+                                        with open(txt_path, 'w', encoding='utf-8') as f:
+                                            f.write(f"说话人: {speaker_name}\n")
+                                            f.write(f"文本长度: {len(clean_text)} 字\n")
+                                            f.write(f"时间: {start}ms - {end}ms\n")
+                                            f.write(f"情感: {emotion}\n")
+                                            f.write(f"置信度: {confidence:.3f}\n")
+                                            f.write(f"\n=== FunASR 识别结果 ===\n{clean_text}\n")
+                                            if whisper_text:
+                                                f.write(f"\n=== Whisper 识别结果 ===\n{whisper_text}\n")
+                                            else:
+                                                f.write(f"\n=== Whisper 识别结果 ===\n(未启用或识别失败)\n")
+                                        
+                                        logger.info(f"      [长句保存] 已保存 {len(clean_text)} 字音频: {saved_filename}")
+                                    except Exception as e:
+                                        logger.warning(f"      [长句保存] 保存失败: {e}")
                         else:
                             logger.info(f"      [3.{i+1}] 分段时长过短({end-start}ms)，跳过声纹识别。")
                             # 即使跳过声纹识别，也要初始化这些变量
