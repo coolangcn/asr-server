@@ -621,6 +621,13 @@ HTML_TEMPLATE = """
             });
 
             Object.keys(allGroups).sort().reverse().forEach(date => {
+                // 对同一天内的记录按时间倒序排列(最新的在上面)
+                allGroups[date].sort((a, b) => {
+                    const timeA = parseFilenameTime(a.filename) || a.created_at;
+                    const timeB = parseFilenameTime(b.filename) || b.created_at;
+                    return new Date(timeB) - new Date(timeA);
+                });
+                
                 html += `
                 <div class="relative flex items-center justify-center my-8">
                     <div class="absolute inset-0 flex items-center">
