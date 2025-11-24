@@ -27,6 +27,7 @@ class Config:
     SAVE_LONG_SENTENCES = True  # 是否保存长句音频
     MIN_TEXT_LENGTH_TO_SAVE = 15  # 最少字数
     LONG_SENTENCES_DIR = "long_sentences"  # 保存目录
+    TEMP_DIR = "temp"  # 临时文件目录
     
     ONLY_REGISTERED_SPEAKERS = False
     # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
@@ -698,6 +699,8 @@ def delete_speaker_sample(speaker_name, sample_id):
 
 @app.route("/register", methods=["POST"])
 def register_speaker():
+    # 确保临时目录存在
+    os.makedirs(Config.TEMP_DIR, exist_ok=True)
     temp_files = []
     with gpu_lock:
         try:
@@ -726,11 +729,11 @@ def register_speaker():
             model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
 
             for file in audio_files:
-                raw_temp = os.path.join(tempfile.gettempdir(), f"reg_raw_{int(time.time())}_{file.filename}")
+                raw_temp = os.path.join(Config.TEMP_DIR, f"reg_raw_{int(time.time())}_{file.filename}")
                 file.save(raw_temp)
                 temp_files.append(raw_temp)
                 
-                proc_temp = os.path.join(tempfile.gettempdir(), f"reg_proc_{int(time.time())}.wav")
+                proc_temp = os.path.join(Config.TEMP_DIR, f"reg_proc_{int(time.time())}.wav")
                 temp_files.append(proc_temp)
 
                 if not preprocess_audio(raw_temp, proc_temp):
@@ -832,6 +835,8 @@ def register_speaker():
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe_audio():
+    # 确保临时目录存在
+    os.makedirs(Config.TEMP_DIR, exist_ok=True)
     request_start = time.time()
     temp_files = []
 
@@ -840,10 +845,10 @@ def transcribe_audio():
             if 'audio_file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
             
             file = request.files['audio_file']
-            raw_temp = os.path.join(tempfile.gettempdir(), f"raw_{int(time.time())}_{file.filename}")
+            raw_temp = os.path.join(Config.TEMP_DIR, f"raw_{int(time.time())}_{file.filename}")
             file.save(raw_temp)
             temp_files.append(raw_temp)
-            proc_temp = os.path.join(tempfile.gettempdir(), f"proc_{int(time.time())}.wav")
+            proc_temp = os.path.join(Config.TEMP_DIR, f"proc_{int(time.time())}.wav")
             temp_files.append(proc_temp)
             
             logger.info(f"📥 收到转录任务: {file.filename}")
@@ -907,7 +912,7 @@ def transcribe_audio():
                         identity, confidence = None, 0.0
                         recognition_details = []
                         if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
-                            seg_wav = os.path.join(tempfile.gettempdir(), f"seg_{start}_{i}_{int(time.time())}.wav")
+                            seg_wav = os.path.join(Config.TEMP_DIR, f"seg_{start}_{i}_{int(time.time())}.wav")
                             if extract_segment(proc_temp, start, end, seg_wav):
                                 temp_files.append(seg_wav)
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
@@ -917,7 +922,19 @@ def transcribe_audio():
                                 whisper_text = transcribe_with_whisper(seg_wav)
                                 
                                 # 保存超过15个字的语句音频
-                                if Config.SAVE_LONG_SENTENCES and len(clean_text) >= Config.MIN_TEXT_LENGTH_TO_SAVE:
+                                # 检测是否为噪音(重复字符过多)
+                                def is_noise(text):
+                                    if not text:
+                                        return True
+                                    # 检测单字符重复率
+                                    from collections import Counter
+                                    char_counts = Counter(text)
+                                    most_common_char, most_common_count = char_counts.most_common(1)[0]
+                                    repeat_ratio = most_common_count / len(text)
+                                    # 如果某个字符占比超过40%,认为是噪音
+                                    return repeat_ratio > 0.4
+                                
+                                if Config.SAVE_LONG_SENTENCES and len(clean_text) >= Config.MIN_TEXT_LENGTH_TO_SAVE and not is_noise(clean_text):
                                     try:
                                         os.makedirs(Config.LONG_SENTENCES_DIR, exist_ok=True)
                                         timestamp = int(time.time())
