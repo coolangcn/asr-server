@@ -49,6 +49,7 @@ DEFAULT_CONFIG = {
     "DIARIZE_API_URL": "http://192.168.1.111:5008/transcribe",
     "USE_DIARIZE": False,
     "SOURCE_DIR": "V:\\Sony-2",
+    "TEMP_DIR": "V:\\Sony-2\\temp",
     "TRANSCRIPT_DIR": "V:\\Sony-2\\transcripts",
     "PROCESSED_DIR": "V:\\Sony-2\\processed",
     "N8N_WEBHOOK_URL": "https://n8n.moco.fun/webhook/bea45d47-d1fc-498e-bf69-d48dc079f04a",
@@ -78,6 +79,7 @@ def update_config(args):
     if args.source_path:
         base_path = args.source_path
         CONFIG["SOURCE_DIR"] = base_path
+        CONFIG["TEMP_DIR"] = os.path.join(base_path, "temp")
         CONFIG["TRANSCRIPT_DIR"] = os.path.join(base_path, "transcripts")
         CONFIG["PROCESSED_DIR"] = os.path.join(base_path, "processed")
         print(f"[配置] 使用自定义源路径: {base_path}")
@@ -117,17 +119,18 @@ def notify_n8n(status, filename, details):
 # ---------------- 临时文件清理 ----------------
 def cleanup_temp_files():
     """Remove any orphaned temporary WAV files from previous runs"""
-    if not os.path.exists(CONFIG["SOURCE_DIR"]):
+    temp_dir = CONFIG.get("TEMP_DIR", CONFIG["SOURCE_DIR"])
+    if not os.path.exists(temp_dir):
         return
     
-    temp_files = [f for f in os.listdir(CONFIG["SOURCE_DIR"]) 
-                  if "_TEMP" in f.upper() or f.lower().endswith('.wav')]
+    temp_files = [f for f in os.listdir(temp_dir) 
+                  if f.lower().endswith('.wav')]
     
     if temp_files:
         print(f"[Startup] 发现 {len(temp_files)} 个临时文件，正在清理...")
         for filename in temp_files:
             try:
-                file_path = os.path.join(CONFIG["SOURCE_DIR"], filename)
+                file_path = os.path.join(temp_dir, filename)
                 os.remove(file_path)
                 print(f"  已删除: {filename}")
             except Exception as e:
@@ -371,6 +374,7 @@ def process_one_loop():
     files.sort(key=get_recording_time_for_sort)
     print(f"发现 {len(files)} 个新文件，按录音时间排序处理...")
     
+    os.makedirs(CONFIG["TEMP_DIR"], exist_ok=True)
     os.makedirs(CONFIG["TRANSCRIPT_DIR"], exist_ok=True)
     os.makedirs(CONFIG["PROCESSED_DIR"], exist_ok=True)
     for filename in files:
@@ -388,7 +392,7 @@ def process_one_loop():
             continue
 
         base_name = os.path.splitext(filename)[0]
-        wav_path = os.path.join(CONFIG["SOURCE_DIR"], f"{base_name}_TEMP.wav")
+        wav_path = os.path.join(CONFIG["TEMP_DIR"], f"{base_name}_TEMP.wav")
         txt_path = os.path.join(CONFIG["TRANSCRIPT_DIR"], f"{base_name}.txt")
         processed_audio_path = os.path.join(CONFIG["PROCESSED_DIR"], filename)
         
@@ -511,11 +515,11 @@ def process_one_loop():
                     
                     # 2. 清理所有以该临时文件名为前缀的文件 (如 .processed.wav, .seg_*.wav 等)
                     base_name = os.path.basename(wav_path)
-                    source_dir = os.path.dirname(wav_path)
+                    temp_dir = CONFIG.get("TEMP_DIR", CONFIG["SOURCE_DIR"])
                     
-                    for file in os.listdir(source_dir):
+                    for file in os.listdir(temp_dir):
                         if file.startswith(base_name):
-                            related_file = os.path.join(source_dir, file)
+                            related_file = os.path.join(temp_dir, file)
                             try:
                                 os.remove(related_file)
                                 print(f"  [清理] 已删除关联文件: {file}")

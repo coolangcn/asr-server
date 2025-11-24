@@ -19,7 +19,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SOURCE_DIR = "V:\\Sony-2"
 DEFAULT_ASR_API_URL = "http://192.168.1.111:5008/transcribe"
 DEFAULT_LOG_FILE_PATH = os.path.join(SCRIPT_DIR, "transcribe.log")
-DEFAULT_WEB_PORT = 5010 
+DEFAULT_WEB_PORT = 5009 
 
 # 全局配置变量
 CONFIG = {

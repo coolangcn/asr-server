@@ -63,8 +63,8 @@ class Config:
     DENOISE_AUDIO = False  # 启用高级降噪
     
     # 可选功能开关
-    ENABLE_EMOTION_DETECTION = False  # 是否启用情感检测(需要SenseVoice模型)
-    ENABLE_WHISPER_COMPARISON = False  # 是否启用Whisper对比(需要Whisper模型)
+    ENABLE_EMOTION_DETECTION = True  # 是否启用情感检测(需要SenseVoice模型)
+    ENABLE_WHISPER_COMPARISON = True  # 是否启用Whisper对比(需要Whisper模型)
 # ==========================================
 
 EMOTION_TAGS = {
@@ -162,7 +162,7 @@ db_lock = threading.Lock()
 
 # =================== 模型加载 ===================
 def load_models():
-    global asr_pipeline, sv_pipelines
+    global asr_pipeline, sv_pipelines, whisper_model
     print("\n====== 🚀 启动 SOTA 融合服务 ======")
     
     load_speaker_db()
@@ -197,6 +197,16 @@ def load_models():
             device=Config.DEVICE.split(':')[0]
         )
     print(f"✅ 服务就绪 | ASR: SenseVoice | SV: {list(sv_pipelines.keys())}\n")
+
+    # 4. 加载 Whisper 模型 (可选)
+    if Config.ENABLE_WHISPER_COMPARISON:
+        print(f"🎤 加载 Whisper 模型...")
+        try:
+            whisper_model = whisper.load_model("base", device=Config.DEVICE.split(':')[0])
+            print("✅ Whisper模型加载完成")
+        except Exception as e:
+            logger.warning(f"⚠️ Whisper模型加载失败: {e}，将禁用Whisper对比功能")
+            whisper_model = None
 
 def load_speaker_db():
     global speaker_db
@@ -891,7 +901,7 @@ def transcribe_audio():
                         identity, confidence = None, 0.0
                         recognition_details = []
                         if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
-                            seg_wav = os.path.join(tempfile.gettempdir(), f"seg_{start}_{int(time.time())}.wav")
+                            seg_wav = os.path.join(tempfile.gettempdir(), f"seg_{start}_{i}_{int(time.time())}.wav")
                             if extract_segment(proc_temp, start, end, seg_wav):
                                 temp_files.append(seg_wav)
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
