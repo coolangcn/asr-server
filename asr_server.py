@@ -396,7 +396,7 @@ def transcribe_with_sensevoice(audio_path):
         tuple: (text, emotion) - 识别文本和情感
     """
     if not Config.ENABLE_SENSEVOICE or sensevoice_pipeline is None:
-        return None, "neutral"
+        return None, None  # 未识别到情感返回None
     
     try:
         result = sensevoice_pipeline.generate(
@@ -406,12 +406,12 @@ def transcribe_with_sensevoice(audio_path):
         )
         
         if not result or len(result) == 0:
-            return None, "neutral"
+            return None, None  # 未识别到情感返回None
         
         raw_text = result[0].get("text", "")
         
         # 提取情感
-        emotion = "neutral"
+        emotion = None  # 未识别到情感时为None,不使用neutral
         for tag, emo_code in EMOTION_TAGS.items():
             if tag.lower() in raw_text.lower():
                 emotion = emo_code
@@ -425,7 +425,7 @@ def transcribe_with_sensevoice(audio_path):
         
     except Exception as e:
         logger.warning(f"      [SenseVoice] 识别失败: {e}")
-        return None, "neutral"
+        return None, None  # 未识别到情感返回None
 
 def detect_emotion_for_segment(audio_path):
     """使用SenseVoice检测音频段的情感"""
@@ -446,7 +446,7 @@ def detect_emotion_for_segment(audio_path):
         logger.info(f"      [SenseVoice情感] 原始输出: {raw_text}")
         
         # 提取情感标签
-        emotion = "neutral"
+        emotion = None  # 未识别到情感时为None,不使用neutral
         raw_text_lower = raw_text.lower()
         
         EMOTION_MAP = {
@@ -952,7 +952,7 @@ def transcribe_audio():
                         if any(tag in raw_text for tag in INVALID_TAGS): continue
 
                         # Case-insensitive emotion detection
-                        emotion = "neutral"
+                        emotion = None  # 未识别到情感时为None,不使用neutral
                         raw_text_lower = raw_text.lower()
                         for tag, emo_code in EMOTION_TAGS.items():
                             if tag.lower() in raw_text_lower:
@@ -976,17 +976,28 @@ def transcribe_audio():
                             if extract_segment(proc_temp, start, end, seg_wav):
                                 temp_files.append(seg_wav)
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
-                                # 情感检测
-                                emotion = detect_emotion_for_segment(seg_wav)
-                                # Whisper对比识别
-                                whisper_text = transcribe_with_whisper(seg_wav)
                                 
-                                # SenseVoice识别和情感检测
-                                sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav)
-                                
-                                # 使用SenseVoice的情感结果(如果检测到非neutral)
-                                if sensevoice_emotion != "neutral":
-                                    emotion = sensevoice_emotion
+                                # 性能优化: 只有识别出的说话人才进行Whisper和SenseVoice处理
+                                if identity is not None:
+                                    # 情感检测
+                                    emotion = detect_emotion_for_segment(seg_wav)
+                                    # Whisper对比识别
+                                    whisper_text = transcribe_with_whisper(seg_wav)
+                                    
+                                    # SenseVoice识别和情感检测
+                                    sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav)
+                                    
+                                    # 使用SenseVoice的情感结果(如果检测到)
+                                    if sensevoice_emotion is not None:
+                                        emotion = sensevoice_emotion
+                                    
+                                    logger.info(f"      [性能] 已识别说话人 {identity}, 完整处理")
+                                else:
+                                    # Unknown说话人跳过额外处理
+                                    logger.info(f"      [性能] 未识别说话人, 跳过Whisper/SenseVoice处理")
+                                    whisper_text = None
+                                    sensevoice_text = None
+                                    emotion = None  # 未识别到情感时为None,不使用neutral
                                 
                                 # 保存超过15个字的语句音频
                                 # 检测是否为噪音(重复字符过多)
@@ -1045,7 +1056,7 @@ def transcribe_audio():
                         else:
                             logger.info(f"      [3.{i+1}] 分段时长过短({end-start}ms)，跳过声纹识别。")
                             # 即使跳过声纹识别，也要初始化这些变量
-                            emotion = "neutral"
+                            emotion = None  # 未识别到情感时为None,不使用neutral
                             whisper_text = None
 
 

@@ -1,0 +1,33 @@
+2025-11-25 16:10:35,826 | INFO | 初始化数据库连接...
+2025-11-25 16:10:35,872 | INFO | 📚 声纹库已挂载: 3 人
+2025-11-25 16:10:35,872 | INFO | download models from model hub: ms
+2025-11-25 16:11:49,774 | WARNING | trust_remote_code: False
+2025-11-25 16:11:51,446 | INFO | Loading pretrained params from D:\AI\model_cache\modelscope\iic\speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch\model.pt
+2025-11-25 16:11:51,451 | INFO | ckpt: D:\AI\model_cache\modelscope\iic\speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch\model.pt
+2025-11-25 16:11:52,095 | INFO | scope_map: ['module.', 'None']
+2025-11-25 16:11:52,095 | INFO | excludes: None
+2025-11-25 16:11:52,226 | INFO | Loading ckpt: D:\AI\model_cache\modelscope\iic\speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch\model.pt, status: <All keys matched successfully>
+2025-11-25 16:11:52,644 | INFO | Building VAD model.
+2025-11-25 16:11:52,644 | INFO | download models from model hub: ms
+2025-11-25 16:11:59,258 | WARNING | trust_remote_code: False
+2025-11-25 16:11:59,331 | INFO | Loading pretrained params from D:\AI\model_cache\modelscope\iic\speech_fsmn_vad_zh-cn-16k-common-pytorch\model.pt
+2025-11-25 16:11:59,331 | INFO | ckpt: D:\AI\model_cache\modelscope\iic\speech_fsmn_vad_zh-cn-16k-common-pytorch\model.pt
+2025-11-25 16:11:59,335 | INFO | scope_map: ['module.', 'None']
+2025-11-25 16:11:59,335 | INFO | excludes: None
+2025-11-25 16:11:59,337 | INFO | Loading ckpt: D:\AI\model_cache\modelscope\iic\speech_fsmn_vad_zh-cn-16k-common-pytorch\model.pt, status: <All keys matched successfully>
+2025-11-25 16:11:59,340 | INFO | Building punc model.
+2025-11-25 16:11:59,341 | INFO | download models from model hub: ms
+2025-11-25 16:13:36,773 | WARNING | trust_remote_code: False
+2025-11-25 16:13:59,092 | INFO | Loading pretrained params from D:\AI\model_cache\modelscope\iic\punc_ct-transformer_cn-en-common-vocab471067-large\model.pt
+2025-11-25 16:13:59,094 | INFO | ckpt: D:\AI\model_cache\modelscope\iic\punc_ct-transformer_cn-en-common-vocab471067-large\model.pt
+2025-11-25 16:13:59,681 | INFO | scope_map: ['module.', 'None']
+2025-11-25 16:13:59,681 | INFO | excludes: None
+2025-11-25 16:13:59,794 | INFO | Loading ckpt: D:\AI\model_cache\modelscope\iic\punc_ct-transformer_cn-en-common-vocab471067-large\model.pt, status: <All keys matched successfully>
+2025-11-25 16:14:00,314 | INFO | Building SPK model.
+2025-11-25 16:14:00,314 | INFO | download models from model hub: ms
+2025-11-25 16:14:12,539 | WARNING | trust_remote_code: False
+2025-11-25 16:14:12,707 | INFO | Loading pretrained params from D:\AI\model_cache\modelscope\iic\speech_campplus_sv_zh-cn_16k-common\campplus_cn_common.bin
+2025-11-25 16:14:12,710 | INFO | ckpt: D:\AI\model_cache\modelscope\iic\speech_campplus_sv_zh-cn_16k-common\campplus_cn_common.bin
+2025-11-25 16:14:12,801 | INFO | scope_map: ['module.', 'None']
+2025-11-25 16:14:12,801 | INFO | excludes: None
+2025-11-25 16:14:12,822 | INFO | Loading ckpt: D:\AI\model_cache\modelscope\iic\speech_campplus_sv_zh-cn_16k-common\campplus_cn_common.bin, status: <All keys matched successfully>
