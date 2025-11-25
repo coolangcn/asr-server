@@ -460,8 +460,8 @@ HTML_TEMPLATE = """
 
         <nav class="flex-1 px-4 space-y-2 mt-4">
             <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group active">
-                <i class="fa-solid fa-grid-2 text-lg group-hover:text-primary-400 transition-colors"></i>
-                <span class="font-medium">仪表盘</span>
+                <i class="fa-solid fa-comments text-lg group-hover:text-primary-400 transition-colors"></i>
+                <span class="font-medium">数据概览</span>
             </button>
             <button onclick="switchTab('chat')" id="nav-chat" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <i class="fa-solid fa-comments text-lg group-hover:text-accent-400 transition-colors"></i>
@@ -472,7 +472,7 @@ HTML_TEMPLATE = """
                 <span class="font-medium">统计分析</span>
             </button>
             <button onclick="switchTab('speaker')" id="nav-speaker" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
-                <i class="fa-solid fa-microphone text-lg group-hover:text-pink-400 transition-colors"></i>
+                <i class="fa-solid fa-chart-pie text-lg group-hover:text-pink-400 transition-colors"></i>
                 <span class="font-medium">声纹管理</span>
             </button>
         </nav>
@@ -882,8 +882,8 @@ HTML_TEMPLATE = """
                                         </span>` : ''}
                                 </div>
                                 ${seg.whisper_text ? 
-                                    `<div class="text-gray-500 text-xs mt-1 pl-4 border-l-2 border-gray-700/50">
-                                        <span class="text-gray-600">↪️ Whisper: </span>${seg.whisper_text}
+                                    `<div class="text-blue-500 text-xs mt-1 pl-4 border-l-2 border-blue-700/50">
+                                        <span class="text-blue-600">↪️ Whisper: </span>${seg.whisper_text}
                                     </div>` : ''}
                                 ${seg.sensevoice_text ? 
                                     `<div class="text-purple-500 text-xs mt-1 pl-4 border-l-2 border-purple-700/50">
