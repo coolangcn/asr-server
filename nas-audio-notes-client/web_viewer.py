@@ -543,148 +543,84 @@ HTML_TEMPLATE = """
             </div>
         </div>
         
-        <div id="view-speaker" class="view-container flex-1 overflow-hidden p-0 hidden">
-            <iframe src="/register_page" style="width:100%; height:100%; border:none;"></iframe>
-        </div>
-    </main>
+        <div id="view-speaker" class="view-container flex-1 overflow-y-auto p-8 hidden">
+            <header class="mb-8">
+                <h2 class="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+                    <i class="fa-solid fa-microphone text-pink-400"></i>
+                    声纹管理
+                </h2>
+                <p class="text-gray-400">注册和管理说话人声纹</p>
+            </header>
 
-    <script>
-        // 状态管理
-        let lastDataFingerprint = "";
-        const speakerColorMap = {};
-        const colors = [
-            'text-blue-400 border-blue-500/30 bg-blue-500/10',
-            'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
-            'text-purple-400 border-purple-500/30 bg-purple-500/10',
-            'text-amber-400 border-amber-500/30 bg-amber-500/10',
-            'text-rose-400 border-rose-500/30 bg-rose-500/10',
-            'text-cyan-400 border-cyan-500/30 bg-cyan-500/10',
-        ];
-        let nextColorIndex = 0;
-        
-        // 懒加载状态
-        let currentOffset = 0;
-        const pageSize = 20;
-        let isLoading = false;
-        let hasMore = true;
-        let allItems = [];
-
-        // 切换视图
-        function switchTab(tabName) {
-            document.querySelectorAll('.view-container').forEach(el => el.classList.add('hidden'));
-            document.getElementById('view-' + tabName).classList.remove('hidden');
-            
-            document.querySelectorAll('.nav-btn').forEach(el => {
-                el.classList.remove('bg-white/10', 'text-white', 'shadow-lg');
-                el.classList.add('text-gray-400');
-            });
-            
-            const activeBtn = document.getElementById('nav-' + tabName);
-            activeBtn.classList.remove('text-gray-400');
-            activeBtn.classList.add('bg-white/10', 'text-white', 'shadow-lg');
-        }
-        
-        // 初始化导航状态
-        switchTab('dashboard');
-
-        function getSpeakerStyle(spk) {
-            if (!speakerColorMap[spk]) {
-                speakerColorMap[spk] = colors[nextColorIndex % colors.length];
-                nextColorIndex++;
-            }
-            return speakerColorMap[spk];
-        }
-
-        function formatTime(isoString) {
-            if (!isoString) return '';
-            const date = new Date(isoString);
-            return date.toLocaleString('zh-CN', {
-                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-            });
-        }
-
-        function parseFilenameTime(filename) {
-            // 尝试从文件名解析时间
-            // 支持格式: TermuxAudioRecording_2025-11-20_14-33-08
-            // 支持格式: recording-20251115-131250
-            
-            // 格式1: TermuxAudioRecording_YYYY-MM-DD_HH-mm-ss
-            let match = filename.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
-            if (match) {
-                return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`;
-            }
-            
-            // 格式2: recording-YYYYMMDD-HHmmss
-            match = filename.match(/recording-(\d{8})-(\d{6})/);
-            if (match) {
-                const date = match[1];  // YYYYMMDD
-                const time = match[2];  // HHmmss
-                return `${date.substring(0,4)}-${date.substring(4,6)}-${date.substring(6,8)}T${time.substring(0,2)}:${time.substring(2,4)}:${time.substring(4,6)}`;
-            }
-            
-            return null;
-        }
-
-        function processStats(items) {
-            // 简单的数据预处理
-            return items.map(item => {
-                item.date_group = item.created_at ? item.created_at.split('T')[0] : 'Unknown';
-                return item;
-            });
-        }
-
-        // 渲染仪表盘
-        function renderDashboard(items) {
-            const container = document.getElementById('dashboard-content');
-            container.innerHTML = ""; // 清空并重新渲染所有项
-            
-            let html = "";
-            items.forEach((item, index) => {
-                // 提取摘要 (前100字)
-                let summary = item.full_text || "无内容";
-                if (summary.length > 100) summary = summary.substring(0, 100) + "...";
+            <!-- 注册区域 -->
+            <div class="glass-card rounded-2xl p-8 mb-8">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <i class="fa-solid fa-user-plus text-primary-400"></i>
+                    注册新说话人
+                </h3>
                 
-                // 提取参与者
-                const speakers = new Set();
-                item.segments.forEach(s => speakers.add(s.spk));
-                const speakerTags = Array.from(speakers).map(s => {
-                    const style = getSpeakerStyle(s);
-                    // 提取颜色类名中的 text-xxx
-                    const colorClass = style.split(' ')[0]; 
-                    return `<span class="text-xs font-medium ${colorClass} bg-gray-800/50 px-2 py-1 rounded-md border border-gray-700/50">${s}</span>`;
-                }).join('');
-
-                // 统计情感分布
-                const emotionStats = {};
-                item.segments.forEach(s => {
-                    const emo = s.emotion || 'neutral';
-                    emotionStats[emo] = (emotionStats[emo] || 0) + 1;
-                });
-                
-                // 生成情感标签 (显示所有情感包括neutral，用于测试)
-                const emotionTags = Object.entries(emotionStats)
-                    // .filter(([emo]) => emo !== 'neutral')  // 临时注释以测试
-                    .map(([emo, count]) => {
-                        const icon = getEmotionIcon(emo);
-                        return `<span class="text-xs px-2 py-1 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/30 flex items-center gap-1">
-                            <span>${icon}</span>
-                            <span>${emo}</span>
-                            <span class="text-[10px] opacity-70">×${count}</span>
-                        </span>`;
-                    }).join('');
-
-                html += `
-                <div class="glass-card rounded-2xl p-6 flex flex-col h-full animate-slide-up hover:scale-105 transition-transform duration-300" style="animation-delay: ${index * 50}ms">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700">
-                                <i class="fa-solid fa-file-audio text-primary-400"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
-                            </div>
+                <form id="register-form" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fa-solid fa-signature mr-2"></i>说话人姓名
+                        </label>
+                        <input 
+                            type="text" 
+                            id="speaker-name" 
+                            placeholder="请输入姓名"
+                            class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all"
+                            required
+                        >
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fa-solid fa-file-audio mr-2"></i>音频文件 (3-10秒清晰语音)
+                        </label>
+                        <div class="relative">
+                            <input 
+                                type="file" 
+                                id="audio-file" 
+                                accept="audio/*"
+                                class="hidden"
+                                required
+                            >
+                            <button 
+                                type="button"
+                                onclick="document.getElementById('audio-file').click()"
+                                class="w-full px-4 py-3 bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl text-gray-400 hover:border-primary-500 hover:text-primary-400 transition-all flex items-center justify-center gap-2"
+                            >
+                                <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                                <span id="file-name">点击选择音频文件</span>
+                            </button>
                         </div>
+                    </div>
+                    
+                    <button 
+                        type="submit"
+                        class="w-full px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white font-medium rounded-xl transition-all duration-300 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-105 flex items-center justify-center gap-2"
+                    >
+                        <i class="fa-solid fa-fingerprint"></i>
+                        <span>注册声纹</span>
+                    </button>
+                </form>
+                
+                <div id="register-status" class="mt-4 hidden"></div>
+            </div>
+
+            <!-- 已注册说话人列表 -->
+            <div class="glass-card rounded-2xl p-8">
+                <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <i class="fa-solid fa-users text-accent-400"></i>
+                    已注册说话人
+                </h3>
+                
+                <div id="speaker-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- 说话人卡片将通过JS插入 -->
+                </div>
+            </div>
+        </div>
+        
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
                     </div>
                     
@@ -1025,6 +961,135 @@ HTML_TEMPLATE = """
             // 如果是移动端,关闭菜单
             if (window.innerWidth <= 768) {
                 toggleMobileMenu();
+            }
+        };
+
+    
+        // 声纹管理相关函数
+        document.getElementById('audio-file')?.addEventListener('change', function(e) {
+            const fileName = e.target.files[0]?.name || '点击选择音频文件';
+            document.getElementById('file-name').textContent = fileName;
+        });
+
+        // 注册声纹
+        document.getElementById('register-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('speaker-name').value;
+            const file = document.getElementById('audio-file').files[0];
+            const statusDiv = document.getElementById('register-status');
+            
+            if (!name || !file) {
+                showStatus('请填写完整信息', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('speaker_name', name);
+            formData.append('audio_file', file);
+            
+            showStatus('正在注册...', 'loading');
+            
+            try {
+                const response = await fetch('/speaker/register', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showStatus('✅ 注册成功!', 'success');
+                    document.getElementById('register-form').reset();
+                    document.getElementById('file-name').textContent = '点击选择音频文件';
+                    loadSpeakers();
+                } else {
+                    showStatus('❌ ' + (result.error || '注册失败'), 'error');
+                }
+            } catch (error) {
+                showStatus('❌ 网络错误: ' + error.message, 'error');
+            }
+        });
+
+        // 显示状态消息
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('register-status');
+            statusDiv.className = 'mt-4 p-4 rounded-xl ' + 
+                (type === 'success' ? 'bg-green-500/10 border border-green-500/30 text-green-400' :
+                 type === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-400' :
+                 'bg-blue-500/10 border border-blue-500/30 text-blue-400');
+            statusDiv.textContent = message;
+            statusDiv.classList.remove('hidden');
+            
+            if (type !== 'loading') {
+                setTimeout(() => statusDiv.classList.add('hidden'), 5000);
+            }
+        }
+
+        // 加载说话人列表
+        async function loadSpeakers() {
+            try {
+                const response = await fetch('/speaker/list');
+                const data = await response.json();
+                
+                const container = document.getElementById('speaker-list');
+                if (!data.speakers || data.speakers.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500 col-span-full text-center py-8">暂无已注册说话人</p>';
+                    return;
+                }
+                
+                container.innerHTML = data.speakers.map(speaker => `
+                    <div class="glass-card p-6 rounded-xl hover:scale-105 transition-transform">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+                                    <i class="fa-solid fa-user text-white text-xl"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-bold text-white">${speaker.name}</h4>
+                                    <p class="text-xs text-gray-500">${speaker.sample_count || 0} 个样本</p>
+                                </div>
+                            </div>
+                        </div>
+                        <button 
+                            onclick="deleteSpeaker('${speaker.name}')"
+                            class="w-full px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg transition-all flex items-center justify-center gap-2"
+                        >
+                            <i class="fa-solid fa-trash"></i>
+                            <span>删除</span>
+                        </button>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载说话人列表失败:', error);
+            }
+        }
+
+        // 删除说话人
+        async function deleteSpeaker(name) {
+            if (!confirm(`确定要删除说话人 "${name}" 吗?`)) return;
+            
+            try {
+                const response = await fetch(`/speaker/${encodeURIComponent(name)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    loadSpeakers();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                alert('网络错误: ' + error.message);
+            }
+        }
+
+        // 切换到声纹管理时加载列表
+        const originalSwitchTab2 = switchTab;
+        switchTab = function(tabName) {
+            originalSwitchTab2(tabName);
+            if (tabName === 'speaker') {
+                loadSpeakers();
             }
         };
 
