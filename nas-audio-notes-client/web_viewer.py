@@ -334,11 +334,119 @@ HTML_TEMPLATE = """
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
+    
+        /* 移动端优化 */
+        @media (max-width: 768px) {
+            /* 隐藏侧边栏,使用全屏布局 */
+            aside {
+                position: fixed;
+                left: -100%;
+                top: 0;
+                height: 100vh;
+                z-index: 1000;
+                transition: left 0.3s ease;
+            }
+            
+            aside.mobile-open {
+                left: 0;
+            }
+            
+            /* 添加遮罩层 */
+            .mobile-overlay {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 999;
+            }
+            
+            .mobile-overlay.active {
+                display: block;
+            }
+            
+            /* 主内容区占满屏幕 */
+            main {
+                width: 100%;
+            }
+            
+            /* 添加汉堡菜单按钮 */
+            .mobile-menu-btn {
+                display: flex !important;
+                position: fixed;
+                top: 1rem;
+                left: 1rem;
+                z-index: 100;
+                width: 48px;
+                height: 48px;
+                background: rgba(99, 102, 241, 0.9);
+                border-radius: 12px;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                cursor: pointer;
+            }
+            
+            /* 卡片网格调整为单列 */
+            #dashboard-content {
+                grid-template-columns: 1fr !important;
+            }
+            
+            /* 调整字体大小 */
+            h2 {
+                font-size: 1.5rem !important;
+            }
+            
+            h3 {
+                font-size: 1rem !important;
+            }
+            
+            /* 增大触摸目标 */
+            .nav-btn {
+                min-height: 48px;
+            }
+            
+            button {
+                min-height: 44px;
+                padding: 0.75rem 1.5rem !important;
+            }
+            
+            /* 优化聊天气泡 */
+            .chat-bubble {
+                max-width: 90% !important;
+            }
+            
+            /* 调整padding */
+            .p-8 {
+                padding: 1rem !important;
+            }
+            
+            .p-6 {
+                padding: 1rem !important;
+            }
+        }
+        
+        /* 桌面端隐藏汉堡菜单 */
+        .mobile-menu-btn {
+            display: none;
+        }
+
     </style>
 </head>
 <body class="h-screen flex overflow-hidden selection:bg-primary-500 selection:text-white">
 
     <!-- 侧边栏 -->
+    
+    <!-- 移动端汉堡菜单 -->
+    <div class="mobile-menu-btn" onclick="toggleMobileMenu()">
+        <i class="fa-solid fa-bars text-white text-xl"></i>
+    </div>
+    
+    <!-- 移动端遮罩层 -->
+    <div class="mobile-overlay" onclick="toggleMobileMenu()"></div>
+
     <aside class="w-64 glass flex flex-col border-r border-gray-800 z-20">
         <div class="p-6 flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
@@ -891,6 +999,27 @@ HTML_TEMPLATE = """
         loadMore();
         // 定时检查新数据
         setInterval(updateLoop, 5000);
+    
+        // 移动端菜单切换
+        function toggleMobileMenu() {
+            const aside = document.querySelector('aside');
+            const overlay = document.querySelector('.mobile-overlay');
+            
+            aside.classList.toggle('mobile-open');
+            overlay.classList.toggle('active');
+        }
+        
+        // 点击导航按钮后自动关闭移动端菜单
+        const originalSwitchTab = switchTab;
+        switchTab = function(tabName) {
+            originalSwitchTab(tabName);
+            
+            // 如果是移动端,关闭菜单
+            if (window.innerWidth <= 768) {
+                toggleMobileMenu();
+            }
+        };
+
     </script>
 </body>
 </html>
