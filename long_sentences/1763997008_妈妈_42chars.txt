@@ -1,0 +1,11 @@
+说话人: 妈妈
+文本长度: 42 字
+时间: 1070ms - 3390ms
+情感: neutral
+置信度: 0.520
+
+=== FunASR 识别结果 ===
+whysoyoudon'twantnottotakethecomputeraway？
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

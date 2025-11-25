@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 17 字
+时间: 50400ms - 52260ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+emomeandyourself。
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

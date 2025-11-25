@@ -1,0 +1,11 @@
+说话人: 妈妈
+文本长度: 20 字
+时间: 24660ms - 26455ms
+情感: neutral
+置信度: 0.488
+
+=== FunASR 识别结果 ===
+everyoneseethethere，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

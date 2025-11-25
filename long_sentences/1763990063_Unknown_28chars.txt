@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 28 字
+时间: 47070ms - 50055ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+哦whymustdidtotakemetooshirk？
+
+=== Whisper 识别结果 ===
+喔!!!這一隻屁股却很驚險

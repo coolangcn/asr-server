@@ -1,0 +1,11 @@
+说话人: 妈妈
+文本长度: 20 字
+时间: 58700ms - 60280ms
+情感: neutral
+置信度: 0.530
+
+=== FunASR 识别结果 ===
+ihappthatwithoutyou，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

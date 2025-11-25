@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 28 字
+时间: 2760ms - 10250ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+为什么觉得哎能三等于xidon'tdotheboday，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

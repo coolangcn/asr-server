@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 32 字
+时间: 34970ms - 41115ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+放上来lelet'scometotobefirefire二千哦，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

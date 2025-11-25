@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 28 字
+时间: 49820ms - 54430ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+好像来了bridgelearonbridge飞是转过来，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

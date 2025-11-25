@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 33 字
+时间: 28160ms - 31460ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+youarethe这个learningthatthat你不喜欢吗？
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

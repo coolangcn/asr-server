@@ -1,0 +1,11 @@
+说话人: 妈妈
+文本长度: 43 字
+时间: 10960ms - 25260ms
+情感: neutral
+置信度: 0.594
+
+=== FunASR 识别结果 ===
+kmissingmissingnotisreallywell给你的勇气交魂一你的你啊。
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

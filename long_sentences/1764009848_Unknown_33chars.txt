@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 33 字
+时间: 22780ms - 32870ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+还有我最爱有快都嗯嗯嗯whensummergoodworking，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

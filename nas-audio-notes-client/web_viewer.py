@@ -17,7 +17,7 @@ from db_manager import init_pool, get_transcripts as db_get_transcripts
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULT_SOURCE_DIR = "V:\\Sony-2"
-DEFAULT_ASR_API_URL = "http://192.168.1.111:5008/transcribe"
+DEFAULT_ASR_API_URL = "http://localhost:5008/transcribe"
 DEFAULT_LOG_FILE_PATH = os.path.join(SCRIPT_DIR, "transcribe.log")
 DEFAULT_WEB_PORT = 5009 
 
@@ -395,8 +395,8 @@ HTML_TEMPLATE = """
                     <h2 class="text-3xl font-bold text-white mb-2">概览</h2>
                     <p class="text-gray-400">最近的录音与转录记录</p>
                 </div>
-                <button onclick="loadMore()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 transition-colors border border-gray-700">
-                    <i class="fa-solid fa-rotate-right mr-2"></i>刷新
+                <button onclick="loadMore()" class="group px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-sm font-medium text-white transition-all duration-300 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-105 border border-primary-400/20">
+                    <i class="fa-solid fa-rotate-right mr-2 group-hover:rotate-180 transition-transform duration-500"></i>刷新数据
                 </button>
             </header>
             
@@ -558,7 +558,7 @@ HTML_TEMPLATE = """
                     }).join('');
 
                 html += `
-                <div class="glass-card rounded-2xl p-6 flex flex-col h-full animate-slide-up" style="animation-delay: ${index * 50}ms">
+                <div class="glass-card rounded-2xl p-6 flex flex-col h-full animate-slide-up hover:scale-105 transition-transform duration-300" style="animation-delay: ${index * 50}ms">
                     <div class="flex justify-between items-start mb-4">
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700">
@@ -621,11 +621,11 @@ HTML_TEMPLATE = """
             });
 
             Object.keys(allGroups).sort().reverse().forEach(date => {
-                // 对同一天内的记录按时间倒序排列(最新的在上面)
+                // 对同一天内的记录按文件名时间严格倒序排列(最新的在上面)
                 allGroups[date].sort((a, b) => {
                     const timeA = parseFilenameTime(a.filename) || a.created_at;
                     const timeB = parseFilenameTime(b.filename) || b.created_at;
-                    return new Date(timeB) - new Date(timeA);
+                    return new Date(timeB) - new Date(timeA);  // 倒序: 新 - 旧
                 });
                 
                 html += `

@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 32 字
+时间: 34840ms - 47470ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+fivethreefivedoone有我回来easitooh嗯，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 29 字
+时间: 51120ms - 57090ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+theyamescmmmythatnotwherefly，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

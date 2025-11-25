@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 36 字
+时间: 27180ms - 33425ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+youetthreedayhoursoneselfthethree的到。
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

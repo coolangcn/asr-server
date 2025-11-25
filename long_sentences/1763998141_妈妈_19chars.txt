@@ -1,0 +1,11 @@
+说话人: 妈妈
+文本长度: 19 字
+时间: 27020ms - 30300ms
+情感: neutral
+置信度: 0.470
+
+=== FunASR 识别结果 ===
+whyareidodoctorpba？
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

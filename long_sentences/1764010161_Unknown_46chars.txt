@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 46 字
+时间: 42860ms - 47580ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+imainingwhytheknowitallldayiwalooktothejamesm。
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

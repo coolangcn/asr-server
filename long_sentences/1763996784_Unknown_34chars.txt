@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 34 字
+时间: 19490ms - 28175ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+merabbitisinin我现在嗯嗯八块钱吃一个icecream，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

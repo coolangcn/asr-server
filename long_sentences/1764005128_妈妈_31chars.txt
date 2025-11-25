@@ -1,0 +1,11 @@
+说话人: 妈妈
+文本长度: 31 字
+时间: 39680ms - 45060ms
+情感: neutral
+置信度: 0.597
+
+=== FunASR 识别结果 ===
+你儿那个谁renotthewayworkinginthere，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

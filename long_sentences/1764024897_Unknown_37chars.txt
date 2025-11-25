@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 37 字
+时间: 32000ms - 36480ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+dowecheckoutthecitmaybebeconfixthing，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

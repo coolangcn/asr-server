@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 25 字
+时间: 27870ms - 30950ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+iamdolookingthebesttheyt。
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

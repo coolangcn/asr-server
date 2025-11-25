@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 16 字
+时间: 35190ms - 38410ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+wedodoveryry开进来。
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)

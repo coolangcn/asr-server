@@ -1,0 +1,11 @@
+说话人: Unknown
+文本长度: 23 字
+时间: 29690ms - 36090ms
+情感: neutral
+置信度: 0.000
+
+=== FunASR 识别结果 ===
+ithinkimyiphone放屁只让你哎呦，
+
+=== Whisper 识别结果 ===
+(未启用或识别失败)
