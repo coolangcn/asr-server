@@ -1027,11 +1027,12 @@ def transcribe_audio():
                                     return filler_ratio > 0.6
 
 
-                                if Config.SAVE_LONG_SENTENCES and len(clean_text) >= Config.MIN_TEXT_LENGTH_TO_SAVE and not is_noise(clean_text):
+                                # 只保存已识别说话人的长句子(跳过Unknown)
+                                if Config.SAVE_LONG_SENTENCES and identity is not None and len(clean_text) >= Config.MIN_TEXT_LENGTH_TO_SAVE and not is_noise(clean_text):
                                     try:
                                         os.makedirs(Config.LONG_SENTENCES_DIR, exist_ok=True)
                                         timestamp = int(time.time())
-                                        speaker_name = identity or "Unknown"
+                                        speaker_name = identity  # 已确保identity不为None
                                         saved_filename = f"{timestamp}_{speaker_name}_{len(clean_text)}chars.wav"
                                         saved_path = os.path.join(Config.LONG_SENTENCES_DIR, saved_filename)
                                         shutil.copy2(seg_wav, saved_path)
@@ -1047,8 +1048,8 @@ def transcribe_audio():
                                             f.write(f"\n=== FunASR 识别结果 ===\n{clean_text}\n")
                                             if whisper_text:
                                                 f.write(f"\n=== Whisper 识别结果 ===\n{whisper_text}\n")
-                                            else:
-                                                f.write(f"\n=== Whisper 识别结果 ===\n(未启用或识别失败)\n")
+                                            if sensevoice_text:
+                                                f.write(f"\n=== SenseVoice 识别结果 ===\n{sensevoice_text}\n")
                                         
                                         logger.info(f"      [长句保存] 已保存 {len(clean_text)} 字音频: {saved_filename}")
                                     except Exception as e:
