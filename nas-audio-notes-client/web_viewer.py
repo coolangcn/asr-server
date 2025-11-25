@@ -471,6 +471,10 @@ HTML_TEMPLATE = """
                 <i class="fa-solid fa-chart-pie text-lg group-hover:text-purple-400 transition-colors"></i>
                 <span class="font-medium">统计分析</span>
             </button>
+            <button onclick="switchTab('speaker')" id="nav-speaker" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-microphone text-lg group-hover:text-pink-400 transition-colors"></i>
+                <span class="font-medium">声纹管理</span>
+            </button>
         </nav>
 
         <div class="p-4 mt-auto">
@@ -537,6 +541,10 @@ HTML_TEMPLATE = """
             <div id="analysis-content" class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
                 <!-- 统计图表 -->
             </div>
+        </div>
+        
+        <div id="view-speaker" class="view-container flex-1 overflow-hidden p-0 hidden">
+            <iframe src="/register_page" style="width:100%; height:100%; border:none;"></iframe>
         </div>
     </main>
 
