@@ -481,7 +481,7 @@ HTML_TEMPLATE = """
             <div class="glass-card rounded-xl p-4 space-y-3">
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-medium text-gray-400">ASR 服务</span>
-                    <span id="status-asr" class="flex h-2 w-2 rounded-full bg-red-500 status-dot"></span>
+                    <span id="status-asr" class="flex h-2 w-2 rounded-full bg-green-500 status-dot"></span>
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-medium text-gray-400">待处理</span>
