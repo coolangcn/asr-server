@@ -543,7 +543,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
         
-        <div id="view-speaker" class="view-container flex-1 overflow-y-auto p-8 hidden">
+         <div id="view-speaker" class="view-container flex-1 overflow-y-auto p-8 hidden">
             <header class="mb-8">
                 <h2 class="text-3xl font-bold text-white mb-2 flex items-center gap-3">
                     <i class="fa-solid fa-microphone text-pink-400"></i>
@@ -620,7 +620,149 @@ HTML_TEMPLATE = """
                 </div>
             </div>
         </div>
+
+        <div id="view-speaker" class="view-container flex-1 overflow-hidden p-0 hidden">
+            <iframe src="/register_page" style="width:100%; height:100%; border:none;"></iframe>
+        </div>
+    </main>
+
+    <script>
+        // 状态管理
+        let lastDataFingerprint = "";
+        const speakerColorMap = {};
+        const colors = [
+            'text-blue-400 border-blue-500/30 bg-blue-500/10',
+            'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
+            'text-purple-400 border-purple-500/30 bg-purple-500/10',
+            'text-amber-400 border-amber-500/30 bg-amber-500/10',
+            'text-rose-400 border-rose-500/30 bg-rose-500/10',
+            'text-cyan-400 border-cyan-500/30 bg-cyan-500/10',
+        ];
+        let nextColorIndex = 0;
         
+        // 懒加载状态
+        let currentOffset = 0;
+        const pageSize = 20;
+        let isLoading = false;
+        let hasMore = true;
+        let allItems = [];
+
+        // 切换视图
+        function switchTab(tabName) {
+            document.querySelectorAll('.view-container').forEach(el => el.classList.add('hidden'));
+            document.getElementById('view-' + tabName).classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-btn').forEach(el => {
+                el.classList.remove('bg-white/10', 'text-white', 'shadow-lg');
+                el.classList.add('text-gray-400');
+            });
+            
+            const activeBtn = document.getElementById('nav-' + tabName);
+            activeBtn.classList.remove('text-gray-400');
+            activeBtn.classList.add('bg-white/10', 'text-white', 'shadow-lg');
+        }
+        
+        // 初始化导航状态
+        switchTab('dashboard');
+
+        function getSpeakerStyle(spk) {
+            if (!speakerColorMap[spk]) {
+                speakerColorMap[spk] = colors[nextColorIndex % colors.length];
+                nextColorIndex++;
+            }
+            return speakerColorMap[spk];
+        }
+
+        function formatTime(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            return date.toLocaleString('zh-CN', {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function parseFilenameTime(filename) {
+            // 尝试从文件名解析时间
+            // 支持格式: TermuxAudioRecording_2025-11-20_14-33-08
+            // 支持格式: recording-20251115-131250
+            
+            // 格式1: TermuxAudioRecording_YYYY-MM-DD_HH-mm-ss
+            let match = filename.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+            if (match) {
+                return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`;
+            }
+            
+            // 格式2: recording-YYYYMMDD-HHmmss
+            match = filename.match(/recording-(\d{8})-(\d{6})/);
+            if (match) {
+                const date = match[1];  // YYYYMMDD
+                const time = match[2];  // HHmmss
+                return `${date.substring(0,4)}-${date.substring(4,6)}-${date.substring(6,8)}T${time.substring(0,2)}:${time.substring(2,4)}:${time.substring(4,6)}`;
+            }
+            
+            return null;
+        }
+
+        function processStats(items) {
+            // 简单的数据预处理
+            return items.map(item => {
+                item.date_group = item.created_at ? item.created_at.split('T')[0] : 'Unknown';
+                return item;
+            });
+        }
+
+        // 渲染仪表盘
+        function renderDashboard(items) {
+            const container = document.getElementById('dashboard-content');
+            container.innerHTML = ""; // 清空并重新渲染所有项
+            
+            let html = "";
+            items.forEach((item, index) => {
+                // 提取摘要 (前100字)
+                let summary = item.full_text || "无内容";
+                if (summary.length > 100) summary = summary.substring(0, 100) + "...";
+                
+                // 提取参与者
+                const speakers = new Set();
+                item.segments.forEach(s => speakers.add(s.spk));
+                const speakerTags = Array.from(speakers).map(s => {
+                    const style = getSpeakerStyle(s);
+                    // 提取颜色类名中的 text-xxx
+                    const colorClass = style.split(' ')[0]; 
+                    return `<span class="text-xs font-medium ${colorClass} bg-gray-800/50 px-2 py-1 rounded-md border border-gray-700/50">${s}</span>`;
+                }).join('');
+
+                // 统计情感分布
+                const emotionStats = {};
+                item.segments.forEach(s => {
+                    const emo = s.emotion || 'neutral';
+                    emotionStats[emo] = (emotionStats[emo] || 0) + 1;
+                });
+                
+                // 生成情感标签 (显示所有情感包括neutral，用于测试)
+                const emotionTags = Object.entries(emotionStats)
+                    // .filter(([emo]) => emo !== 'neutral')  // 临时注释以测试
+                    .map(([emo, count]) => {
+                        const icon = getEmotionIcon(emo);
+                        return `<span class="text-xs px-2 py-1 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                            <span>${icon}</span>
+                            <span>${emo}</span>
+                            <span class="text-[10px] opacity-70">×${count}</span>
+                        </span>`;
+                    }).join('');
+
+                html += `
+                <div class="glass-card rounded-2xl p-6 flex flex-col h-full animate-slide-up hover:scale-105 transition-transform duration-300" style="animation-delay: ${index * 50}ms">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700">
+                                <i class="fa-solid fa-file-audio text-primary-400"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
+                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
+                            </div>
+                        </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
                     </div>
                     
@@ -964,7 +1106,7 @@ HTML_TEMPLATE = """
             }
         };
 
-    
+
         // 声纹管理相关函数
         document.getElementById('audio-file')?.addEventListener('change', function(e) {
             const fileName = e.target.files[0]?.name || '点击选择音频文件';
@@ -1092,6 +1234,7 @@ HTML_TEMPLATE = """
                 loadSpeakers();
             }
         };
+
 
     </script>
 </body>
