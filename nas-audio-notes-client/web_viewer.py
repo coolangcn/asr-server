@@ -675,8 +675,12 @@ HTML_TEMPLATE = """
                                     <span class="text-[10px] text-gray-600">${formatTime(item.created_at)}</span>
                                 </div>
                                 ` : ''}
-                                <div class="text-gray-300 leading-relaxed text-sm">
-                                    ${seg.text}
+                                <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
+                                    <span class="flex-1">${seg.text}</span>
+                                    ${seg.segment_audio_path ? 
+                                        `<button onclick="playAudio('${seg.segment_audio_path}')" class="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500/20 hover:bg-primary-500/40 border border-primary-400/30 flex items-center justify-center transition-all duration-200 hover:scale-110 group" title="播放音频">
+                                            <i class="fa-solid fa-play text-[10px] text-primary-300 group-hover:text-primary-200"></i>
+                                        </button>` : ''}
                                     ${seg.emotion ? 
                                         `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-300 ml-2 border border-purple-500/30">
                                             <span>${getEmotionIcon(seg.emotion)}</span>

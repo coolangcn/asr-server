@@ -29,7 +29,7 @@ class Config:
     LONG_SENTENCES_DIR = "long_sentences"  # 保存目录
     TEMP_DIR = "temp"  # 临时文件目录
     
-    ONLY_REGISTERED_SPEAKERS = False
+    ONLY_REGISTERED_SPEAKERS = True  # 只保留已注册说话人,丢弃Unknown
     # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
     ASR_MODEL = "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"  # 从 SenseVoiceSmall 切换到 Paraformer
     VAD_MODEL = "fsmn-vad"       # VAD模型
@@ -46,19 +46,19 @@ class Config:
         "eres2net_large": {
             "id": "iic/speech_eres2net_large_200k_sv_zh-cn_16k-common",
             "rev": "v1.0.0",
-            "threshold": 0.40,  # 降低阈值以提高识别率
+            "threshold": 0.50,  # 提高阈值以提高准确率
             "gap": 0.08         # 降低置信度间隔要求
         },
         "rdino_ecapa": {
             "id": "iic/speech_rdino_ecapa_tdnn_sv_zh-cn_cnceleb_16k",
             "rev": "v1.0.0",
-            "threshold": 0.40,  # 降低阈值以提高识别率
+            "threshold": 0.50,  # 提高阈值以提高准确率
             "gap": 0.08         # 降低置信度间隔要求
         },
         "camplusplus": {
             "id": "iic/speech_campplus_sv_zh-cn_16k-common",
             "rev": "v1.0.0",
-            "threshold": 0.40,  # 降低阈值以提高识别率
+            "threshold": 0.50,  # 提高阈值以提高准确率
             "gap": 0.08         # 降低置信度间隔要求
         }
     }
@@ -207,10 +207,12 @@ def load_models():
 
     # 4. 加载 Whisper 模型 (可选)
     if Config.ENABLE_WHISPER_COMPARISON:
-        print(f"🎤 加载 Whisper large-v3 模型 (最新最佳版本,需要~10GB显存)...")
+        print(f"🎤 加载 Whisper large-v3 模型 (最新最佳版本,需要~10GB显存)...")
+
         try:
             whisper_model = whisper.load_model("large-v3", device=Config.DEVICE.split(':')[0])
-            print("✅ Whisper large-v3 模型加载完成")
+            print("✅ Whisper large-v3 模型加载完成")
+
         except Exception as e:
             logger.warning(f"⚠️ Whisper模型加载失败: {e}，将禁用Whisper对比功能")
             whisper_model = None
@@ -947,7 +949,8 @@ def transcribe_audio():
                                     filler_ratio = filler_count / len(text_no_punct)
                                     # 如果填充词占比超过60%,认为是噪音
                                     return filler_ratio > 0.6
-
+
+
                                 if Config.SAVE_LONG_SENTENCES and len(clean_text) >= Config.MIN_TEXT_LENGTH_TO_SAVE and not is_noise(clean_text):
                                     try:
                                         os.makedirs(Config.LONG_SENTENCES_DIR, exist_ok=True)
