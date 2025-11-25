@@ -70,6 +70,10 @@ class Config:
     # 可选功能开关
     ENABLE_EMOTION_DETECTION = True  # 是否启用情感检测(需要SenseVoice模型)
     ENABLE_WHISPER_COMPARISON = True  # 是否启用Whisper对比(需要Whisper模型)
+    
+    # SenseVoice配置 (情感检测)
+    SENSEVOICE_MODEL = "iic/SenseVoiceSmall"
+    ENABLE_SENSEVOICE = True  # 是否启用SenseVoice(情感检测+第三转录)
 # ==========================================
 
 EMOTION_TAGS = {
@@ -164,12 +168,13 @@ sv_pipelines = {}
 speaker_db = {}
 emotion_pipeline = None  # 可选: 情感检测模型
 whisper_model = None     # 可选: Whisper对比模型
+sensevoice_pipeline = None  # 可选: SenseVoice模型(情感+转录)
 gpu_lock = threading.Lock()
 db_lock = threading.Lock()
 
 # =================== 模型加载 ===================
 def load_models():
-    global asr_pipeline, sv_pipelines, whisper_model
+    global asr_pipeline, sv_pipelines, whisper_model, sensevoice_pipeline
     print("\n====== 🚀 启动 SOTA 融合服务 ======")
     
     load_speaker_db()
@@ -216,6 +221,19 @@ def load_models():
         except Exception as e:
             logger.warning(f"⚠️ Whisper模型加载失败: {e}，将禁用Whisper对比功能")
             whisper_model = None
+
+    # 5. 加载 SenseVoice 模型 (情感检测)
+    if Config.ENABLE_SENSEVOICE:
+        print(f"🎭 加载 SenseVoice 模型 (情感检测+第三转录)...")
+        try:
+            sensevoice_pipeline = AutoModel(
+                model=Config.SENSEVOICE_MODEL,
+                device=Config.DEVICE
+            )
+            print("✅ SenseVoice 模型加载完成")
+        except Exception as e:
+            logger.warning(f"⚠️ SenseVoice模型加载失败: {e}，将禁用SenseVoice功能")
+            sensevoice_pipeline = None
 
 def load_speaker_db():
     global speaker_db
@@ -368,6 +386,46 @@ def transcribe_with_whisper(audio_path):
     except Exception as e:
         logger.warning(f"      [Whisper对比] 识别失败: {e}")
         return None
+
+
+def transcribe_with_sensevoice(audio_path):
+    """
+    使用SenseVoice识别音频并检测情感
+    
+    Returns:
+        tuple: (text, emotion) - 识别文本和情感
+    """
+    if not Config.ENABLE_SENSEVOICE or sensevoice_pipeline is None:
+        return None, "neutral"
+    
+    try:
+        result = sensevoice_pipeline.generate(
+            input=audio_path,
+            language="auto",
+            use_itn=True
+        )
+        
+        if not result or len(result) == 0:
+            return None, "neutral"
+        
+        raw_text = result[0].get("text", "")
+        
+        # 提取情感
+        emotion = "neutral"
+        for tag, emo_code in EMOTION_TAGS.items():
+            if tag.lower() in raw_text.lower():
+                emotion = emo_code
+                break
+        
+        # 移除情感标签
+        clean_text = re.sub(r'<\|.*?\|>', '', raw_text).strip()
+        
+        logger.info(f"      [SenseVoice] {clean_text} (情感: {emotion})")
+        return clean_text, emotion
+        
+    except Exception as e:
+        logger.warning(f"      [SenseVoice] 识别失败: {e}")
+        return None, "neutral"
 
 def detect_emotion_for_segment(audio_path):
     """使用SenseVoice检测音频段的情感"""
@@ -923,6 +981,13 @@ def transcribe_audio():
                                 # Whisper对比识别
                                 whisper_text = transcribe_with_whisper(seg_wav)
                                 
+                                # SenseVoice识别和情感检测
+                                sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav)
+                                
+                                # 使用SenseVoice的情感结果(如果检测到非neutral)
+                                if sensevoice_emotion != "neutral":
+                                    emotion = sensevoice_emotion
+                                
                                 # 保存超过15个字的语句音频
                                 # 检测是否为噪音(重复字符过多)
                 # 检测是否为噪音(重复字符过多或填充词)
@@ -990,6 +1055,7 @@ def transcribe_audio():
                             "text": clean_text, "start": start, "end": end,
                             "spk": identity or "Unknown", "emotion": emotion,
                             "whisper_text": whisper_text,
+                            "sensevoice_text": sensevoice_text,
                             "confidence": float(f"{confidence:.3f}"),
                             "recognition_details": recognition_details
                         })

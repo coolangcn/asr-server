@@ -691,6 +691,10 @@ HTML_TEMPLATE = """
                                     `<div class="text-gray-500 text-xs mt-1 pl-4 border-l-2 border-gray-700/50">
                                         <span class="text-gray-600">↪️ Whisper: </span>${seg.whisper_text}
                                     </div>` : ''}
+                                ${seg.sensevoice_text ? 
+                                    `<div class="text-purple-500 text-xs mt-1 pl-4 border-l-2 border-purple-700/50">
+                                        <span class="text-purple-400">🎭 SenseVoice: </span>${seg.sensevoice_text}
+                                    </div>` : ''}
                             </div>
                         </div>`;
                     });
