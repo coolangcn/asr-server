@@ -207,10 +207,10 @@ def load_models():
 
     # 4. 加载 Whisper 模型 (可选)
     if Config.ENABLE_WHISPER_COMPARISON:
-        print(f"🎤 加载 Whisper 模型...")
+        print(f"🎤 加载 Whisper large-v3 模型 (最新最佳版本,需要~10GB显存)...")
         try:
-            whisper_model = whisper.load_model("base", device=Config.DEVICE.split(':')[0])
-            print("✅ Whisper模型加载完成")
+            whisper_model = whisper.load_model("large-v3", device=Config.DEVICE.split(':')[0])
+            print("✅ Whisper large-v3 模型加载完成")
         except Exception as e:
             logger.warning(f"⚠️ Whisper模型加载失败: {e}，将禁用Whisper对比功能")
             whisper_model = None
@@ -923,6 +923,7 @@ def transcribe_audio():
                                 
                                 # 保存超过15个字的语句音频
                                 # 检测是否为噪音(重复字符过多)
+                # 检测是否为噪音(重复字符过多或填充词)
                                 def is_noise(text):
                                     if not text:
                                         return True
@@ -932,8 +933,21 @@ def transcribe_audio():
                                     most_common_char, most_common_count = char_counts.most_common(1)[0]
                                     repeat_ratio = most_common_count / len(text)
                                     # 如果某个字符占比超过40%,认为是噪音
-                                    return repeat_ratio > 0.4
-                                
+                                    if repeat_ratio > 0.4:
+                                        return True
+                                    
+                                    # 检测填充词(嗯、啊、呃等)
+                                    filler_words = ['嗯', '啊', '呃', '额', '哦', '唔']
+                                    # 移除标点后检查
+                                    text_no_punct = re.sub(r'[，。、！？,.!?]', '', text)
+                                    if not text_no_punct:
+                                        return True
+                                    # 计算填充词占比
+                                    filler_count = sum(text_no_punct.count(w) for w in filler_words)
+                                    filler_ratio = filler_count / len(text_no_punct)
+                                    # 如果填充词占比超过60%,认为是噪音
+                                    return filler_ratio > 0.6
+
                                 if Config.SAVE_LONG_SENTENCES and len(clean_text) >= Config.MIN_TEXT_LENGTH_TO_SAVE and not is_noise(clean_text):
                                     try:
                                         os.makedirs(Config.LONG_SENTENCES_DIR, exist_ok=True)
