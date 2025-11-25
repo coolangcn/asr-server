@@ -896,6 +896,76 @@ HTML_TEMPLATE = """
 </html>
 """
 
+
+# =================== 声纹管理API转发 ===================
+ASR_SERVER_URL = "http://localhost:5008"
+
+@app.route('/speaker/register', methods=['POST'])
+def proxy_register_speaker():
+    """转发声纹注册请求到ASR服务器"""
+    try:
+        # 转发文件和表单数据
+        files = {}
+        if 'audio_file' in request.files:
+            audio_file = request.files['audio_file']
+            files['audio_file'] = (audio_file.filename, audio_file.stream, audio_file.content_type)
+        
+        data = {
+            'speaker_name': request.form.get('speaker_name', '')
+        }
+        
+        response = requests.post(
+            f"{ASR_SERVER_URL}/speaker/register",
+            files=files,
+            data=data,
+            timeout=30
+        )
+        
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/list', methods=['GET'])
+def proxy_list_speakers():
+    """转发获取说话人列表请求"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/speaker/list", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/<speaker_name>', methods=['DELETE'])
+def proxy_delete_speaker(speaker_name):
+    """转发删除说话人请求"""
+    try:
+        response = requests.delete(f"{ASR_SERVER_URL}/speaker/{speaker_name}", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/audio/<path:filename>', methods=['GET'])
+def proxy_speaker_audio(filename):
+    """转发音频文件请求"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/speaker/audio/{filename}", timeout=10, stream=True)
+        return Response(response.iter_content(chunk_size=8192), 
+                       status=response.status_code, 
+                       content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/register_page')
+def proxy_register_page():
+    """转发声纹注册页面"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/register_page", timeout=10)
+        # 修改HTML中的API端点,指向本地5009端口
+        html = response.text
+        html = html.replace('http://localhost:5008/speaker/', 'http://localhost:5009/speaker/')
+        return html
+    except Exception as e:
+        return f"<h1>Error loading speaker registration page</h1><p>{str(e)}</p>", 500
+
 @app.route('/api/status')
 def api_status():
     return jsonify(get_system_status())
