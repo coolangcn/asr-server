@@ -175,6 +175,49 @@ def convert_audio_to_wav(audio_path, wav_path):
         print(f"  [Convert Error] {e}")
         return False
 
+def extract_audio_segment(source_wav, output_path, start_ms, end_ms):
+    """
+    Extract audio segment from source WAV file using ffmpeg
+    
+    Args:
+        source_wav: Path to source WAV file
+        output_path: Path to save extracted segment
+        start_ms: Start time in milliseconds
+        end_ms: End time in milliseconds
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    FFMPEG_PATH = "ffmpeg"
+    
+    # Convert milliseconds to seconds
+    start_sec = start_ms / 1000.0
+    duration_sec = (end_ms - start_ms) / 1000.0
+    
+    # Ensure duration is positive
+    if duration_sec <= 0:
+        print(f"  [Segment Extract Warning] Invalid duration: {duration_sec}s")
+        return False
+    
+    command = [
+        FFMPEG_PATH, '-y', '-i', source_wav,
+        '-ss', str(start_sec),
+        '-t', str(duration_sec),
+        '-c', 'copy',  # Copy codec without re-encoding for speed
+        output_path
+    ]
+    
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"  [Segment Extract Error] Failed to extract segment: {e}")
+        return False
+    except Exception as e:
+        print(f"  [Segment Extract Error] {e}")
+        return False
+
+
 # ---------------- TXT 保存 ----------------
 def save_transcript_with_spk(full_text, segments, txt_path):
     try:
@@ -425,17 +468,40 @@ def process_one_loop():
                     # 获取所有文本用于数据库存储
                     full_text = " ".join([seg.get("text", "").strip() for seg in diarization if seg.get("text", "").strip()])
                     
+                    
                     # 转换格式以兼容数据库存储
                     segments = []
-                    for seg in diarization:
+                    
+                    # 创建音频片段目录
+                    segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments", base_name)
+                    os.makedirs(segments_dir, exist_ok=True)
+                    print(f"  [Audio Segments] 创建片段目录: {segments_dir}")
+                    
+                    for i, seg in enumerate(diarization):
                         if seg.get("text", "").strip():
+                            # 提取音频片段
+                            seg_filename = f"seg_{i}.wav"
+                            seg_path = os.path.join(segments_dir, seg_filename)
+                            seg_audio_path = f"/audio_segments/{base_name}/{seg_filename}"
+                            
+                            # 尝试提取音频片段
+                            start_ms = seg.get("start_ms", 0)
+                            end_ms = seg.get("end_ms", 0)
+                            
+                            if extract_audio_segment(wav_path, seg_path, start_ms, end_ms):
+                                print(f"  [Audio Segments] 提取片段 {i}: {start_ms}ms - {end_ms}ms")
+                            else:
+                                print(f"  [Audio Segments] 片段 {i} 提取失败，跳过")
+                                seg_audio_path = None  # 提取失败则不设置路径
+                            
                             segments.append({
                                 "text": seg.get("text", "").strip(),
                                 # 客户端信任服务端返回的 start_ms/end_ms
-                                "start": seg.get("start_ms", 0), 
-                                "end": seg.get("end_ms", 0),
+                                "start": start_ms, 
+                                "end": end_ms,
                                 "spk": seg.get("speaker", "Unknown"),
-                                "emotion": seg.get("emotion", "neutral")  # 从服务器读取真实emotion
+                                "emotion": seg.get("emotion", "neutral"),  # 从服务器读取真实emotion
+                                "segment_audio_path": seg_audio_path  # 添加音频片段路径
                             })
                     
                     # 保存到数据库
@@ -465,13 +531,34 @@ def process_one_loop():
                     
                     # Convert ASR segments to the format expected by our DB and TXT saver
                     fallback_segments = []
-                    for seg in asr_segments:
+                    
+                    # 创建音频片段目录
+                    segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments", base_name)
+                    os.makedirs(segments_dir, exist_ok=True)
+                    print(f"  [Audio Segments] 创建片段目录: {segments_dir}")
+                    
+                    for i, seg in enumerate(asr_segments):
+                        # 提取音频片段
+                        seg_filename = f"seg_{i}.wav"
+                        seg_path = os.path.join(segments_dir, seg_filename)
+                        seg_audio_path = f"/audio_segments/{base_name}/{seg_filename}"
+                        
+                        start_ms = seg.get("start", 0)
+                        end_ms = seg.get("end", 0)
+                        
+                        if extract_audio_segment(wav_path, seg_path, start_ms, end_ms):
+                            print(f"  [Audio Segments] 提取片段 {i}: {start_ms}ms - {end_ms}ms")
+                        else:
+                            print(f"  [Audio Segments] 片段 {i} 提取失败，跳过")
+                            seg_audio_path = None
+                        
                         fallback_segments.append({
-                            "start": seg.get("start", 0),
-                            "end": seg.get("end", 0),
+                            "start": start_ms,
+                            "end": end_ms,
                             "text": seg.get("text", "").strip(),
-                            "spk": seg.get("spk", "Unknown"),  # 也从服务器读取spk
-                            "emotion": seg.get("emotion", "neutral")  # 从服务器读取真实emotion
+                            "spk": seg.get("spk", "Unknown"),
+                            "emotion": seg.get("emotion", "neutral"),
+                            "segment_audio_path": seg_audio_path
                         })
                     
                     save_transcript_with_spk(full_text, fallback_segments, txt_path)
@@ -491,7 +578,35 @@ def process_one_loop():
 
                 full_text = result_data.get("full_text", "")
                 segments = result_data.get("segments", [])
-                filtered_segments = [seg for seg in segments if seg.get("text","").strip()]
+                
+                # 创建音频片段目录
+                segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments", base_name)
+                os.makedirs(segments_dir, exist_ok=True)
+                print(f"  [Audio Segments] 创建片段目录: {segments_dir}")
+                
+                # 提取音频片段并添加路径
+                filtered_segments = []
+                for i, seg in enumerate(segments):
+                    if seg.get("text","").strip():
+                        # 提取音频片段
+                        seg_filename = f"seg_{i}.wav"
+                        seg_path = os.path.join(segments_dir, seg_filename)
+                        seg_audio_path = f"/audio_segments/{base_name}/{seg_filename}"
+                        
+                        start_ms = seg.get("start", 0)
+                        end_ms = seg.get("end", 0)
+                        
+                        if extract_audio_segment(wav_path, seg_path, start_ms, end_ms):
+                            print(f"  [Audio Segments] 提取片段 {i}: {start_ms}ms - {end_ms}ms")
+                        else:
+                            print(f"  [Audio Segments] 片段 {i} 提取失败，跳过")
+                            seg_audio_path = None
+                        
+                        # 添加segment_audio_path到segment
+                        seg_with_audio = seg.copy()
+                        seg_with_audio["segment_audio_path"] = seg_audio_path
+                        filtered_segments.append(seg_with_audio)
+                
                 save_transcript_with_spk(full_text, filtered_segments, txt_path)
                 save_to_db(filename, full_text, filtered_segments, recording_time)
                 print(f"  [完成] 转录结果已保存 -> {txt_path}")

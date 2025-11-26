@@ -5,7 +5,7 @@ import os
 import re
 import json
 import sys
-from flask import Flask, render_template_string, jsonify, request, Response
+from flask import Flask, render_template_string, jsonify, request, Response, send_file
 import datetime
 import requests
 import subprocess
@@ -1234,6 +1234,30 @@ HTML_TEMPLATE = """
                 loadSpeakers();
             }
         };
+        // Audio preview functionality
+        let currentAudio = null;
+
+        function playAudio(audioPath) {
+            // Stop current audio if playing
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio = null;
+            }
+            
+            // Create and play new audio
+            currentAudio = new Audio(audioPath);
+            currentAudio.play().catch(err => {
+                console.error('Audio playback failed:', err);
+                alert('音频播放失败: ' + err.message);
+            });
+            
+            // Clean up when finished
+            currentAudio.onended = () => {
+                currentAudio = null;
+            };
+        }
+
+
 
 
     </script>
@@ -1364,6 +1388,25 @@ def api_update_config():
     with open(CONFIG["LOG_FILE_PATH"], 'a', encoding='utf-8') as log_file:
         log_file.write(log_message + '\\n')
     return jsonify(success=False, message="Invalid JSON data"), 400
+
+
+@app.route('/audio_segments/<path:filepath>')
+def serve_audio_segment(filepath):
+    """提供音频片段文件"""
+    try:
+        segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")
+        full_path = os.path.join(segments_dir, filepath)
+        
+        # 安全检查：确保路径在segments目录内
+        if not os.path.abspath(full_path).startswith(os.path.abspath(segments_dir)):
+            return jsonify({"error": "Invalid path"}), 403
+        
+        if not os.path.exists(full_path):
+            return jsonify({"error": "Audio segment not found"}), 404
+        
+        return send_file(full_path, mimetype='audio/wav')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/')
 def index():
