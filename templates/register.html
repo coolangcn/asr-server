@@ -75,41 +75,6 @@
                 return;
             }
 
-            const formData = new FormData();
-            formData.append('speaker_name', speakerName);
-            for (const file of audioFiles) {
-                formData.append('audio_files', file);
-            }
-
-            setLoading(true);
-            showStatus('正在上传和处理音频，请稍候...', '');
-
-            try {
-                const response = await fetch('/register', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    showStatus(`✅ ${result.message}`, 'success');
-                    // 清空表单
-                    form.reset();
-                } else {
-                    showStatus(`❌ 注册失败: ${result.error}`, 'error');
-                }
-            } catch (error) {
-                showStatus(`❌ 发生网络错误: ${error.message}`, 'error');
-            } finally {
-                setLoading(false);
-            }
-        });
-
-        function showStatus(message, type) {
-            statusDiv.textContent = message;
-            statusDiv.className = `status ${type}`;
-        }
 
         function setLoading(isLoading) {
             submitBtn.disabled = isLoading;
