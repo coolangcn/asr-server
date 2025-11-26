@@ -1050,8 +1050,13 @@ def register_speaker():
             logger.error(traceback.format_exc())
             return jsonify({"error": "An internal error occurred during registration."} ), 500
         finally:
+            # 清理临时文件，但保留语音片段文件供web端预览使用
             for f in temp_files:
                 if os.path.exists(f):
+                    # 不删除语音片段文件 (seg_*.wav)，这些文件需要保留供web端预览
+                    if os.path.basename(f).startswith("seg_"):
+                        logger.info(f"  [保留] 语音片段文件供预览使用: {os.path.basename(f)}")
+                        continue
                     try: os.remove(f)
                     except: pass
 
