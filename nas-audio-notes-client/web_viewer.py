@@ -349,6 +349,7 @@ HTML_TEMPLATE = """
             
             aside.mobile-open {
                 left: 0;
+                z-index: 1001 !important;
             }
             
             /* 添加遮罩层 */
