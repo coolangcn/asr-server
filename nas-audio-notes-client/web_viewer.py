@@ -839,7 +839,7 @@ HTML_TEMPLATE = """
                     <div class="mb-8 animate-fade-in">
                         <div class="flex items-center gap-2 mb-4 px-4">
                             <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
-                            <span class="text-xs font-mono text-gray-500">${item.filename}</span>
+                            <span class="text-xs font-mono text-gray-500">${item.filename.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 30)}</span>
                             <span class="text-xs text-gray-600 ml-auto">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
                         </div>
                     `;
@@ -866,7 +866,7 @@ HTML_TEMPLATE = """
                             <div class="flex-1 min-w-0">
                                 ${showAvatar ? `
                                 <div class="flex items-baseline gap-2 mb-1">
-                                    <span class="text-sm font-bold text-gray-200">${seg.spk}</span>
+                                    <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
                                     <span class="text-[10px] text-gray-600">${formatTime(item.created_at)}</span>
                                 </div>
                                 ` : ''}
