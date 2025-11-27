@@ -1,0 +1,14 @@
+说话人: 妈妈
+文本长度: 23 字
+时间: 28360ms - 44060ms
+情感: happy
+置信度: 0.639
+
+=== FunASR 识别结果 ===
+我样样嗯小情就是要当滴滴七人飞一嗯啦啦啦啦嗯，
+
+=== Whisper 识别结果 ===
+中文字幕提供
+
+=== SenseVoice 识别结果 ===
+baby baby baby here with you.

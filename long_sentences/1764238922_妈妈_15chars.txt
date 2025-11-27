@@ -1,0 +1,11 @@
+说话人: 妈妈
+文本长度: 15 字
+时间: 47520ms - 50640ms
+情感: neutral
+置信度: 0.646
+
+=== FunASR 识别结果 ===
+oono爱know爱know，
+
+=== SenseVoice 识别结果 ===
+I.

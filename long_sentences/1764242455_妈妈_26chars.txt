@@ -1,0 +1,14 @@
+说话人: 妈妈
+文本长度: 26 字
+时间: 37880ms - 48400ms
+情感: neutral
+置信度: 0.723
+
+=== FunASR 识别结果 ===
+现就说lneedyourshcksy小朋友怎么样呀？
+
+=== Whisper 识别结果 ===
+Santa Shockho ho ho ho ho ho hoSanta ShockRangier ShockSanta ShockSanta Shock
+
+=== SenseVoice 识别结果 ===
+.
