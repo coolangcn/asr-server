@@ -1650,6 +1650,35 @@ def serve_audio_segment(filepath):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/long_sentences/<path:filename>')
+def serve_long_sentence_audio(filename):
+    """提供ASR服务器保存的长句音频文件"""
+    try:
+        # Long sentences are saved in the ASR server directory
+        asr_server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        long_sentences_dir = os.path.join(asr_server_dir, "asr-server", "long_sentences")
+        
+        # Fallback: try relative path from current directory
+        if not os.path.exists(long_sentences_dir):
+            long_sentences_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "long_sentences")
+        
+        # Another fallback: absolute path
+        if not os.path.exists(long_sentences_dir):
+            long_sentences_dir = r"d:\AI\asr-server\long_sentences"
+        
+        full_path = os.path.join(long_sentences_dir, filename)
+        
+        # 安全检查：确保路径在long_sentences目录内
+        if not os.path.abspath(full_path).startswith(os.path.abspath(long_sentences_dir)):
+            return jsonify({"error": "Invalid path"}), 403
+        
+        if not os.path.exists(full_path):
+            return jsonify({"error": f"Audio file not found: {filename}"}), 404
+        
+        return send_file(full_path, mimetype='audio/wav')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
