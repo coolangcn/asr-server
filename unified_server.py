@@ -316,14 +316,22 @@ def process_one_file(filename):
             
             # 尝试提取音频片段
             if extract_segment(wav_path, start_ms, end_ms, seg_path):
-                logger.info(f"  [Audio Segments] 提取片段 {i}: {start_ms}ms - {end_ms}ms")
+                logger.info(f"  [Audio Segments] 提取片段 {i}: {start_ms}ms - {end_ms}ms → {seg_path}")
             else:
                 logger.warning(f"  [Audio Segments] 片段 {i} 提取失败")
                 seg_audio_path = None
             
             # 保留所有原始字段并添加segment_audio_path
+            original_path = seg.get("segment_audio_path")
             segment_data = seg.copy()
             segment_data["segment_audio_path"] = seg_audio_path
+            
+            # 日志追踪路径变化
+            if original_path:
+                logger.info(f"  [Path Override] 片段 {i}: '{original_path}' → '{seg_audio_path}'")
+            else:
+                logger.info(f"  [Path Set] 片段 {i}: '{seg_audio_path}'")
+            
             updated_segments.append(segment_data)
         
         segments = updated_segments
