@@ -508,6 +508,24 @@ HTML_TEMPLATE = """
                     <h2 class="text-3xl font-bold text-white mb-2">概览</h2>
                     <p class="text-gray-400">最近的录音与转录记录</p>
                 </div>
+                <div class="flex gap-3 items-end">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">开始日期</label>
+                        <input type="date" id="filter-start-date" 
+                               class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">结束日期</label>
+                        <input type="date" id="filter-end-date" 
+                               class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20">
+                    </div>
+                    <button onclick="applyDateFilter()" class="px-4 py-2 bg-accent-500 hover:bg-accent-400 text-white rounded-lg text-sm font-medium transition-all duration-300 shadow-lg shadow-accent-500/20 hover:shadow-accent-500/40 hover:scale-105">
+                        <i class="fa-solid fa-filter mr-2"></i>筛选
+                    </button>
+                    <button onclick="clearDateFilter()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-all">
+                        <i class="fa-solid fa-rotate-left mr-2"></i>清除
+                    </button>
+                </div>
                 <button onclick="loadMore()" class="group px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-sm font-medium text-white transition-all duration-300 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-105 border border-primary-400/20">
                     <i class="fa-solid fa-rotate-right mr-2 group-hover:rotate-180 transition-transform duration-500"></i>刷新数据
                 </button>
@@ -993,7 +1011,103 @@ HTML_TEMPLATE = """
         }
 
         // 加载更多数据
-        async function loadMore() {
+        async // 日期筛选功能
+        let currentStartDate = null;
+        let currentEndDate = null;
+        
+        function applyDateFilter() {
+            const startDate = document.getElementById('filter-start-date').value;
+            const endDate = document.getElementById('filter-end-date').value;
+            
+            if (!startDate || !endDate) {
+                alert('请选择开始日期和结束日期');
+                return;
+            }
+            
+            if (startDate > endDate) {
+                alert('开始日期不能晚于结束日期');
+                return;
+            }
+            
+            currentStartDate = startDate;
+            currentEndDate = endDate;
+            
+            // 重置分页并重新加载数据
+            currentOffset = 0;
+            allItems = [];
+            hasMore = true;
+            
+            loadFilteredData();
+        }
+        
+        function clearDateFilter() {
+            currentStartDate = null;
+            currentEndDate = null;
+            document.getElementById('filter-start-date').value = '';
+            document.getElementById('filter-end-date').value = '';
+            
+            // 重置并重新加载所有数据
+            currentOffset = 0;
+            allItems = [];
+            hasMore = true;
+            
+            loadMore();
+        }
+        
+        async function loadFilteredData() {
+            if (isLoading || !hasMore) return;
+            isLoading = true;
+            document.getElementById('loading-indicator').classList.remove('hidden');
+            
+            try {
+                let url;
+                if (currentStartDate && currentEndDate) {
+                    // 使用时间范围API
+                    url = `/api/data/range?start_date=${currentStartDate}&end_date=${currentEndDate}&offset=${currentOffset}&limit=${pageSize}`;
+                } else {
+                    // 使用普通API
+                    url = `/api/data?offset=${currentOffset}&limit=${pageSize}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                let newItems;
+                if (data.transcripts) {
+                    // 时间范围API返回格式
+                    newItems = data.transcripts;
+                    hasMore = data.meta && data.meta.returned_count === pageSize;
+                } else {
+                    // 普通API返回格式
+                    newItems = Array.isArray(data) ? data : [];
+                    hasMore = newItems.length === pageSize;
+                }
+                
+                if (newItems.length === 0) {
+                    hasMore = false;
+                    if (currentOffset === 0) {
+                        document.getElementById('dashboard-content').innerHTML = 
+                            '<div class="col-span-full text-center py-20"><i class="fa-solid fa-inbox text-6xl text-gray-700 mb-4"></i><p class="text-gray-500 text-lg">所选时间范围内没有找到对话记录</p></div>';
+                    }
+                } else {
+                    allItems = allItems.concat(newItems);
+                    currentOffset += newItems.length;
+                    
+                    const processed = processStats(allItems);
+                    renderDashboard(processed);
+                    renderChat(processed);
+                    renderAnalysis(processed);
+                }
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                alert('加载数据失败: ' + error.message);
+            } finally {
+                isLoading = false;
+                document.getElementById('loading-indicator').classList.add('hidden');
+            }
+        }
+        
+        function loadMore() {
             if (isLoading || !hasMore) return;
             
             isLoading = true;
@@ -1082,6 +1196,11 @@ HTML_TEMPLATE = """
             }
         });
 
+        // 设置默认日期为今天
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('filter-start-date').value = today;
+        document.getElementById('filter-end-date').value = today;
+        
         // 初始加载
         loadMore();
         // 定时检查新数据
@@ -1346,6 +1465,128 @@ def api_data():
     offset = request.args.get('offset', 0, type=int)
     limit = request.args.get('limit', 20, type=int)
     return jsonify(get_transcripts(offset=offset, limit=limit))
+
+@app.route('/api/data/range')
+def api_data_range():
+    """
+    按时间范围查询转录数据
+    参数:
+        start_date: 开始日期 (YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS)
+        end_date: 结束日期 (YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS)
+        offset: 分页偏移量 (可选,默认0)
+        limit: 每页数量 (可选,默认100)
+    
+    示例:
+        /api/data/range?start_date=2025-11-27&end_date=2025-11-27
+        /api/data/range?start_date=2025-11-27 00:00:00&end_date=2025-11-27 23:59:59
+    """
+    try:
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        offset = request.args.get('offset', 0, type=int)
+        limit = request.args.get('limit', 100, type=int)
+        
+        if not start_date_str or not end_date_str:
+            return jsonify({
+                "error": "Missing required parameters",
+                "message": "Both start_date and end_date are required",
+                "example": "/api/data/range?start_date=2025-11-27&end_date=2025-11-27"
+            }), 400
+        
+        # 解析日期
+        try:
+            # 尝试解析完整日期时间格式
+            if len(start_date_str) > 10:
+                start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d %H:%M:%S')
+            else:
+                # 只有日期,设置为当天开始
+                start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d')
+            
+            if len(end_date_str) > 10:
+                end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
+            else:
+                # 只有日期,设置为当天结束
+                end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d')
+                end_date = end_date.replace(hour=23, minute=59, second=59)
+        except ValueError as e:
+            return jsonify({
+                "error": "Invalid date format",
+                "message": str(e),
+                "expected_format": "YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
+            }), 400
+        
+        # 获取所有数据
+        all_items = db_get_transcripts(offset=0, limit=10000)
+        
+        # 过滤时间范围内的数据
+        filtered_items = []
+        for item in all_items:
+            filename = item.get('filename', '')
+            dt = None
+            
+            # 解析文件名中的时间戳
+            time_patterns = [
+                r'^\s*(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\s*',
+                r'^\s*recording-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\s*',
+                r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})'
+            ]
+            
+            for pattern in time_patterns:
+                match = re.match(pattern, os.path.splitext(filename)[0])
+                if match:
+                    try:
+                        if pattern == time_patterns[0]:
+                            date_part = match.group(1) + '-' + match.group(2) + '-' + match.group(3)
+                            time_part = match.group(4) + ':' + match.group(5) + ':' + match.group(6)
+                            dt_str = f"{date_part} {time_part}"
+                            dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                        else:
+                            year, month, day, hour, minute, second = match.groups()
+                            dt_str = f"{year}-{month}-{day} {hour}:{minute}:{second}"
+                            dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                        break
+                    except ValueError:
+                        continue
+            
+            # 如果文件名解析失败,尝试使用created_at
+            if dt is None:
+                try:
+                    dt = datetime.datetime.fromisoformat(item.get('created_at', ''))
+                except:
+                    continue
+            
+            # 检查是否在时间范围内
+            if dt and start_date <= dt <= end_date:
+                item['parsed_time'] = dt.isoformat()
+                item['date_group'] = dt.strftime('%Y-%m-%d')
+                item['time_simple'] = dt.strftime('%H:%M')
+                item['time_full'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+                filtered_items.append(item)
+        
+        # 按时间倒序排序
+        filtered_items.sort(key=lambda x: x.get('parsed_time', ''), reverse=True)
+        
+        # 应用分页
+        total_count = len(filtered_items)
+        paginated_items = filtered_items[offset:offset+limit]
+        
+        return jsonify({
+            "transcripts": paginated_items,
+            "meta": {
+                "total_count": total_count,
+                "offset": offset,
+                "limit": limit,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "returned_count": len(paginated_items)
+            }
+        })
+    
+    except Exception as e:
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
 
 @app.route('/api/config', methods=['GET'])
 def api_get_config():
