@@ -1011,7 +1011,7 @@ HTML_TEMPLATE = """
         }
 
         // 加载更多数据
-        async // 日期筛选功能
+        // 日期筛选功能
         let currentStartDate = null;
         let currentEndDate = null;
         
@@ -1107,7 +1107,7 @@ HTML_TEMPLATE = """
             }
         }
         
-        function loadMore() {
+        async function loadMore() {
             if (isLoading || !hasMore) return;
             
             isLoading = true;
