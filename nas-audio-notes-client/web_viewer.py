@@ -890,7 +890,7 @@ HTML_TEMPLATE = """
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
                                     <span class="flex-1">${seg.text}</span>
-                                    ${seg.segment_audio_path ? 
+                                    ${seg.segment_audio_path && !seg.segment_audio_path.includes('temp') && seg.segment_audio_path.startsWith('/') ? 
                                         `<button onclick="playAudio('${seg.segment_audio_path}')" class="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500/20 hover:bg-primary-500/40 border border-primary-400/30 flex items-center justify-center transition-all duration-200 hover:scale-110 group" title="播放音频">
                                             <i class="fa-solid fa-play text-[10px] text-primary-300 group-hover:text-primary-200"></i>
                                         </button>` : ''}
