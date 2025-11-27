@@ -4,6 +4,8 @@
 import psycopg2
 from psycopg2 import pool
 import json
+import re
+from datetime import datetime
 from typing import List, Dict, Optional
 
 # PostgreSQL 连接配置
@@ -38,6 +40,32 @@ def return_connection(conn):
     if connection_pool and conn:
         connection_pool.putconn(conn)
 
+def parse_recording_time(filename: str) -> Optional[datetime]:
+    """
+    从文件名中解析录音时间
+    支持格式: TermuxAudioRecording_2025-11-23_12-56-54.m4a
+    
+    Args:
+        filename: 文件名
+        
+    Returns:
+        datetime对象，如果无法解析则返回None
+    """
+    # 匹配格式: YYYY-MM-DD_HH-MM-SS
+    pattern = r'(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})'
+    match = re.search(pattern, filename)
+    
+    if match:
+        year, month, day, hour, minute, second = map(int, match.groups())
+        try:
+            return datetime(year, month, day, hour, minute, second)
+        except ValueError:
+            # 日期值无效（如月份13）
+            return None
+    
+    # 如果无法解析，返回None（调用者应使用当前时间）
+    return None
+
 def init_db():
     """初始化数据库表结构"""
     conn = None
@@ -55,6 +83,7 @@ def init_db():
             id SERIAL PRIMARY KEY,
             filename TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            recording_time TIMESTAMP,
             full_text TEXT,
             segments_json TEXT
         );
@@ -67,6 +96,10 @@ def init_db():
         
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_filename ON transcriptions(filename);
+        ''')
+        
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_recording_time ON transcriptions(recording_time DESC NULLS LAST);
         ''')
         
         conn.commit()
@@ -82,8 +115,17 @@ def init_db():
         if conn:
             return_connection(conn)
 
-def save_to_db(filename: str, full_text: str, segments_list: List[Dict]) -> bool:
-    """保存转录记录到数据库"""
+def save_to_db(filename: str, full_text: str, segments_list: List[Dict], 
+               recording_time: Optional[datetime] = None) -> bool:
+    """
+    保存转录记录到数据库
+    
+    Args:
+        filename: 文件名
+        full_text: 完整文本
+        segments_list: 分段列表
+        recording_time: 录音时间（可选，如果为None则尝试从文件名解析）
+    """
     conn = None
     try:
         conn = get_connection()
@@ -94,14 +136,19 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict]) -> bool
         cursor = conn.cursor()
         segments_json = json.dumps(segments_list, ensure_ascii=False)
         
+        # 如果没有提供recording_time,尝试从文件名解析
+        if recording_time is None:
+            recording_time = parse_recording_time(filename)
+        
         cursor.execute(
-            "INSERT INTO transcriptions (filename, full_text, segments_json) VALUES (%s, %s, %s)",
-            (filename, full_text, segments_json)
+            "INSERT INTO transcriptions (filename, full_text, segments_json, recording_time) VALUES (%s, %s, %s, %s)",
+            (filename, full_text, segments_json, recording_time)
         )
         
         conn.commit()
         cursor.close()
-        print(f"  [DB] Saved {filename}")
+        time_str = recording_time.strftime('%Y-%m-%d %H:%M:%S') if recording_time else '当前时间'
+        print(f"  [DB] Saved {filename} (录音时间: {time_str})")
         return True
     except Exception as e:
         print(f"  [DB Error] {e}")
@@ -123,7 +170,7 @@ def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
             
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, filename, created_at, full_text, segments_json FROM transcriptions ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            "SELECT id, filename, created_at, full_text, segments_json, recording_time FROM transcriptions ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s",
             (limit, offset)
         )
         
@@ -137,7 +184,8 @@ def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
                 'filename': row[1],
                 'created_at': row[2].isoformat() if row[2] else None,
                 'full_text': row[3],
-                'segments_json': row[4]
+                'segments_json': row[4],
+                'recording_time': row[5].isoformat() if row[5] else None
             }
             # 解析segments_json
             try:
