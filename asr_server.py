@@ -1137,11 +1137,13 @@ def transcribe_audio():
                             continue
 
                         identity, confidence = None, 0.0
-                        recognition_details = []
+                        recognition_details = []
+                        segment_audio_path = None
                         if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
                             seg_wav = os.path.join(Config.TEMP_DIR, f"seg_{start}_{i}_{int(time.time())}.wav")
                             if extract_segment(proc_temp, start, end, seg_wav):
-                                temp_files.append(seg_wav)
+                                temp_files.append(seg_wav)
+                                segment_audio_path = seg_wav  # 保存分段音频路径供客户端播放
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
                                 
                                 # 性能优化: 只有识别出的说话人才进行Whisper和SenseVoice处理
@@ -1236,7 +1238,8 @@ def transcribe_audio():
                             "whisper_text": whisper_text,
                             "sensevoice_text": sensevoice_text,
                             "confidence": float(f"{confidence:.3f}"),
-                            "recognition_details": recognition_details
+                            "recognition_details": recognition_details,
+                            "segment_audio_path": segment_audio_path
                         })
                     logger.info("  [生命周期: 3. 逐段声纹识别] 完成。")
 
