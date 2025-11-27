@@ -291,9 +291,47 @@ def process_one_file(filename):
         
         logger.info(f"  转录成功: {len(segments)} 个分段")
         
+        # 解析录音时间
+        from db_manager import parse_recording_time
+        recording_time = parse_recording_time(filename)
+        
+        # 提取音频片段并添加segment_audio_path
+        base_name = os.path.splitext(filename)[0]
+        segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, "audio_segments", base_name)
+        os.makedirs(segments_dir, exist_ok=True)
+        logger.info(f"  [Audio Segments] 创建片段目录: {segments_dir}")
+        
+        # 导入音频提取函数
+        from asr_server import extract_segment
+        
+        updated_segments = []
+        for i, seg in enumerate(segments):
+            # 提取音频片段
+            seg_filename = f"seg_{i}.wav"
+            seg_path = os.path.join(segments_dir, seg_filename)
+            seg_audio_path = f"/audio_segments/{base_name}/{seg_filename}"
+            
+            start_ms = seg.get("start", 0)
+            end_ms = seg.get("end", 0)
+            
+            # 尝试提取音频片段
+            if extract_segment(wav_path, start_ms, end_ms, seg_path):
+                logger.info(f"  [Audio Segments] 提取片段 {i}: {start_ms}ms - {end_ms}ms")
+            else:
+                logger.warning(f"  [Audio Segments] 片段 {i} 提取失败")
+                seg_audio_path = None
+            
+            # 保留所有原始字段并添加segment_audio_path
+            segment_data = seg.copy()
+            segment_data["segment_audio_path"] = seg_audio_path
+            updated_segments.append(segment_data)
+        
+        segments = updated_segments
+        
         # 保存到数据库
         try:
-            save_to_db(filename, full_text, segments)
+            save_to_db(filename, full_text, segments, recording_time)
+            logger.info(f"  数据库保存成功 (recording_time: {recording_time})")
         except Exception as e:
             logger.error(f"  数据库保存失败: {e}")
         

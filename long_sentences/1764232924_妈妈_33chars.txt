@@ -1,0 +1,14 @@
+说话人: 妈妈
+文本长度: 33 字
+时间: 45130ms - 60425ms
+情感: neutral
+置信度: 0.681
+
+=== FunASR 识别结果 ===
+来拉扯拉屎专八十八十八babyandmy八岁八十八来回爸爸看星星。
+
+=== Whisper 识别结果 ===
+优优独播剧场——YoYo Television Series Exclusive
+
+=== SenseVoice 识别结果 ===
+Flash.
