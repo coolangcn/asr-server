@@ -84,6 +84,7 @@ def init_db():
             id SERIAL PRIMARY KEY,
             filename TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            recording_time TIMESTAMP,
             full_text TEXT,
             segments_json TEXT
         );
@@ -96,6 +97,10 @@ def init_db():
         
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_filename ON transcriptions(filename);
+        ''')
+        
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_recording_time ON transcriptions(recording_time DESC NULLS LAST);
         ''')
         
         conn.commit()
@@ -132,18 +137,14 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         cursor = conn.cursor()
         segments_json = json.dumps(segments_list, ensure_ascii=False)
         
-        if recording_time:
-            # 使用指定的录音时间
-            cursor.execute(
-                "INSERT INTO transcriptions (filename, full_text, segments_json, created_at) VALUES (%s, %s, %s, %s)",
-                (filename, full_text, segments_json, recording_time)
-            )
-        else:
-            # 使用默认的当前时间
-            cursor.execute(
-                "INSERT INTO transcriptions (filename, full_text, segments_json) VALUES (%s, %s, %s)",
-                (filename, full_text, segments_json)
-            )
+        # 如果没有提供recording_time,尝试从文件名解析
+        if recording_time is None:
+            recording_time = parse_recording_time(filename)
+        
+        cursor.execute(
+            "INSERT INTO transcriptions (filename, full_text, segments_json, recording_time) VALUES (%s, %s, %s, %s)",
+            (filename, full_text, segments_json, recording_time)
+        )
         
         conn.commit()
         cursor.close()
@@ -170,7 +171,7 @@ def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
             
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, filename, created_at, full_text, segments_json FROM transcriptions ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            "SELECT id, filename, created_at, full_text, segments_json, recording_time FROM transcriptions ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s",
             (limit, offset)
         )
         
@@ -184,7 +185,8 @@ def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
                 'filename': row[1],
                 'created_at': row[2].isoformat() if row[2] else None,
                 'full_text': row[3],
-                'segments_json': row[4]
+                'segments_json': row[4],
+                'recording_time': row[5].isoformat() if row[5] else None
             }
             # 解析segments_json
             try:
