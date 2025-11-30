@@ -21,6 +21,7 @@ import subprocess
 import shutil
 import re
 import json
+import traceback
 from datetime import datetime
 
 # 导入ASR服务模块
@@ -219,6 +220,41 @@ def transcribe_internal(wav_path):
                             except:
                                 pass
                     
+                    # 检测是否为噪音(重复字符过多或填充词)
+                    def is_noise(text):
+                        if not text:
+                            return True
+                        # 检测单字符重复率
+                        from collections import Counter
+                        char_counts = Counter(text)
+                        most_common_char, most_common_count = char_counts.most_common(1)[0]
+                        repeat_ratio = most_common_count / len(text)
+                        # 如果某个字符占比超过40%,认为是噪音
+                        if repeat_ratio > 0.4:
+                            return True
+                        
+                        # 检测填充词(嗯、啊、呃等)
+                        filler_words = ['嗯', '啊', '呃', '额', '哦', '唔']
+                        # 移除标点后检查
+                        text_no_punct = re.sub(r'[，。、！？,.!?]', '', text)
+                        if not text_no_punct:
+                            return True
+                        # 计算填充词占比
+                        filler_count = sum(text_no_punct.count(w) for w in filler_words)
+                        filler_ratio = filler_count / len(text_no_punct)
+                        # 如果填充词占比超过60%,认为是噪音
+                        return filler_ratio > 0.6
+                    
+                    # 过滤噪音
+                    if is_noise(clean_text):
+                        logger.info(f"      [3.{i+1}] 检测到噪音，已跳过。")
+                        continue
+                    
+                    # 只保留已注册说话人,丢弃Unknown
+                    if ASRConfig.ONLY_REGISTERED_SPEAKERS and identity is None:
+                        logger.info(f"      [3.{i+1}] 未识别到说话人，已跳过。")
+                        continue
+                    
                     processed_segments.append({
                         "text": clean_text,
                         "start": start,
@@ -338,10 +374,19 @@ def process_one_file(filename):
         
         # 保存到数据库
         try:
-            save_to_db(filename, full_text, segments, recording_time)
-            logger.info(f"  数据库保存成功 (recording_time: {recording_time})")
+            # 检查数据库连接池是否初始化
+            from db_manager import connection_pool
+            if not connection_pool:
+                logger.error(f"  数据库连接池未初始化，无法保存")
+            else:
+                success = save_to_db(filename, full_text, segments, recording_time)
+                if success:
+                    logger.info(f"  数据库保存成功 (recording_time: {recording_time})")
+                else:
+                    logger.error(f"  数据库保存失败: save_to_db返回False")
         except Exception as e:
             logger.error(f"  数据库保存失败: {e}")
+            logger.error(traceback.format_exc())
         
         # 保存TXT文件
         txt_filename = os.path.splitext(filename)[0] + ".txt"
