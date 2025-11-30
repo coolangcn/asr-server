@@ -1137,13 +1137,17 @@ def transcribe_audio():
                             continue
 
                         identity, confidence = None, 0.0
-                        recognition_details = []
-                        segment_audio_path = None
+                        recognition_details = []
+
+                        segment_audio_path = None
+
                         if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
                             seg_wav = os.path.join(Config.TEMP_DIR, f"seg_{start}_{i}_{int(time.time())}.wav")
                             if extract_segment(proc_temp, start, end, seg_wav):
-                                temp_files.append(seg_wav)
-                                segment_audio_path = seg_wav  # 保存分段音频路径供客户端播放
+                                temp_files.append(seg_wav)
+
+                                segment_audio_path = seg_wav  # 保存分段音频路径供客户端播放
+
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
                                 
                                 # 性能优化: 只有识别出的说话人才进行Whisper和SenseVoice处理
@@ -1238,8 +1242,10 @@ def transcribe_audio():
                             "whisper_text": whisper_text,
                             "sensevoice_text": sensevoice_text,
                             "confidence": float(f"{confidence:.3f}"),
-                            "recognition_details": recognition_details,
-                            "segment_audio_path": segment_audio_path
+                            "recognition_details": recognition_details,
+
+                            "segment_audio_path": segment_audio_path
+
                         })
                     logger.info("  [生命周期: 3. 逐段声纹识别] 完成。")
 
@@ -1265,14 +1271,7 @@ def transcribe_audio():
             }
             logger.info(f"📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
             
-            # 保存到数据库
-            if segments:  # 只有在有分段时才保存
-                try:
-                    save_to_db(file.filename, full_text, segments)
-                    logger.info(f"💾 [数据库保存] 已保存到数据库: {file.filename}")
-                except Exception as save_err:
-                    logger.error(f"❌ [数据库保存] 保存失败: {save_err}")
-            
+
             return jsonify(response_data)
 
         except Exception as e:
