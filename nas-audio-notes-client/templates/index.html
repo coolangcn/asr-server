@@ -712,13 +712,17 @@
                 </div>`;
 
                 allGroups[date].forEach(item => {
-                    // 文件头
+                    // 文件头 - 添加data-file-time属性用于时间轴
+                    const fileTime = parseFilenameTime(item.filename) || item.created_at;
+                    const fileDate = new Date(fileTime);
+                    const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
+                    
                     html += `
-                    <div class="mb-8 animate-fade-in">
+                    <div class="mb-8 animate-fade-in" data-file-time="${fileTime}" data-year-month="${fileYearMonth}">
                         <div class="flex items-center gap-2 mb-4 px-4">
                             <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
                             <span class="text-xs font-mono text-gray-500">${item.filename.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 30)}</span>
-                            <span class="text-xs text-gray-600 ml-auto">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${formatTime(fileTime)}</span>
                         </div>
                     `;
 
@@ -791,7 +795,7 @@
             
             if (!contentEl || !timelineContainer) return;
             
-            const items = Array.from(document.querySelectorAll('[data-date]'));
+            const items = Array.from(document.querySelectorAll('[data-file-time]'));
             if (items.length === 0) return;
             
             // Generate timeline markers
@@ -807,8 +811,8 @@
                 const item = items[itemIndex];
                 
                 if (item) {
-                    const dateStr = item.dataset.date;
-                    return { yearMonth: dateStr.replace('-', '/'), item };
+                    const yearMonth = item.dataset.yearMonth;
+                    return { yearMonth: yearMonth.replace('-', '/'), item };
                 }
                 
                 return null;
@@ -881,19 +885,21 @@
         function generateTimelineMarkers(items, markersEl) {
             markersEl.innerHTML = '';
             
-            // Group by year and month
+            // Group by year and month from file times
             const yearMonthGroups = {};
             items.forEach((item, index) => {
-                const dateStr = item.dataset.date;
-                const [year, month] = dateStr.split('-');
+                const yearMonth = item.dataset.yearMonth;
+                if (!yearMonth) return;
+                
+                const [year, month] = yearMonth.split('-');
                 
                 if (!yearMonthGroups[year]) {
                     yearMonthGroups[year] = {};
                 }
                 if (!yearMonthGroups[year][month]) {
-                    yearMonthGroups[year][month] = { items: [], firstIndex: index };
+                    yearMonthGroups[year][month] = { count: 0, firstIndex: index };
                 }
-                yearMonthGroups[year][month].items.push(item);
+                yearMonthGroups[year][month].count++;
             });
             
             // Sort years descending
@@ -909,11 +915,23 @@
                 // Months sorted descending
                 const months = Object.keys(yearMonthGroups[year]).sort((a, b) => b - a);
                 
-                // Dots for each month
-                months.forEach(() => {
-                    const dot = document.createElement('div');
-                    dot.className = 'timeline-dot mx-auto my-3';
-                    markersEl.appendChild(dot);
+                // Create dots for each file in each month
+                months.forEach((month) => {
+                    const fileCount = yearMonthGroups[year][month].count;
+                    
+                    // Add one dot per file in this month
+                    for (let i = 0; i < fileCount; i++) {
+                        const dot = document.createElement('div');
+                        dot.className = 'timeline-dot mx-auto my-1';
+                        markersEl.appendChild(dot);
+                    }
+                    
+                    // Add small spacing between months
+                    if (months.indexOf(month) < months.length - 1) {
+                        const monthSpacer = document.createElement('div');
+                        monthSpacer.className = 'h-2';
+                        markersEl.appendChild(monthSpacer);
+                    }
                 });
                 
                 // Spacing between years
