@@ -304,8 +304,13 @@ def process_one_file(filename):
     
     logger.info(f"\n>>> 处理: {filename}")
     
-    # 转换为WAV
-    wav_path = source_path + "_TEMP.wav"
+    # 创建临时文件目录（使用asr-server的temp目录）
+    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # 转换为WAV（使用temp目录）
+    base_filename = os.path.basename(filename)
+    wav_path = os.path.join(temp_dir, base_filename + "_TEMP.wav")
     if not convert_audio_to_wav(source_path, wav_path):
         logger.error("  音频转换失败，跳过")
         return False
@@ -407,12 +412,23 @@ def process_one_file(filename):
         return True
         
     finally:
-        # 清理临时WAV文件
+        # 清理所有临时文件（从temp目录）
         if os.path.exists(wav_path):
             try:
                 os.remove(wav_path)
-            except:
-                pass
+                logger.info(f"  [Cleanup] 已删除临时文件: {os.path.basename(wav_path)}")
+            except Exception as e:
+                logger.warning(f"  [Cleanup] 删除临时文件失败: {e}")
+        
+        # 清理.processed.wav文件
+        processed_path = wav_path + ".processed.wav"
+        if os.path.exists(processed_path):
+            try:
+                os.remove(processed_path)
+                logger.info(f"  [Cleanup] 已删除处理后文件: {os.path.basename(processed_path)}")
+            except Exception as e:
+                logger.warning(f"  [Cleanup] 删除处理后文件失败: {e}")
+
 
 def file_monitor_loop():
     """文件监控主循环"""
