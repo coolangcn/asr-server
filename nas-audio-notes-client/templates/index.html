@@ -1,19 +1,21 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN" class="dark">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Audio Notes | 智能语音笔记</title>
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
+
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -65,15 +67,18 @@
             width: 6px;
             height: 6px;
         }
+
         ::-webkit-scrollbar-track {
-            background: #111827; 
+            background: #111827;
         }
+
         ::-webkit-scrollbar-thumb {
-            background: #374151; 
+            background: #374151;
             border-radius: 3px;
         }
+
         ::-webkit-scrollbar-thumb:hover {
-            background: #4b5563; 
+            background: #4b5563;
         }
 
         /* 玻璃拟态效果 */
@@ -83,14 +88,14 @@
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
-        
+
         .glass-card {
             background: rgba(31, 41, 55, 0.4);
             backdrop-filter: blur(8px);
             border: 1px solid rgba(255, 255, 255, 0.03);
             transition: all 0.3s ease;
         }
-        
+
         .glass-card:hover {
             background: rgba(31, 41, 55, 0.6);
             border-color: rgba(99, 102, 241, 0.3);
@@ -102,7 +107,7 @@
         .neon-text {
             text-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
         }
-        
+
         .status-dot {
             box-shadow: 0 0 8px currentColor;
         }
@@ -112,6 +117,7 @@
             position: relative;
             z-index: 1;
         }
+
         .chat-bubble::before {
             content: '';
             position: absolute;
@@ -119,27 +125,27 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
             z-index: -1;
             border-radius: inherit;
         }
 
         body {
             background-color: #030712;
-            background-image: 
+            background-image:
                 radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 25%),
                 radial-gradient(circle at 85% 30%, rgba(20, 184, 166, 0.08) 0%, transparent 25%);
             color: #f3f4f6;
         }
-        
+
         .line-clamp-3 {
             display: -webkit-box;
             -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
-    
-    
+
+
         /* Timeline styles */
         .timeline-year {
             font-size: 13px;
@@ -147,7 +153,7 @@
             color: #9ca3af;
             transition: color 0.2s;
         }
-        
+
         .timeline-dot {
             width: 4px;
             height: 4px;
@@ -156,14 +162,15 @@
             transition: all 0.2s;
             cursor: pointer;
         }
-        
+
         .timeline-dot:hover {
             background: #60a5fa;
             transform: scale(1.5);
         }
-    
+
         /* 移动端优化 */
         @media (max-width: 768px) {
+
             /* 隐藏侧边栏,使用全屏布局 */
             aside {
                 position: fixed;
@@ -173,12 +180,12 @@
                 z-index: 1000;
                 transition: left 0.3s ease;
             }
-            
+
             aside.mobile-open {
                 left: 0;
                 z-index: 1001 !important;
             }
-            
+
             /* 添加遮罩层 */
             .mobile-overlay {
                 display: none;
@@ -190,16 +197,16 @@
                 background: rgba(0, 0, 0, 0.5);
                 z-index: 999;
             }
-            
+
             .mobile-overlay.active {
                 display: block;
             }
-            
+
             /* 主内容区占满屏幕 */
             main {
                 width: 100%;
             }
-            
+
             /* 添加汉堡菜单按钮 */
             .mobile-menu-btn {
                 display: flex !important;
@@ -215,69 +222,171 @@
                 justify-content: center;
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
                 cursor: pointer;
+                -webkit-tap-highlight-color: transparent;
             }
-            
+
             /* 卡片网格调整为单列 */
             #dashboard-content {
                 grid-template-columns: 1fr !important;
+                gap: 1rem !important;
             }
-            
+
+            /* 时间轴优化 - 缩小宽度 */
+            #timeline-container {
+                width: 40px !important;
+            }
+
+            #timeline {
+                padding: 1rem 0.25rem !important;
+            }
+
+            .timeline-year {
+                font-size: 10px !important;
+                writing-mode: vertical-rl;
+                text-orientation: mixed;
+            }
+
+            .timeline-dot {
+                width: 3px !important;
+                height: 3px !important;
+            }
+
+            /* 日期筛选器垂直布局 */
+            header .flex.gap-3 {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                width: 100%;
+                gap: 0.5rem !important;
+            }
+
+            header .flex.gap-3>div {
+                width: 100%;
+            }
+
+            header .flex.gap-3 input,
+            header .flex.gap-3 button {
+                width: 100%;
+                min-height: 44px;
+            }
+
+            /* 顶部header优化 */
+            header.flex.justify-between {
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                gap: 1rem;
+            }
+
             /* 调整字体大小 */
             h2 {
                 font-size: 1.5rem !important;
             }
-            
+
             h3 {
-                font-size: 1rem !important;
+                font-size: 1.125rem !important;
             }
-            
+
             /* 增大触摸目标 */
             .nav-btn {
                 min-height: 48px;
+                padding: 0.75rem 1rem !important;
             }
-            
+
             button {
                 min-height: 44px;
-                padding: 0.75rem 1.5rem !important;
+                padding: 0.75rem 1rem !important;
+                font-size: 0.875rem;
             }
-            
+
             /* 优化聊天气泡 */
             .chat-bubble {
                 max-width: 90% !important;
             }
-            
+
+            /* 音频播放按钮增大 */
+            button[onclick^="playAudio"] {
+                width: 32px !important;
+                height: 32px !important;
+                min-height: 32px !important;
+            }
+
             /* 调整padding */
             .p-8 {
                 padding: 1rem !important;
             }
-            
+
             .p-6 {
+                padding: 0.75rem !important;
+            }
+
+            /* 统计分析页面优化 */
+            #analysis-content {
+                grid-template-columns: 1fr !important;
+            }
+
+            #analysis-content .grid-cols-2 {
+                grid-template-columns: 1fr !important;
+            }
+
+            /* 声纹管理页面优化 */
+            #speaker-list {
+                grid-template-columns: 1fr !important;
+            }
+
+            .glass-card {
                 padding: 1rem !important;
             }
+
+            /* 表单输入框优化 */
+            input[type="text"],
+            input[type="date"],
+            input[type="file"] {
+                font-size: 16px !important;
+                /* 防止iOS自动缩放 */
+                min-height: 44px;
+            }
+
+            /* 优化滚动 */
+            .overflow-y-auto {
+                -webkit-overflow-scrolling: touch;
+            }
+
+            /* 卡片间距优化 */
+            .space-y-8>*+* {
+                margin-top: 1.5rem !important;
+            }
+
+            /* 移动端顶部留出汉堡菜单空间 */
+            #view-dashboard>header:first-child,
+            #view-chat>div>div>header:first-child,
+            #view-analysis>header:first-child,
+            #view-speaker>header:first-child {
+                padding-top: 4rem !important;
+            }
         }
-        
+
         /* 桌面端隐藏汉堡菜单 */
         .mobile-menu-btn {
             display: none;
         }
-
     </style>
 </head>
+
 <body class="h-screen flex overflow-hidden selection:bg-primary-500 selection:text-white">
 
     <!-- 侧边栏 -->
-    
+
     <!-- 移动端汉堡菜单 -->
     <div class="mobile-menu-btn" onclick="toggleMobileMenu()">
         <i class="fa-solid fa-bars text-white text-xl"></i>
     </div>
-    
+
     <!-- 移动端遮罩层 -->
     <div class="mobile-overlay" onclick="toggleMobileMenu()"></div>
 
     <aside class="w-64 glass flex flex-col border-r border-gray-800 z-20">
         <div class="p-6 flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
+            <div
+                class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
                 <i class="fa-solid fa-wave-square text-white text-lg"></i>
             </div>
             <div>
@@ -287,19 +396,23 @@
         </div>
 
         <nav class="flex-1 px-4 space-y-2 mt-4">
-            <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group active">
+            <button onclick="switchTab('dashboard')" id="nav-dashboard"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group active">
                 <i class="fa-solid fa-comments text-lg group-hover:text-primary-400 transition-colors"></i>
                 <span class="font-medium">数据概览</span>
             </button>
-            <button onclick="switchTab('chat')" id="nav-chat" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+            <button onclick="switchTab('chat')" id="nav-chat"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <i class="fa-solid fa-comments text-lg group-hover:text-accent-400 transition-colors"></i>
                 <span class="font-medium">时光对话</span>
             </button>
-            <button onclick="switchTab('analysis')" id="nav-analysis" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+            <button onclick="switchTab('analysis')" id="nav-analysis"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <i class="fa-solid fa-chart-pie text-lg group-hover:text-purple-400 transition-colors"></i>
                 <span class="font-medium">统计分析</span>
             </button>
-            <button onclick="switchTab('speaker')" id="nav-speaker" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+            <button onclick="switchTab('speaker')" id="nav-speaker"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <i class="fa-solid fa-chart-pie text-lg group-hover:text-pink-400 transition-colors"></i>
                 <span class="font-medium">声纹管理</span>
             </button>
@@ -313,7 +426,8 @@
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-medium text-gray-400">待处理</span>
-                    <span id="status-files" class="text-xs font-bold text-white bg-gray-700 px-2 py-0.5 rounded-full">0</span>
+                    <span id="status-files"
+                        class="text-xs font-bold text-white bg-gray-700 px-2 py-0.5 rounded-full">0</span>
                 </div>
                 <div class="h-px bg-gray-700/50 my-2"></div>
                 <div class="text-[10px] text-gray-500 font-mono truncate" id="log-display">
@@ -326,7 +440,9 @@
     <!-- 主内容区 -->
     <main class="flex-1 relative overflow-hidden flex flex-col">
         <!-- 顶部光晕 -->
-        <div class="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-primary-900/10 to-transparent pointer-events-none"></div>
+        <div
+            class="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-primary-900/10 to-transparent pointer-events-none">
+        </div>
 
         <!-- 视图容器 -->
         <div id="view-dashboard" class="view-container flex-1 overflow-y-auto p-8 space-y-8 animate-fade-in active">
@@ -338,26 +454,30 @@
                 <div class="flex gap-3 items-end">
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">开始日期</label>
-                        <input type="date" id="filter-start-date" 
-                               class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20">
+                        <input type="date" id="filter-start-date"
+                            class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20">
                     </div>
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">结束日期</label>
-                        <input type="date" id="filter-end-date" 
-                               class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20">
+                        <input type="date" id="filter-end-date"
+                            class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20">
                     </div>
-                    <button onclick="applyDateFilter()" class="px-4 py-2 bg-accent-500 hover:bg-accent-400 text-white rounded-lg text-sm font-medium transition-all duration-300 shadow-lg shadow-accent-500/20 hover:shadow-accent-500/40 hover:scale-105">
+                    <button onclick="applyDateFilter()"
+                        class="px-4 py-2 bg-accent-500 hover:bg-accent-400 text-white rounded-lg text-sm font-medium transition-all duration-300 shadow-lg shadow-accent-500/20 hover:shadow-accent-500/40 hover:scale-105">
                         <i class="fa-solid fa-filter mr-2"></i>筛选
                     </button>
-                    <button onclick="clearDateFilter()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-all">
+                    <button onclick="clearDateFilter()"
+                        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-all">
                         <i class="fa-solid fa-rotate-left mr-2"></i>清除
                     </button>
                 </div>
-                <button onclick="loadMore()" class="group px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-sm font-medium text-white transition-all duration-300 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-105 border border-primary-400/20">
-                    <i class="fa-solid fa-rotate-right mr-2 group-hover:rotate-180 transition-transform duration-500"></i>刷新数据
+                <button onclick="loadMore()"
+                    class="group px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-sm font-medium text-white transition-all duration-300 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-105 border border-primary-400/20">
+                    <i
+                        class="fa-solid fa-rotate-right mr-2 group-hover:rotate-180 transition-transform duration-500"></i>刷新数据
                 </button>
             </header>
-            
+
             <div id="dashboard-content" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-10">
                 <!-- 卡片将通过JS插入 -->
             </div>
@@ -370,7 +490,8 @@
             <div class="w-full h-full flex">
                 <!-- Main content area -->
                 <div class="flex-1 flex flex-col overflow-hidden">
-                    <div class="max-w-4xl mx-auto w-full h-full flex flex-col bg-gray-900/30 border-x border-gray-800/50">
+                    <div
+                        class="max-w-4xl mx-auto w-full h-full flex flex-col bg-gray-900/30 border-x border-gray-800/50">
                         <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl">
                             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                 <i class="fa-regular fa-clock text-accent-400"></i> 时光对话
@@ -381,18 +502,19 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Google Photos-style Timeline -->
                 <div id="timeline-container" class="w-20 bg-transparent flex flex-col relative cursor-pointer">
                     <div id="timeline" class="flex-1 overflow-y-auto relative py-8 px-2">
                         <!-- Vertical line -->
-                        <div class="absolute left-1/2 top-0 bottom-0 w-px bg-gray-700/20 transform -translate-x-1/2"></div>
-                        
+                        <div class="absolute left-1/2 top-0 bottom-0 w-px bg-gray-700/20 transform -translate-x-1/2">
+                        </div>
+
                         <!-- Time markers -->
                         <div id="timeline-markers" class="relative">
                             <!-- Markers will be generated by JS -->
                         </div>
-                        
+
                         <!-- Current position indicator -->
                         <div id="timeline-indicator"
                             class="absolute left-1/2 transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300 ease-out pointer-events-none z-10"
@@ -401,9 +523,11 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Floating tooltip for timeline -->
-                <div id="timeline-hover-tooltip" style="position: fixed; opacity: 0; pointer-events: none; z-index: 1000; background: rgba(17, 24, 39, 0.95); color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);"></div>
+                <div id="timeline-hover-tooltip"
+                    style="position: fixed; opacity: 0; pointer-events: none; z-index: 1000; background: rgba(17, 24, 39, 0.95); color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);">
+                </div>
             </div>
         </div>
 
@@ -416,8 +540,8 @@
                 <!-- 统计图表 -->
             </div>
         </div>
-        
-         <div id="view-speaker" class="view-container flex-1 overflow-y-auto p-8 hidden">
+
+        <div id="view-speaker" class="view-container flex-1 overflow-y-auto p-8 hidden">
             <header class="mb-8">
                 <h2 class="text-3xl font-bold text-white mb-2 flex items-center gap-3">
                     <i class="fa-solid fa-microphone text-pink-400"></i>
@@ -432,53 +556,38 @@
                     <i class="fa-solid fa-user-plus text-primary-400"></i>
                     注册新说话人
                 </h3>
-                
+
                 <form id="register-form" class="space-y-6">
                     <div>
                         <label class="block text-sm font-medium text-gray-300 mb-2">
                             <i class="fa-solid fa-signature mr-2"></i>说话人姓名
                         </label>
-                        <input 
-                            type="text" 
-                            id="speaker-name" 
-                            placeholder="请输入姓名"
+                        <input type="text" id="speaker-name" placeholder="请输入姓名"
                             class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all"
-                            required
-                        >
+                            required>
                     </div>
-                    
+
                     <div>
                         <label class="block text-sm font-medium text-gray-300 mb-2">
                             <i class="fa-solid fa-file-audio mr-2"></i>音频文件 (3-10秒清晰语音)
                         </label>
                         <div class="relative">
-                            <input 
-                                type="file" 
-                                id="audio-file" 
-                                accept="audio/*"
-                                class="hidden"
-                                required
-                            >
-                            <button 
-                                type="button"
-                                onclick="document.getElementById('audio-file').click()"
-                                class="w-full px-4 py-3 bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl text-gray-400 hover:border-primary-500 hover:text-primary-400 transition-all flex items-center justify-center gap-2"
-                            >
+                            <input type="file" id="audio-file" accept="audio/*" class="hidden" required>
+                            <button type="button" onclick="document.getElementById('audio-file').click()"
+                                class="w-full px-4 py-3 bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl text-gray-400 hover:border-primary-500 hover:text-primary-400 transition-all flex items-center justify-center gap-2">
                                 <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
                                 <span id="file-name">点击选择音频文件</span>
                             </button>
                         </div>
                     </div>
-                    
-                    <button 
-                        type="submit"
-                        class="w-full px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white font-medium rounded-xl transition-all duration-300 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-105 flex items-center justify-center gap-2"
-                    >
+
+                    <button type="submit"
+                        class="w-full px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white font-medium rounded-xl transition-all duration-300 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-105 flex items-center justify-center gap-2">
                         <i class="fa-solid fa-fingerprint"></i>
                         <span>注册声纹</span>
                     </button>
                 </form>
-                
+
                 <div id="register-status" class="mt-4 hidden"></div>
             </div>
 
@@ -488,7 +597,7 @@
                     <i class="fa-solid fa-users text-accent-400"></i>
                     已注册说话人
                 </h3>
-                
+
                 <div id="speaker-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <!-- 说话人卡片将通过JS插入 -->
                 </div>
@@ -513,7 +622,7 @@
             'text-cyan-400 border-cyan-500/30 bg-cyan-500/10',
         ];
         let nextColorIndex = 0;
-        
+
         // 懒加载状态
         let currentOffset = 0;
         const pageSize = 20;
@@ -525,22 +634,22 @@
         function switchTab(tabName) {
             document.querySelectorAll('.view-container').forEach(el => el.classList.add('hidden'));
             document.getElementById('view-' + tabName).classList.remove('hidden');
-            
+
             document.querySelectorAll('.nav-btn').forEach(el => {
                 el.classList.remove('bg-white/10', 'text-white', 'shadow-lg');
                 el.classList.add('text-gray-400');
             });
-            
+
             const activeBtn = document.getElementById('nav-' + tabName);
             activeBtn.classList.remove('text-gray-400');
             activeBtn.classList.add('bg-white/10', 'text-white', 'shadow-lg');
-            
+
             // Initialize timeline when switching to chat view
             if (tabName === 'chat') {
                 setTimeout(initTimeline, 100);
             }
         }
-        
+
         // 初始化导航状态
         switchTab('dashboard');
 
@@ -564,21 +673,21 @@
             // 尝试从文件名解析时间
             // 支持格式: TermuxAudioRecording_2025-11-20_14-33-08
             // 支持格式: recording-20251115-131250
-            
+
             // 格式1: TermuxAudioRecording_YYYY-MM-DD_HH-mm-ss
             let match = filename.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
             if (match) {
                 return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`;
             }
-            
+
             // 格式2: recording-YYYYMMDD-HHmmss
             match = filename.match(/recording-(\d{8})-(\d{6})/);
             if (match) {
                 const date = match[1];  // YYYYMMDD
                 const time = match[2];  // HHmmss
-                return `${date.substring(0,4)}-${date.substring(4,6)}-${date.substring(6,8)}T${time.substring(0,2)}:${time.substring(2,4)}:${time.substring(4,6)}`;
+                return `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}T${time.substring(0, 2)}:${time.substring(2, 4)}:${time.substring(4, 6)}`;
             }
-            
+
             return null;
         }
 
@@ -594,20 +703,20 @@
         function renderDashboard(items) {
             const container = document.getElementById('dashboard-content');
             container.innerHTML = ""; // 清空并重新渲染所有项
-            
+
             let html = "";
             items.forEach((item, index) => {
                 // 提取摘要 (前100字)
                 let summary = item.full_text || "无内容";
                 if (summary.length > 100) summary = summary.substring(0, 100) + "...";
-                
+
                 // 提取参与者
                 const speakers = new Set();
                 item.segments.forEach(s => speakers.add(s.spk));
                 const speakerTags = Array.from(speakers).map(s => {
                     const style = getSpeakerStyle(s);
                     // 提取颜色类名中的 text-xxx
-                    const colorClass = style.split(' ')[0]; 
+                    const colorClass = style.split(' ')[0];
                     return `<span class="text-xs font-medium ${colorClass} bg-gray-800/50 px-2 py-1 rounded-md border border-gray-700/50">${s}</span>`;
                 }).join('');
 
@@ -617,7 +726,7 @@
                     const emo = s.emotion || 'neutral';
                     emotionStats[emo] = (emotionStats[emo] || 0) + 1;
                 });
-                
+
                 // 生成情感标签 (显示所有情感包括neutral，用于测试)
                 const emotionTags = Object.entries(emotionStats)
                     // .filter(([emo]) => emo !== 'neutral')  // 临时注释以测试
@@ -659,7 +768,7 @@
                     </div>
                 </div>`;
             });
-            
+
             container.innerHTML = html;
         }
 
@@ -667,7 +776,7 @@
         function renderChat(items) {
             const container = document.getElementById('chat-content');
             if (currentOffset === 0) container.innerHTML = "";
-            
+
             // 按日期分组
             const groups = {};
             items.slice(currentOffset).forEach(item => {
@@ -676,16 +785,16 @@
             });
 
             let html = "";
-            
+
             // 如果是追加加载，不需要重新渲染日期头（简化处理，这里可能需要优化，但暂且如此）
             // 实际上，为了保持时间线正确，我们应该重新渲染整个列表或者精细控制。
             // 鉴于 allItems 包含了所有数据，我们这里简单地重新渲染整个 allItems 会更安全，
             // 但为了性能，我们只渲染新增部分。
             // 修正：renderChat 接收的是 allItems，所以我们可以全量渲染，或者优化。
             // 为了简单且保证顺序正确，我们清空并全量渲染 allItems。
-            
+
             container.innerHTML = ""; // 清空重绘，确保顺序
-            
+
             // 重新分组 allItems
             const allGroups = {};
             allItems.forEach(item => {
@@ -700,7 +809,7 @@
                     const timeB = parseFilenameTime(b.filename) || b.created_at;
                     return new Date(timeB) - new Date(timeA);  // 倒序: 新 - 旧
                 });
-                
+
                 html += `
                 <div class="relative flex items-center justify-center my-8" data-date="${date}">
                     <div class="absolute inset-0 flex items-center">
@@ -716,7 +825,7 @@
                     const fileTime = parseFilenameTime(item.filename) || item.created_at;
                     const fileDate = new Date(fileTime);
                     const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
-                    
+
                     html += `
                     <div class="mb-8 animate-fade-in" data-file-time="${fileTime}" data-year-month="${fileYearMonth}">
                         <div class="flex items-center gap-2 mb-4 px-4">
@@ -732,7 +841,7 @@
                         // 提取颜色
                         const textColor = style.match(/text-(\w+)-400/)[1]; // e.g. blue
                         const isMe = seg.spk === 'Me'; // 假设有 'Me'，目前没有，预留
-                        
+
                         const showAvatar = seg.spk !== lastSpk;
                         lastSpk = seg.spk;
 
@@ -741,7 +850,7 @@
                             <div class="w-10 flex-shrink-0 flex flex-col items-center">
                                 ${showAvatar ? `
                                 <div class="w-10 h-10 rounded-full bg-gradient-to-br from-${textColor}-500 to-${textColor}-700 border-2 border-${textColor}-400/30 flex items-center justify-center shadow-lg shadow-${textColor}-500/20">
-                                    <span class="text-sm font-bold text-white">${seg.spk.substring(0,1).toUpperCase()}</span>
+                                    <span class="text-sm font-bold text-white">${seg.spk.substring(0, 1).toUpperCase()}</span>
                                 </div>
                                 ` : ''}
                             </div>
@@ -754,22 +863,22 @@
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
                                     <span class="flex-1">${seg.text}</span>
-                                    ${seg.segment_audio_path && !seg.segment_audio_path.includes('temp') && seg.segment_audio_path.startsWith('/') ? 
-                                        `<button onclick="playAudio('${seg.segment_audio_path}')" class="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500/20 hover:bg-primary-500/40 border border-primary-400/30 flex items-center justify-center transition-all duration-200 hover:scale-110 group" title="播放音频">
+                                    ${seg.segment_audio_path && !seg.segment_audio_path.includes('temp') && seg.segment_audio_path.startsWith('/') ?
+                                `<button onclick="playAudio('${seg.segment_audio_path}')" class="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500/20 hover:bg-primary-500/40 border border-primary-400/30 flex items-center justify-center transition-all duration-200 hover:scale-110 group" title="播放音频">
                                             <i class="fa-solid fa-play text-[10px] text-primary-300 group-hover:text-primary-200"></i>
                                         </button>` : ''}
-                                    ${seg.emotion ? 
-                                        `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-300 ml-2 border border-purple-500/30">
+                                    ${seg.emotion ?
+                                `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-300 ml-2 border border-purple-500/30">
                                             <span>${getEmotionIcon(seg.emotion)}</span>
                                             <span>${seg.emotion}</span>
                                         </span>` : ''}
                                 </div>
-                                ${seg.whisper_text ? 
-                                    `<div class="text-blue-500 text-xs mt-1 pl-4 border-l-2 border-blue-700/50">
+                                ${seg.whisper_text ?
+                                `<div class="text-blue-500 text-xs mt-1 pl-4 border-l-2 border-blue-700/50">
                                         <span class="text-blue-600">↪️ Whisper: </span>${seg.whisper_text}
                                     </div>` : ''}
-                                ${seg.sensevoice_text ? 
-                                    `<div class="text-purple-500 text-xs mt-1 pl-4 border-l-2 border-purple-700/50">
+                                ${seg.sensevoice_text ?
+                                `<div class="text-purple-500 text-xs mt-1 pl-4 border-l-2 border-purple-700/50">
                                         <span class="text-purple-400">🎭 SenseVoice: </span>${seg.sensevoice_text}
                                     </div>` : ''}
                             </div>
@@ -778,13 +887,13 @@
                     html += `</div>`;
                 });
             });
-            
+
             container.innerHTML = html;
         }
 
 
         // ===== TIMELINE FUNCTIONS =====
-        
+
         function initTimeline() {
             const contentEl = document.getElementById('chat-content');
             const timelineEl = document.getElementById('timeline');
@@ -792,32 +901,32 @@
             const markersEl = document.getElementById('timeline-markers');
             const indicatorEl = document.getElementById('timeline-indicator');
             const hoverTooltip = document.getElementById('timeline-hover-tooltip');
-            
+
             if (!contentEl || !timelineContainer) return;
-            
+
             const items = Array.from(document.querySelectorAll('[data-file-time]'));
             if (items.length === 0) return;
-            
+
             // Generate timeline markers
             generateTimelineMarkers(items, markersEl);
-            
+
             // Get date at mouse position
             function getDateAtPosition(mouseY) {
                 const rect = timelineContainer.getBoundingClientRect();
                 const relativeY = mouseY - rect.top;
                 const percentage = Math.max(0, Math.min(1, relativeY / rect.height));
-                
+
                 const itemIndex = Math.round(percentage * (items.length - 1));
                 const item = items[itemIndex];
-                
+
                 if (item) {
                     const yearMonth = item.dataset.yearMonth;
                     return { yearMonth: yearMonth.replace('-', '/'), item };
                 }
-                
+
                 return null;
             }
-            
+
             // Handle timeline hover
             timelineContainer.addEventListener('mousemove', (e) => {
                 const result = getDateAtPosition(e.clientY);
@@ -828,11 +937,11 @@
                     hoverTooltip.style.opacity = '1';
                 }
             });
-            
+
             timelineContainer.addEventListener('mouseleave', () => {
                 hoverTooltip.style.opacity = '0';
             });
-            
+
             // Handle timeline click
             timelineContainer.addEventListener('click', (e) => {
                 const result = getDateAtPosition(e.clientY);
@@ -840,36 +949,36 @@
                     result.item.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
             });
-            
+
             // Update indicator
             function updateIndicator() {
                 const contentRect = contentEl.getBoundingClientRect();
                 const contentTop = contentRect.top;
-                
+
                 let closestIndex = 0;
                 let closestDistance = Infinity;
-                
+
                 items.forEach((item, index) => {
                     const itemRect = item.getBoundingClientRect();
                     const distance = Math.abs(itemRect.top - contentTop);
-                    
+
                     if (distance < closestDistance) {
                         closestDistance = distance;
                         closestIndex = index;
                     }
                 });
-                
+
                 const percentage = (closestIndex / Math.max(items.length - 1, 1)) * 100;
                 indicatorEl.style.top = `${percentage}%`;
             }
-            
+
             // Scroll events
             let scrollTimeout;
             contentEl.addEventListener('scroll', () => {
                 clearTimeout(scrollTimeout);
                 scrollTimeout = setTimeout(updateIndicator, 10);
             });
-            
+
             // Sync timeline scroll
             contentEl.addEventListener('scroll', () => {
                 if (contentEl.scrollHeight > contentEl.clientHeight) {
@@ -878,21 +987,21 @@
                     timelineEl.scrollTop = timelineScrollTop;
                 }
             });
-            
+
             updateIndicator();
         }
-        
+
         function generateTimelineMarkers(items, markersEl) {
             markersEl.innerHTML = '';
-            
+
             // Group by year and month from file times
             const yearMonthGroups = {};
             items.forEach((item, index) => {
                 const yearMonth = item.dataset.yearMonth;
                 if (!yearMonth) return;
-                
+
                 const [year, month] = yearMonth.split('-');
-                
+
                 if (!yearMonthGroups[year]) {
                     yearMonthGroups[year] = {};
                 }
@@ -901,31 +1010,31 @@
                 }
                 yearMonthGroups[year][month].count++;
             });
-            
+
             // Sort years descending
             const years = Object.keys(yearMonthGroups).sort((a, b) => b - a);
-            
+
             years.forEach((year, yearIndex) => {
                 // Year label
                 const yearLabel = document.createElement('div');
                 yearLabel.className = 'timeline-year text-center mb-3';
                 yearLabel.textContent = year;
                 markersEl.appendChild(yearLabel);
-                
+
                 // Months sorted descending
                 const months = Object.keys(yearMonthGroups[year]).sort((a, b) => b - a);
-                
+
                 // Create dots for each file in each month
                 months.forEach((month) => {
                     const fileCount = yearMonthGroups[year][month].count;
-                    
+
                     // Add one dot per file in this month
                     for (let i = 0; i < fileCount; i++) {
                         const dot = document.createElement('div');
                         dot.className = 'timeline-dot mx-auto my-1';
                         markersEl.appendChild(dot);
                     }
-                    
+
                     // Add small spacing between months
                     if (months.indexOf(month) < months.length - 1) {
                         const monthSpacer = document.createElement('div');
@@ -933,7 +1042,7 @@
                         markersEl.appendChild(monthSpacer);
                     }
                 });
-                
+
                 // Spacing between years
                 if (yearIndex < years.length - 1) {
                     const spacer = document.createElement('div');
@@ -946,7 +1055,7 @@
         // 渲染分析视图
         function renderAnalysis(items) {
             const container = document.getElementById('analysis-content');
-            
+
             // 统计数据
             const stats = {};
             allItems.forEach(item => {
@@ -956,7 +1065,7 @@
                     }
                     stats[seg.spk].count++;
                     stats[seg.spk].words += seg.text.length;
-                    
+
                     const emo = seg.emotion || 'neutral';
                     stats[seg.spk].emotions[emo] = (stats[seg.spk].emotions[emo] || 0) + 1;
                 });
@@ -967,19 +1076,19 @@
                 .sort((a, b) => b[1].count - a[1].count);
 
             let html = "";
-            
+
             // 概览卡片
             html += `
             <div class="col-span-1 lg:col-span-2 glass-card rounded-2xl p-6 mb-6">
                 <h3 class="text-lg font-bold text-white mb-4">说话人活跃度排行</h3>
                 <div class="space-y-4">
             `;
-            
+
             sortedStats.forEach(([spk, data], index) => {
                 const style = getSpeakerStyle(spk);
                 const colorName = style.match(/text-(\w+)-400/)[1];
                 const percent = Math.min(100, (data.count / sortedStats[0][1].count) * 100);
-                
+
                 html += `
                 <div class="relative">
                     <div class="flex justify-between text-sm mb-1">
@@ -1003,7 +1112,7 @@
                 <h3 class="text-lg font-bold text-white mb-4">情感分布</h3>
                 <div class="grid grid-cols-2 gap-4">
             `;
-            
+
             // 汇总所有情感
             const allEmotions = {};
             Object.values(stats).forEach(s => {
@@ -1011,7 +1120,7 @@
                     allEmotions[e] = (allEmotions[e] || 0) + c;
                 });
             });
-            
+
             Object.entries(allEmotions).forEach(([emo, count]) => {
                 html += `
                 <div class="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50 text-center">
@@ -1021,12 +1130,12 @@
                 </div>
                 `;
             });
-            
+
             html += `</div></div>`;
-            
+
             container.innerHTML = html;
         }
-        
+
         function getEmotionIcon(emo) {
             const map = {
                 'happy': '😊', 'sad': '😔', 'angry': '😡', 'neutral': '😐',
@@ -1039,51 +1148,51 @@
         // 日期筛选功能
         let currentStartDate = null;
         let currentEndDate = null;
-        
+
         function applyDateFilter() {
             const startDate = document.getElementById('filter-start-date').value;
             const endDate = document.getElementById('filter-end-date').value;
-            
+
             if (!startDate || !endDate) {
                 alert('请选择开始日期和结束日期');
                 return;
             }
-            
+
             if (startDate > endDate) {
                 alert('开始日期不能晚于结束日期');
                 return;
             }
-            
+
             currentStartDate = startDate;
             currentEndDate = endDate;
-            
+
             // 重置分页并重新加载数据
             currentOffset = 0;
             allItems = [];
             hasMore = true;
-            
+
             loadFilteredData();
         }
-        
+
         function clearDateFilter() {
             currentStartDate = null;
             currentEndDate = null;
             document.getElementById('filter-start-date').value = '';
             document.getElementById('filter-end-date').value = '';
-            
+
             // 重置并重新加载所有数据
             currentOffset = 0;
             allItems = [];
             hasMore = true;
-            
+
             loadMore();
         }
-        
+
         async function loadFilteredData() {
             if (isLoading || !hasMore) return;
             isLoading = true;
             document.getElementById('loading-indicator').classList.remove('hidden');
-            
+
             try {
                 let url;
                 if (currentStartDate && currentEndDate) {
@@ -1093,10 +1202,10 @@
                     // 使用普通API
                     url = `/api/data?offset=${currentOffset}&limit=${pageSize}`;
                 }
-                
+
                 const response = await fetch(url);
                 const data = await response.json();
-                
+
                 let newItems;
                 if (data.transcripts) {
                     // 时间范围API返回格式
@@ -1107,17 +1216,17 @@
                     newItems = Array.isArray(data) ? data : [];
                     hasMore = newItems.length === pageSize;
                 }
-                
+
                 if (newItems.length === 0) {
                     hasMore = false;
                     if (currentOffset === 0) {
-                        document.getElementById('dashboard-content').innerHTML = 
+                        document.getElementById('dashboard-content').innerHTML =
                             '<div class="col-span-full text-center py-20"><i class="fa-solid fa-inbox text-6xl text-gray-700 mb-4"></i><p class="text-gray-500 text-lg">所选时间范围内没有找到对话记录</p></div>';
                     }
                 } else {
                     allItems = allItems.concat(newItems);
                     currentOffset += newItems.length;
-                    
+
                     const processed = processStats(allItems);
                     renderDashboard(processed);
                     renderChat(processed);
@@ -1131,40 +1240,40 @@
                 document.getElementById('loading-indicator').classList.add('hidden');
             }
         }
-        
+
         async function loadMore() {
             if (isLoading || !hasMore) return;
-            
+
             isLoading = true;
             document.getElementById('loading-indicator').classList.remove('hidden');
-            
+
             try {
                 const dataRes = await fetch(`/api/data?offset=${currentOffset}&limit=${pageSize}`);
                 let newItems = await dataRes.json();
-                
+
                 if (newItems.length === 0) {
                     hasMore = false;
                     document.getElementById('loading-indicator').classList.add('hidden');
                     return;
                 }
-                
+
                 if (newItems.length < pageSize) {
                     hasMore = false;
                 }
-                
+
                 newItems = processStats(newItems);
-                
+
                 // 追加新数据
                 allItems = allItems.concat(newItems);
                 currentOffset += newItems.length;
-                
+
                 // 重新渲染所有视图
                 renderDashboard(allItems); // 仪表盘支持追加
                 renderChat(allItems);      // 聊天全量重绘
                 renderAnalysis(allItems);  // 分析全量重绘
-                
-            } catch (e) { 
-                console.error('加载数据失败:', e); 
+
+            } catch (e) {
+                console.error('加载数据失败:', e);
             } finally {
                 isLoading = false;
                 document.getElementById('loading-indicator').classList.add('hidden');
@@ -1175,7 +1284,7 @@
             try {
                 const statusRes = await fetch('/api/status');
                 const statusData = await statusRes.json();
-                
+
                 const asrDot = document.getElementById('status-asr');
                 if (statusData.asr_server === 'online') {
                     asrDot.classList.remove('text-red-500');
@@ -1184,18 +1293,18 @@
                     asrDot.classList.remove('text-green-500', 'shadow-[0_0_8px_#22c55e]');
                     asrDot.classList.add('text-red-500');
                 }
-                
+
                 document.getElementById('status-files').innerText = statusData.pending_files;
                 document.getElementById('log-display').innerText = statusData.last_log || "无日志";
 
                 // 只检查是否有新数据（检查最新一条）
                 const checkRes = await fetch('/api/data?offset=0&limit=1');
                 const latestItem = await checkRes.json();
-                
+
                 if (latestItem.length > 0) {
                     const latestId = latestItem[0].id;
                     const currentLatestId = allItems.length > 0 ? allItems[0].id : null;
-                    
+
                     // 如果有新数据，重新加载所有数据
                     if (latestId !== currentLatestId) {
                         console.log('检测到新数据，重新加载');
@@ -1208,7 +1317,7 @@
 
             } catch (e) { console.error(e); }
         }
-        
+
         // 添加滚动监听 - 滚动到底部时加载更多
         ['view-dashboard', 'view-chat', 'view-analysis'].forEach(containerId => {
             const container = document.getElementById(containerId);
@@ -1225,26 +1334,26 @@
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('filter-start-date').value = today;
         document.getElementById('filter-end-date').value = today;
-        
+
         // 初始加载
         loadMore();
         // 定时检查新数据
         setInterval(updateLoop, 5000);
-    
+
         // 移动端菜单切换
         function toggleMobileMenu() {
             const aside = document.querySelector('aside');
             const overlay = document.querySelector('.mobile-overlay');
-            
+
             aside.classList.toggle('mobile-open');
             overlay.classList.toggle('active');
         }
-        
+
         // 点击导航按钮后自动关闭移动端菜单
         const originalSwitchTab = switchTab;
-        switchTab = function(tabName) {
+        switchTab = function (tabName) {
             originalSwitchTab(tabName);
-            
+
             // 如果是移动端,关闭菜单
             if (window.innerWidth <= 768) {
                 toggleMobileMenu();
@@ -1253,38 +1362,38 @@
 
 
         // 声纹管理相关函数
-        document.getElementById('audio-file')?.addEventListener('change', function(e) {
+        document.getElementById('audio-file')?.addEventListener('change', function (e) {
             const fileName = e.target.files[0]?.name || '点击选择音频文件';
             document.getElementById('file-name').textContent = fileName;
         });
 
         // 注册声纹
-        document.getElementById('register-form')?.addEventListener('submit', async function(e) {
+        document.getElementById('register-form')?.addEventListener('submit', async function (e) {
             e.preventDefault();
-            
+
             const name = document.getElementById('speaker-name').value;
             const file = document.getElementById('audio-file').files[0];
             const statusDiv = document.getElementById('register-status');
-            
+
             if (!name || !file) {
                 showStatus('请填写完整信息', 'error');
                 return;
             }
-            
+
             const formData = new FormData();
             formData.append('speaker_name', name);
             formData.append('audio_file', file);
-            
+
             showStatus('正在注册...', 'loading');
-            
+
             try {
                 const response = await fetch('/speaker/register', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     showStatus('✅ 注册成功!', 'success');
                     document.getElementById('register-form').reset();
@@ -1301,13 +1410,13 @@
         // 显示状态消息
         function showStatus(message, type) {
             const statusDiv = document.getElementById('register-status');
-            statusDiv.className = 'mt-4 p-4 rounded-xl ' + 
+            statusDiv.className = 'mt-4 p-4 rounded-xl ' +
                 (type === 'success' ? 'bg-green-500/10 border border-green-500/30 text-green-400' :
-                 type === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-400' :
-                 'bg-blue-500/10 border border-blue-500/30 text-blue-400');
+                    type === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-400' :
+                        'bg-blue-500/10 border border-blue-500/30 text-blue-400');
             statusDiv.textContent = message;
             statusDiv.classList.remove('hidden');
-            
+
             if (type !== 'loading') {
                 setTimeout(() => statusDiv.classList.add('hidden'), 5000);
             }
@@ -1318,13 +1427,13 @@
             try {
                 const response = await fetch('/speaker/list');
                 const data = await response.json();
-                
+
                 const container = document.getElementById('speaker-list');
                 if (!data.speakers || data.speakers.length === 0) {
                     container.innerHTML = '<p class="text-gray-500 col-span-full text-center py-8">暂无已注册说话人</p>';
                     return;
                 }
-                
+
                 container.innerHTML = data.speakers.map(speaker => `
                     <div class="glass-card p-6 rounded-xl hover:scale-105 transition-transform">
                         <div class="flex items-center justify-between mb-4">
@@ -1355,12 +1464,12 @@
         // 删除说话人
         async function deleteSpeaker(name) {
             if (!confirm(`确定要删除说话人 "${name}" 吗?`)) return;
-            
+
             try {
                 const response = await fetch(`/speaker/${encodeURIComponent(name)}`, {
                     method: 'DELETE'
                 });
-                
+
                 if (response.ok) {
                     loadSpeakers();
                 } else {
@@ -1373,7 +1482,7 @@
 
         // 切换到声纹管理时加载列表
         const originalSwitchTab2 = switchTab;
-        switchTab = function(tabName) {
+        switchTab = function (tabName) {
             originalSwitchTab2(tabName);
             if (tabName === 'speaker') {
                 loadSpeakers();
@@ -1388,14 +1497,14 @@
                 currentAudio.pause();
                 currentAudio = null;
             }
-            
+
             // Create and play new audio
             currentAudio = new Audio(audioPath);
             currentAudio.play().catch(err => {
                 console.error('Audio playback failed:', err);
                 alert('音频播放失败: ' + err.message);
             });
-            
+
             // Clean up when finished
             currentAudio.onended = () => {
                 currentAudio = null;
@@ -1407,4 +1516,5 @@
 
     </script>
 </body>
+
 </html>
