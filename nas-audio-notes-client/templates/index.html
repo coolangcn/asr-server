@@ -496,6 +496,10 @@
                             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                 <i class="fa-regular fa-clock text-accent-400"></i> 时光对话
                             </h2>
+                            <div id="chat-date-range" class="mt-2 text-sm text-gray-400">
+                                <i class="fa-solid fa-calendar-days text-gray-500 mr-2"></i>
+                                <span id="chat-date-range-text">所有记录</span>
+                            </div>
                         </header>
                         <div id="chat-content" class="flex-1 p-6 space-y-8 pb-20 overflow-y-auto">
                             <!-- 对话内容 -->
@@ -1331,6 +1335,18 @@
         let currentStartDate = null;
         let currentEndDate = null;
 
+        // 更新日期范围显示
+        function updateDateRangeDisplay() {
+            const rangeText = document.getElementById('chat-date-range-text');
+            if (!rangeText) return;
+
+            if (currentStartDate && currentEndDate) {
+                rangeText.textContent = `${currentStartDate} 至 ${currentEndDate}`;
+            } else {
+                rangeText.textContent = '所有记录';
+            }
+        }
+
         function applyDateFilter() {
             const startDate = document.getElementById('filter-start-date').value;
             const endDate = document.getElementById('filter-end-date').value;
@@ -1354,6 +1370,7 @@
             hasMore = true;
 
             loadFilteredData();
+            updateDateRangeDisplay();
         }
 
         function clearDateFilter() {
@@ -1368,6 +1385,7 @@
             hasMore = true;
 
             loadMore();
+            updateDateRangeDisplay();
         }
 
         async function loadFilteredData() {
@@ -1479,13 +1497,14 @@
                 document.getElementById('status-files').innerText = statusData.pending_files;
                 document.getElementById('log-display').innerText = statusData.last_log || "无日志";
 
-                // 只检查是否有新数据（检查最新一条）
-                let checkUrl = '/api/data?offset=0&limit=1';
+                // 如果当前处于筛选模式，不进行自动刷新（避免干扰）
                 if (currentStartDate && currentEndDate) {
-                    checkUrl = `/api/data/range?start_date=${currentStartDate}&end_date=${currentEndDate}&offset=0&limit=1`;
+                    console.log('筛选模式下跳过自动刷新');
+                    return;
                 }
 
-                const checkRes = await fetch(checkUrl);
+                // 只检查是否有新数据（检查最新一条）
+                const checkRes = await fetch('/api/data?offset=0&limit=1');
                 let checkData = await checkRes.json();
 
                 // 处理不同的API返回格式
