@@ -335,31 +335,39 @@ def api_data_range():
             filename = item.get('filename', '')
             dt = None
             
-            # 解析文件名中的时间戳
-            time_patterns = [
-                r'^\s*(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\s*',
-                r'^\s*recording-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\s*',
-                r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})'
-            ]
+            # 优先使用数据库中的 recording_time
+            if item.get('recording_time'):
+                try:
+                    dt = datetime.datetime.fromisoformat(item.get('recording_time'))
+                except:
+                    pass
             
-            for pattern in time_patterns:
-                match = re.match(pattern, os.path.splitext(filename)[0])
-                if match:
-                    try:
-                        if pattern == time_patterns[0]:
-                            date_part = match.group(1) + '-' + match.group(2) + '-' + match.group(3)
-                            time_part = match.group(4) + ':' + match.group(5) + ':' + match.group(6)
-                            dt_str = f"{date_part} {time_part}"
-                            dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        else:
-                            year, month, day, hour, minute, second = match.groups()
-                            dt_str = f"{year}-{month}-{day} {hour}:{minute}:{second}"
-                            dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        break
-                    except ValueError:
-                        continue
+            # 如果没有 recording_time，尝试解析文件名中的时间戳
+            if dt is None:
+                time_patterns = [
+                    r'^\s*(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\s*',
+                    r'^\s*recording-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\s*',
+                    r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})'
+                ]
+                
+                for pattern in time_patterns:
+                    match = re.match(pattern, os.path.splitext(filename)[0])
+                    if match:
+                        try:
+                            if pattern == time_patterns[0]:
+                                date_part = match.group(1) + '-' + match.group(2) + '-' + match.group(3)
+                                time_part = match.group(4) + ':' + match.group(5) + ':' + match.group(6)
+                                dt_str = f"{date_part} {time_part}"
+                                dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                            else:
+                                year, month, day, hour, minute, second = match.groups()
+                                dt_str = f"{year}-{month}-{day} {hour}:{minute}:{second}"
+                                dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                            break
+                        except ValueError:
+                            continue
             
-            # 如果文件名解析失败,尝试使用created_at
+            # 最后尝试使用created_at
             if dt is None:
                 try:
                     dt = datetime.datetime.fromisoformat(item.get('created_at', ''))

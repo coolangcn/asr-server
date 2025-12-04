@@ -891,6 +891,188 @@
             container.innerHTML = html;
         }
 
+        // 增量渲染：将新项添加到顶部
+        function prependNewItems(newItems) {
+            // 为每个视图添加新卡片
+            prependToDashboard(newItems);
+            prependToChat(newItems);
+            // 分析视图需要全量重绘，因为涉及统计汇总
+            renderAnalysis(allItems);
+        }
+
+        // 在仪表盘顶部添加新卡片
+        function prependToDashboard(newItems) {
+            const container = document.getElementById('dashboard-content');
+            if (!container) return;
+
+            let html = "";
+            newItems.forEach((item, index) => {
+                // 提取摘要 (前100字)
+                let summary = item.full_text || "无内容";
+                if (summary.length > 100) summary = summary.substring(0, 100) + "...";
+
+                // 提取参与者
+                const speakers = new Set();
+                item.segments.forEach(s => speakers.add(s.spk));
+                const speakerTags = Array.from(speakers).map(s => {
+                    const style = getSpeakerStyle(s);
+                    const colorClass = style.split(' ')[0];
+                    return `<span class="text-xs font-medium ${colorClass} bg-gray-800/50 px-2 py-1 rounded-md border border-gray-700/50">${s}</span>`;
+                }).join('');
+
+                // 统计情感分布
+                const emotionStats = {};
+                item.segments.forEach(s => {
+                    const emo = s.emotion || 'neutral';
+                    emotionStats[emo] = (emotionStats[emo] || 0) + 1;
+                });
+
+                const emotionTags = Object.entries(emotionStats)
+                    .map(([emo, count]) => {
+                        const icon = getEmotionIcon(emo);
+                        return `<span class="text-xs px-2 py-1 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                            <span>${icon}</span>
+                            <span>${emo}</span>
+                            <span class="text-[10px] opacity-70">×${count}</span>
+                        </span>`;
+                    }).join('');
+
+                html += `
+                <div class="glass-card rounded-2xl p-6 flex flex-col h-full animate-slide-up hover:scale-105 transition-transform duration-300" style="animation-delay: ${index * 50}ms">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700">
+                                <i class="fa-solid fa-file-audio text-primary-400"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
+                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
+                            </div>
+                        </div>
+                        <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
+                    </div>
+                    
+                    <div class="flex-1 mb-4">
+                        <p class="text-gray-400 text-sm leading-relaxed line-clamp-3">${summary}</p>
+                    </div>
+                    
+                    <div class="space-y-2 mt-auto pt-4 border-t border-gray-800/50">
+                        <div class="flex flex-wrap gap-2">
+                            ${speakerTags || '<span class="text-xs text-gray-600">无说话人</span>'}
+                        </div>
+                        ${emotionTags ? `<div class="flex flex-wrap gap-2 pt-2 border-t border-gray-800/30">
+                            ${emotionTags}
+                        </div>` : ''}
+                    </div>
+                </div>`;
+            });
+
+            // 在容器顶部插入新HTML
+            container.insertAdjacentHTML('afterbegin', html);
+        }
+
+        // 在聊天视图顶部添加新项
+        function prependToChat(newItems) {
+            const container = document.getElementById('chat-content');
+            if (!container) return;
+
+            // 按日期分组
+            const groups = {};
+            newItems.forEach(item => {
+                if (!groups[item.date_group]) groups[item.date_group] = [];
+                groups[item.date_group].push(item);
+            });
+
+            let html = "";
+            Object.keys(groups).sort().reverse().forEach(date => {
+                // 检查该日期是否已经存在
+                const existingDateHeader = container.querySelector(`[data-date="${date}"]`);
+
+                // 对同一天内的记录按文件名时间严格倒序排列
+                groups[date].sort((a, b) => {
+                    const timeA = parseFilenameTime(a.filename) || a.created_at;
+                    const timeB = parseFilenameTime(b.filename) || b.created_at;
+                    return new Date(timeB) - new Date(timeA);
+                });
+
+                if (!existingDateHeader) {
+                    // 日期头不存在，添加日期头
+                    html += `
+                    <div class="relative flex items-center justify-center my-8" data-date="${date}">
+                        <div class="absolute inset-0 flex items-center">
+                            <div class="w-full border-t border-gray-800"></div>
+                        </div>
+                        <div class="relative bg-gray-900 px-4 py-1 rounded-full border border-gray-800 text-xs font-medium text-gray-500">
+                            ${date}
+                        </div>
+                    </div>`;
+                }
+
+                groups[date].forEach(item => {
+                    const fileTime = parseFilenameTime(item.filename) || item.created_at;
+                    const fileDate = new Date(fileTime);
+                    const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
+
+                    html += `
+                    <div class="mb-8 animate-fade-in" data-file-time="${fileTime}" data-year-month="${fileYearMonth}">
+                        <div class="flex items-center gap-2 mb-4 px-4">
+                            <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
+                            <span class="text-xs font-mono text-gray-500">${item.filename.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 30)}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${formatTime(fileTime)}</span>
+                        </div>
+                    `;
+
+                    let lastSpk = null;
+                    item.segments.forEach(seg => {
+                        const style = getSpeakerStyle(seg.spk);
+                        const textColor = style.match(/text-(\w+)-400/)[1];
+                        const showAvatar = seg.spk !== lastSpk;
+                        lastSpk = seg.spk;
+
+                        html += `
+                        <div class="flex gap-4 mb-2 ${showAvatar ? 'mt-4' : ''} px-2 hover:bg-white/5 rounded-lg transition-colors p-2 -mx-2">
+                            <div class="w-10 flex-shrink-0 flex flex-col items-center">
+                                ${showAvatar ? `
+                                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-${textColor}-500 to-${textColor}-700 border-2 border-${textColor}-400/30 flex items-center justify-center shadow-lg shadow-${textColor}-500/20">
+                                    <span class="text-sm font-bold text-white">${seg.spk.substring(0, 1).toUpperCase()}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                ${showAvatar ? `
+                                <div class="flex items-baseline gap-2 mb-1">
+                                    <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
+                                    <span class="text-[10px] text-gray-600">${formatTime(item.created_at)}</span>
+                                </div>
+                                ` : ''}
+                                <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
+                                    <span class="flex-1">${seg.text}</span>
+                                    ${seg.segment_audio_path && !seg.segment_audio_path.includes('temp') && seg.segment_audio_path.startsWith('/') ?
+                                `<button onclick="playAudio('${seg.segment_audio_path}')" class="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500/20 hover:bg-primary-500/40 border border-primary-400/30 flex items-center justify-center transition-all duration-200 hover:scale-110 group" title="播放音频">
+                                            <i class="fa-solid fa-play text-[10px] text-primary-300 group-hover:text-primary-200"></i>
+                                        </button>` : ''}
+                                    ${seg.emotion ?
+                                `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-300 ml-2 border border-purple-500/30">
+                                            <span>${getEmotionIcon(seg.emotion)}</span>
+                                            <span>${seg.emotion}</span>
+                                        </span>` : ''}
+                                </div>
+                            </div>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                });
+            });
+
+            // 在容器顶部插入新HTML
+            container.insertAdjacentHTML('afterbegin', html);
+
+            // 重新初始化时间轴（如果需要）
+            if (typeof initTimeline === 'function') {
+                initTimeline();
+            }
+        }
+
 
         // ===== TIMELINE FUNCTIONS =====
 
@@ -1298,20 +1480,75 @@
                 document.getElementById('log-display').innerText = statusData.last_log || "无日志";
 
                 // 只检查是否有新数据（检查最新一条）
-                const checkRes = await fetch('/api/data?offset=0&limit=1');
-                const latestItem = await checkRes.json();
+                let checkUrl = '/api/data?offset=0&limit=1';
+                if (currentStartDate && currentEndDate) {
+                    checkUrl = `/api/data/range?start_date=${currentStartDate}&end_date=${currentEndDate}&offset=0&limit=1`;
+                }
+
+                const checkRes = await fetch(checkUrl);
+                let checkData = await checkRes.json();
+
+                // 处理不同的API返回格式
+                let latestItem;
+                if (checkData.transcripts) {
+                    // 时间范围API返回格式
+                    latestItem = checkData.transcripts;
+                } else {
+                    // 普通API返回格式
+                    latestItem = checkData;
+                }
 
                 if (latestItem.length > 0) {
                     const latestId = latestItem[0].id;
                     const currentLatestId = allItems.length > 0 ? allItems[0].id : null;
 
-                    // 如果有新数据，重新加载所有数据
+                    // 如果有新数据，只获取新增的项
                     if (latestId !== currentLatestId) {
-                        console.log('检测到新数据，重新加载');
-                        currentOffset = 0;
-                        allItems = [];
-                        hasMore = true;
-                        await loadMore();
+                        console.log('检测到新数据，增量加载');
+
+                        // 计算需要获取多少条新数据
+                        // 简单策略：获取最多20条新数据
+                        let fetchUrl;
+                        if (currentStartDate && currentEndDate) {
+                            fetchUrl = `/api/data/range?start_date=${currentStartDate}&end_date=${currentEndDate}&offset=0&limit=20`;
+                        } else {
+                            fetchUrl = '/api/data?offset=0&limit=20';
+                        }
+
+                        const newDataRes = await fetch(fetchUrl);
+                        let newData = await newDataRes.json();
+
+                        // 处理不同的API返回格式
+                        let newItems;
+                        if (newData.transcripts) {
+                            newItems = newData.transcripts;
+                        } else {
+                            newItems = newData;
+                        }
+
+                        // 过滤出真正的新项（ID大于当前最新ID的）
+                        const reallyNewItems = [];
+                        for (const item of newItems) {
+                            if (currentLatestId === null || item.id > currentLatestId) {
+                                reallyNewItems.push(item);
+                            } else {
+                                break; // 遇到已存在的项就停止
+                            }
+                        }
+
+                        if (reallyNewItems.length > 0) {
+                            // 处理新项的统计数据
+                            const processedNewItems = processStats(reallyNewItems);
+
+                            // 将新项插入到 allItems 的开头
+                            allItems = processedNewItems.concat(allItems);
+                            currentOffset += reallyNewItems.length;
+
+                            // 增量渲染：只添加新卡片到顶部
+                            prependNewItems(processedNewItems);
+
+                            console.log(`增量加载了 ${reallyNewItems.length} 条新数据`);
+                        }
                     }
                 }
 
@@ -1324,11 +1561,17 @@
             if (container) {
                 container.addEventListener('scroll', () => {
                     if (container.scrollTop + container.clientHeight >= container.scrollHeight - 100) {
-                        loadMore();
+                        // 如果有日期筛选，使用筛选加载；否则使用普通加载
+                        if (currentStartDate && currentEndDate) {
+                            loadFilteredData();
+                        } else {
+                            loadMore();
+                        }
                     }
                 });
             }
         });
+
 
         // 设置默认日期为今天
         const today = new Date().toISOString().split('T')[0];
