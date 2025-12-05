@@ -1150,23 +1150,38 @@ def transcribe_audio():
                         segment_audio_path = None
 
                         if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
-                            seg_wav = os.path.join(Config.TEMP_DIR, f"seg_{start}_{i}_{int(time.time())}.wav")
-                            if extract_segment(proc_temp, start, end, seg_wav):
-                                temp_files.append(seg_wav)
+                            # 创建持久化的音频片段目录
+                            # 使用文件名（不含扩展名）作为子目录
+                            base_filename = os.path.splitext(file.filename)[0]
+                            segments_dir = os.path.join("audio_segments", base_filename)
+                            os.makedirs(segments_dir, exist_ok=True)
+                            
+                            # 临时文件用于处理
+                            seg_wav_temp = os.path.join(Config.TEMP_DIR, f"seg_{start}_{i}_{int(time.time())}.wav")
+                            # 持久化文件
+                            seg_filename = f"seg_{i}.wav"
+                            seg_wav_persistent = os.path.join(segments_dir, seg_filename)
+                            
+                            if extract_segment(proc_temp, start, end, seg_wav_temp):
+                                temp_files.append(seg_wav_temp)
+                                
+                                # 复制到持久化目录
+                                shutil.copy2(seg_wav_temp, seg_wav_persistent)
+                                
+                                # 保存相对路径供客户端访问
+                                segment_audio_path = f"/audio_segments/{base_filename}/{seg_filename}"
 
-                                segment_audio_path = seg_wav  # 保存分段音频路径供客户端播放
-
-                                identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
+                                identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp)
                                 
                                 # 性能优化: 只有识别出的说话人才进行Whisper和SenseVoice处理
                                 if identity is not None:
                                     # 情感检测
-                                    emotion = detect_emotion_for_segment(seg_wav)
+                                    emotion = detect_emotion_for_segment(seg_wav_temp)
                                     # Whisper对比识别
-                                    whisper_text = transcribe_with_whisper(seg_wav)
+                                    whisper_text = transcribe_with_whisper(seg_wav_temp)
                                     
                                     # SenseVoice识别和情感检测
-                                    sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav)
+                                    sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav_temp)
                                     
                                     # 使用SenseVoice的情感结果(如果检测到)
                                     if sensevoice_emotion is not None:
@@ -1244,6 +1259,47 @@ def transcribe_audio():
 
                         if Config.ONLY_REGISTERED_SPEAKERS and identity is None: continue
                         
+                        # 计算语速指标
+                        duration_seconds = (end - start) / 1000.0
+                        word_count = len(clean_text)  # 中文按字符数计算
+                        speech_rate = word_count / duration_seconds if duration_seconds > 0 else 0
+                        
+                        # 计算文本质量
+                        from collections import Counter
+                        char_counts = Counter(clean_text)
+                        most_common_char, most_common_count = char_counts.most_common(1)[0] if clean_text else ('', 0)
+                        repeat_ratio = most_common_count / len(clean_text) if clean_text else 0
+                        
+                        filler_words = ['嗯', '啊', '呃', '额', '哦', '唔']
+                        text_no_punct = re.sub(r'[，。、！？,.!?]', '', clean_text)
+                        filler_count = sum(text_no_punct.count(w) for w in filler_words) if text_no_punct else 0
+                        filler_ratio = filler_count / len(text_no_punct) if text_no_punct else 0
+                        noise_score = (repeat_ratio * 0.6 + filler_ratio * 0.4)
+                        is_noise_flag = repeat_ratio > 0.4 or filler_ratio > 0.6
+                        
+                        text_quality = {
+                            "is_noise": is_noise_flag,
+                            "noise_score": round(noise_score, 3),
+                            "repeat_ratio": round(repeat_ratio, 3),
+                            "filler_ratio": round(filler_ratio, 3)
+                        }
+                        
+                        # 确定情感来源
+                        emotion_source = "funasr"  # 默认
+                        original_emotion_tag = None
+                        
+                        # 检查是否有原始情感标签
+                        for tag, emo_code in EMOTION_TAGS.items():
+                            if tag.lower() in raw_text.lower():
+                                original_emotion_tag = tag
+                                break
+                        
+                        # 如果有 sensevoice_text，说明使用了 SenseVoice
+                        if sensevoice_text and emotion:
+                            emotion_source = "sensevoice"
+                            if not original_emotion_tag:
+                                original_emotion_tag = f"<|{emotion}|>"
+                        
                         processed_segments.append({
                             "text": clean_text, "start": start, "end": end,
                             "spk": identity or "Unknown", "emotion": emotion,
@@ -1251,9 +1307,25 @@ def transcribe_audio():
                             "sensevoice_text": sensevoice_text,
                             "confidence": float(f"{confidence:.3f}"),
                             "recognition_details": recognition_details,
-
-                            "segment_audio_path": segment_audio_path
-
+                            "segment_audio_path": segment_audio_path,
+                            
+                            # 语速指标
+                            "speech_metrics": {
+                                "duration_seconds": round(duration_seconds, 2),
+                                "word_count": word_count,
+                                "speech_rate": round(speech_rate, 2)
+                            },
+                            
+                            # 文本质量评估
+                            "text_quality": text_quality,
+                            
+                            # 情感详细信息
+                            "emotion_info": {
+                                "emotion": emotion,
+                                "source": emotion_source,
+                                "original_tag": original_emotion_tag,
+                                "detected_by_sensevoice": emotion_source == "sensevoice"
+                            }
                         })
                     logger.info("  [生命周期: 3. 逐段声纹识别] 完成。")
 
