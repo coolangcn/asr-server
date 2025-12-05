@@ -10,6 +10,9 @@ echo - 文件监控和自动转录
 echo - 数据库保存
 echo.
 
+REM 激活Python虚拟环境
+call D:\AI\asr_env\Scripts\activate.bat
+
 cd /d d:\AI\asr-server
 python unified_server.py
 

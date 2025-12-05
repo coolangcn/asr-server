@@ -4,6 +4,7 @@
 import psycopg2
 from psycopg2 import pool
 import json
+import os
 import re
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -89,7 +90,9 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             recording_time TIMESTAMP,
             full_text TEXT,
-            segments_json TEXT
+            segments_json TEXT,
+            topics_json TEXT,
+            summary_json TEXT
         );
         ''')
         
@@ -120,7 +123,7 @@ def init_db():
             return_connection(conn)
 
 def save_to_db(filename: str, full_text: str, segments_list: List[Dict], 
-               recording_time: Optional[datetime] = None) -> bool:
+               recording_time: Optional[datetime] = None, summary: Optional[Dict] = None) -> bool:
     """
     保存转录记录到数据库（如果文件已存在则覆盖）
     
@@ -129,6 +132,7 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         full_text: 完整文本
         segments_list: 分段列表
         recording_time: 录音时间（可选，如果为None则尝试从文件名解析）
+        summary: 智能摘要（可选）
     """
     conn = None
     try:
@@ -139,6 +143,7 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
             
         cursor = conn.cursor()
         segments_json = json.dumps(segments_list, ensure_ascii=False)
+        summary_json = json.dumps(summary, ensure_ascii=False) if summary else None
         
         # 如果没有提供recording_time,尝试从文件名解析
         if recording_time is None:
@@ -153,8 +158,8 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         
         # 插入新记录
         cursor.execute(
-            "INSERT INTO transcriptions (filename, full_text, segments_json, recording_time) VALUES (%s, %s, %s, %s)",
-            (filename, full_text, segments_json, recording_time)
+            "INSERT INTO transcriptions (filename, full_text, segments_json, recording_time, summary_json) VALUES (%s, %s, %s, %s, %s)",
+            (filename, full_text, segments_json, recording_time, summary_json)
         )
         
         conn.commit()
@@ -169,6 +174,39 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         return True
     except Exception as e:
         print(f"  [DB Error] {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            return_connection(conn)
+
+def update_topics(filename: str, topics_dict: dict) -> bool:
+    """更新转录记录的 LLM 主题信息"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+        
+        cursor = conn.cursor()
+        topics_json = json.dumps(topics_dict, ensure_ascii=False)
+        
+        cursor.execute(
+            "UPDATE transcriptions SET topics_json = %s WHERE filename = %s",
+            (topics_json, filename)
+        )
+        
+        conn.commit()
+        updated = cursor.rowcount > 0
+        cursor.close()
+        
+        if updated:
+            print(f"  [DB] 更新 {filename} 的主题信息")
+        return updated
+            
+    except Exception as e:
+        print(f"  [DB Error] 更新主题失败: {e}")
         if conn:
             conn.rollback()
         return False
