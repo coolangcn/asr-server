@@ -13,9 +13,12 @@ import torchaudio
 import shutil
 import re
 from collections import Counter
-from db_manager import save_to_db
+from db_manager import save_to_db, update_topics, parse_recording_time
 from logging.handlers import TimedRotatingFileHandler
 import whisper
+import requests
+import hashlib
+from datetime import datetime
 
 # =================【 配置 】=================
 class Config:
@@ -74,6 +77,32 @@ class Config:
     # SenseVoice配置 (情感检测)
     SENSEVOICE_MODEL = "iic/SenseVoiceSmall"
     ENABLE_SENSEVOICE = True  # 是否启用SenseVoice(情感检测+第三转录)
+
+# 文件监控配置
+class FileMonitorConfig:
+    SOURCE_DIR = "V:\\Sony-2"
+    PROCESSED_DIR = "processed"
+    TRANSCRIPTS_DIR = "transcripts"
+    SCAN_INTERVAL = 3  # 秒
+    SUPPORTED_FORMATS = ['.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg']
+
+# LLM 配置
+class LLMConfig:
+    USE_GEMINI_LLM = True
+    GEMINI_API_KEY = "cncncncn"
+    GEMINI_API_BASE_URL = "https://gl.moco.fun/proxy/gemini"
+    GEMINI_MODEL_NAME = "gemini-2.5-flash"
+    
+    # 批量处理配置
+    LLM_BATCH_MODE = True
+    LLM_BATCH_SIZE = 20
+    LLM_BATCH_TIMEOUT = 600  # 10分钟
+    
+    # 过滤条件
+    LLM_MIN_TEXT_LENGTH = 50
+    LLM_MIN_SEGMENTS = 3
+    LLM_CACHE_SIZE = 100
+    LLM_REQUEST_TIMEOUT = 30
 # ==========================================
 
 EMOTION_TAGS = {
@@ -172,6 +201,14 @@ sensevoice_pipeline = None  # 可选: SenseVoice模型(情感+转录)
 gpu_lock = threading.Lock()
 db_lock = threading.Lock()
 
+# =================【 LLM 批量处理全局变量 】=================
+llm_batch_queue = []
+llm_batch_lock = threading.Lock()
+llm_last_batch_time = time.time()
+llm_cache = {}  # 缓存 LLM 响应
+llm_cache_lock = threading.Lock()
+# =========================================================
+
 # =================== 模型加载 ===================
 def load_models():
     global asr_pipeline, sv_pipelines, whisper_model, sensevoice_pipeline
@@ -234,6 +271,164 @@ def load_models():
         except Exception as e:
             logger.warning(f"⚠️ SenseVoice模型加载失败: {e}，将禁用SenseVoice功能")
             sensevoice_pipeline = None
+
+# =================【 智能摘要和 LLM 函数 】=================
+
+def generate_conversation_summary(segments, audio_duration):
+    """生成对话智能摘要"""
+    if not segments:
+        return None
+    
+    # 统计说话人
+    speaker_stats = {}
+    for seg in segments:
+        speaker = seg.get('spk', 'Unknown')
+        if speaker not in speaker_stats:
+            speaker_stats[speaker] = {'count': 0, 'total_duration': 0, 'word_count': 0}
+        speaker_stats[speaker]['count'] += 1
+        speaker_stats[speaker]['total_duration'] += (seg.get('end', 0) - seg.get('start', 0)) / 1000.0
+        speaker_stats[speaker]['word_count'] += len(seg.get('text', ''))
+    
+    # 提取高频词
+    stop_words = {'的', '了', '是', '在', '我', '你', '他', '她', '它', '们', '这', '那', '有', '个', '就', '不', '和', '与'}
+    all_text = ''.join([seg.get('text', '') for seg in segments])
+    words = [all_text[i:i+2] for i in range(len(all_text)-1)]
+    word_freq = Counter([w for w in words if w not in stop_words and len(w) == 2])
+    top_keywords = [word for word, count in word_freq.most_common(5)]
+    
+    # 情感统计
+    emotion_stats = Counter([seg.get('emotion') for seg in segments if seg.get('emotion')])
+    
+    return {
+        'total_segments': len(segments),
+        'total_duration': round(audio_duration, 2),
+        'speaker_count': len(speaker_stats),
+        'speakers': speaker_stats,
+        'keywords': top_keywords,
+        'emotions': dict(emotion_stats),
+        'avg_segment_duration': round(audio_duration / len(segments), 2) if segments else 0
+    }
+
+def call_gemini_api(prompt):
+    """调用 Gemini API"""
+    try:
+        # 检查缓存
+        cache_key = hashlib.md5(prompt.encode()).hexdigest()
+        with llm_cache_lock:
+            if cache_key in llm_cache:
+                logger.info(f"  [LLM] 使用缓存响应")
+                return llm_cache[cache_key]
+        
+        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/{LLMConfig.GEMINI_MODEL_NAME}:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": LLMConfig.GEMINI_API_KEY
+        }
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500}
+        }
+        
+        response = requests.post(url, headers=headers, json=data, timeout=LLMConfig.LLM_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        result = response.json()
+        
+        if 'candidates' in result and len(result['candidates']) > 0:
+            text = result['candidates'][0]['content']['parts'][0]['text']
+            
+            # 保存到缓存
+            with llm_cache_lock:
+                if len(llm_cache) >= LLMConfig.LLM_CACHE_SIZE:
+                    llm_cache.pop(next(iter(llm_cache)))
+                llm_cache[cache_key] = text
+            
+            return text
+        return None
+    except Exception as e:
+        logger.error(f"  [LLM] API 调用失败: {e}")
+        return None
+
+def extract_conversation_topics(full_text, segments):
+    """提取对话主题"""
+    try:
+        speakers = list(set([seg.get('spk', 'Unknown') for seg in segments]))
+        speaker_text = ', '.join(speakers[:3])
+        
+        prompt = f"""分析以下对话内容，提取关键信息：
+
+对话内容：
+{full_text[:500]}
+
+说话人：{speaker_text}
+
+请以JSON格式返回：
+{{
+  "topics": ["主题1", "主题2"],
+  "keywords": ["关键词1", "关键词2", "关键词3"],
+  "sentiment": "positive/neutral/negative",
+  "summary": "一句话总结"
+}}"""
+        
+        response_text = call_gemini_api(prompt)
+        if not response_text:
+            return None
+        
+        # 解析 JSON
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group())
+        return None
+    except Exception as e:
+        logger.warning(f"  [LLM] 主题提取失败: {e}")
+        return None
+
+def add_to_llm_queue(filename, full_text, segments):
+    """添加到 LLM 批量处理队列"""
+    global llm_last_batch_time
+    
+    with llm_batch_lock:
+        llm_batch_queue.append({
+            'filename': filename,
+            'full_text': full_text,
+            'segments': segments
+        })
+        
+        queue_size = len(llm_batch_queue)
+        time_since_last = time.time() - llm_last_batch_time
+        
+        logger.info(f"  [LLM队列] 已添加，当前队列: {queue_size}/{LLMConfig.LLM_BATCH_SIZE}")
+        
+        # 触发批量处理
+        if queue_size >= LLMConfig.LLM_BATCH_SIZE or time_since_last >= LLMConfig.LLM_BATCH_TIMEOUT:
+            logger.info(f"  [LLM队列] 触发批量处理 (队列={queue_size}, 超时={time_since_last:.0f}s)")
+            threading.Thread(target=process_llm_batch, daemon=True).start()
+
+def process_llm_batch():
+    """批量处理 LLM 任务"""
+    global llm_last_batch_time
+    
+    with llm_batch_lock:
+        if not llm_batch_queue:
+            return
+        
+        batch = llm_batch_queue.copy()
+        llm_batch_queue.clear()
+        llm_last_batch_time = time.time()
+    
+    logger.info(f"  [LLM批处理] 开始处理 {len(batch)} 条记录")
+    
+    for item in batch:
+        try:
+            topics = extract_conversation_topics(item['full_text'], item['segments'])
+            if topics:
+                update_topics(item['filename'], topics)
+                logger.info(f"  [LLM] {item['filename']}: 主题={topics.get('topics', [])}")
+        except Exception as e:
+            logger.error(f"  [LLM] 处理失败 {item['filename']}: {e}")
+    
+    logger.info(f"  [LLM批处理] 完成")
+
+# =========================================================
 
 def cleanup_temp_dir():
     """清理超过1小时的临时文件"""
@@ -1384,6 +1579,36 @@ def transcribe_audio():
             }
             logger.info(f"📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
             
+            # =================【 数据库保存和 LLM 处理 】=================
+            if processed_segments:
+                try:
+                    # 生成智能摘要
+                    summary = generate_conversation_summary(processed_segments, audio_duration)
+                    
+                    # 解析录音时间
+                    recording_time = parse_recording_time(file.filename)
+                    
+                    # 保存到数据库
+                    success = save_to_db(file.filename, full_text, processed_segments, recording_time, summary)
+                    
+                    if success:
+                        logger.info(f"✅ 数据库保存成功 (recording_time: {recording_time})")
+                        if summary:
+                            logger.info(f"  智能摘要: {summary['speaker_count']}位说话人, {summary['total_segments']}个分段")
+                        
+                        # 添加到 LLM 批量处理队列
+                        if LLMConfig.USE_GEMINI_LLM:
+                            has_identified_speakers = any(seg.get('spk') != 'Unknown' for seg in processed_segments)
+                            if (len(full_text) >= LLMConfig.LLM_MIN_TEXT_LENGTH and 
+                                len(processed_segments) >= LLMConfig.LLM_MIN_SEGMENTS and 
+                                has_identified_speakers):
+                                add_to_llm_queue(file.filename, full_text, processed_segments)
+                    else:
+                        logger.error(f"❌ 数据库保存失败")
+                except Exception as e:
+                    logger.error(f"❌ 数据库保存异常: {e}")
+                    logger.error(traceback.format_exc())
+            # =========================================================
 
             return jsonify(response_data)
 

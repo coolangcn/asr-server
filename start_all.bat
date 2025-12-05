@@ -1,98 +1,69 @@
 @echo off
-REM һ���������з��� - ASR���� + Web Viewer
+chcp 65001 >nul
+setlocal enabledelayedexpansion
 
-echo ========================================
-echo   AI¼���浵ϵͳ - һ������
-echo ========================================
+echo.
+echo ======================================
+echo   启动 ASR 服务套件
+echo ======================================
+echo.
+echo 正在启动...
+echo - ASR API 服务 (端口 5008)
+echo - Web 转录查看器 (端口 5009)
 echo.
 
-REM ����Python���⻷��
+REM 切换到脚本所在目录
+cd /d "%~dp0"
 call D:\AI\asr_env\Scripts\activate.bat
+REM 进入 nas-audio-notes-client 目录启动 Web Viewer
+cd nas-audio-notes-client
+start "Web Viewer" D:\AI\asr_env\Scripts\python.exe web_viewer.py
 
-REM �л�����ĿĿ¼
-cd /d D:\AI\asr-server
+REM 返回主目录
+cd ..
 
-REM ============ ֹͣ���оɽ��� ============
-echo [1/5] ֹͣ���оɽ���...
+REM 启动 ASR Server（包含文件监控、数据库保存、LLM 处理）
+start "ASR Server" D:\AI\asr_env\Scripts\python.exe asr_server.py
 
-REM ����1: ͨ�����ڱ���ֹͣ
-taskkill /F /IM python.exe /FI "WINDOWTITLE eq *Unified ASR Server*" 2>nul
-taskkill /F /IM python.exe /FI "WINDOWTITLE eq *Web Viewer*" 2>nul
-taskkill /F /IM python.exe /FI "WINDOWTITLE eq *asr_server*" 2>nul
-taskkill /F /IM python.exe /FI "WINDOWTITLE eq *transcribe*" 2>nul
-
-REM ����2: ͨ�������в���ֹͣ
-echo    ���Ҳ�ֹͣ���Python����...
-for /f "tokens=2" %%i in ('tasklist /FI "IMAGENAME eq python.exe" /FO LIST ^| findstr "PID:"') do (
-    wmic process where "ProcessId=%%i" get CommandLine 2>nul | findstr /I "unified_server\|web_viewer\|asr_server\|transcribe.py" >nul
-    if not errorlevel 1 (
-        echo    ֹͣ���� %%i
-        taskkill /F /PID %%i 2>nul
-    )
-)
-
-echo    �ȴ�������ȫ����...
-timeout /t 3 >nul
-
-REM ���˿�ռ��
-echo [2/5] ��鲢�ͷŶ˿�...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5008.*LISTENING"') do (
-    echo    �ͷŶ˿�5008 (PID %%a)
-    taskkill /F /PID %%a 2>nul
-)
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5009.*LISTENING"') do (
-    echo    �ͷŶ˿�5009 (PID %%a)
-    taskkill /F /PID %%a 2>nul
-)
-
-timeout /t 1 >nul
-
-REM ============ �������� ============
-echo.
-echo [3/5] ����ͳһASR����...
-start "Unified ASR Server" D:\AI\asr_env\Scripts\python.exe unified_server.py
-
-echo    �ȴ�ASR��������...
-timeout /t 5 >nul
+REM 等待服务启动
+timeout /t 5 /nobreak >nul
 
 echo.
-echo [4/5] ����Web Viewer...
-cd /d D:\AI\asr-server\nas-audio-notes-client
-start "Web Viewer" D:\AI\asr_env\Scripts\python.exe web_viewer.py --source-path V:\Sony-2
-
-echo    �ȴ�Web Viewer����...
-timeout /t 3 >nul
-
-REM ============ ��֤���� ============
+echo ======================================
+echo   检查服务状态
+echo ======================================
 echo.
-echo [5/5] ��֤����״̬...
 
+REM 检查 ASR Server (端口 5008)
 netstat -ano | findstr ":5008.*LISTENING" >nul
 if errorlevel 1 (
-    echo    [����] ASR����(�˿�5008)δ��������
+    echo    [警告] ASR服务(端口5008)未正常启动
 ) else (
-    echo    ? ASR���������� (�˿�5008)
+    echo    ✓ ASR服务已启动 (端口5008)
 )
 
+REM 检查 Web Viewer (端口 5009)
 netstat -ano | findstr ":5009.*LISTENING" >nul
 if errorlevel 1 (
-    echo    [����] Web Viewer(�˿�5009)δ��������
+    echo    [警告] Web Viewer(端口5009)未正常启动
 ) else (
-    echo    ? Web Viewer������ (�˿�5009)
+    echo    ✓ Web Viewer已启动 (端口5009)
 )
 
 echo.
-echo ========================================
-echo   ���з���������ɣ�
-echo ========================================
+echo ======================================
+echo   所有服务启动完成！
+echo ======================================
 echo.
-echo ? ���ʵ�ַ:
-echo    - ASR�������: http://localhost:5008
-echo    - ת¼�鿴��:   http://localhost:5009
+echo 📡 访问地址:
+echo    - ASR服务管理: http://localhost:5008
+echo    - 转录查看器:   http://localhost:5009
 echo.
-echo ? �ļ����:     V:\Sony-2
-echo ? ��־�ļ�:     asr-server.log
+echo 📁 文件监控: 已集成到 ASR Server
+echo 📊 数据库保存: 自动保存每次转录
+echo 🤖 LLM 处理: 批量处理 (20条/批)
+echo 📝 日志文件: log\asr-server.log
 echo.
-echo ��ʾ: �رմ˴��ڲ���ֹͣ���񣬷����ں�̨����
+echo 提示: 关闭此窗口不会停止服务，服务在后台运行
 echo.
 pause
