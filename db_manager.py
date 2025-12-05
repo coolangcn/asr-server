@@ -9,7 +9,11 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 # PostgreSQL 连接配置
-DATABASE_URL = "postgresql://postgres:difyai123456@192.168.1.188:5433/postgres"
+# 优先使用环境变量，如果未设置则使用默认值
+DATABASE_URL = os.getenv(
+    'DATABASE_URL',
+    'postgresql://postgres:difyai123456@192.168.1.188:5433/postgres'
+)
 
 # 连接池
 connection_pool = None

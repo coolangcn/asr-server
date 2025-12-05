@@ -4,7 +4,7 @@
 import os, sys, logging, json, threading, subprocess, time, traceback, tempfile
 import numpy as np
 from scipy.spatial.distance import cosine
-from flask import Flask, request, jsonify, render_template, send_file, Response
+from flask import Flask, request, jsonify, render_template, send_file, send_from_directory, Response
 from funasr import AutoModel  # ASR 用 FunASR
 from modelscope.pipelines import pipeline  # SV 用 ModelScope
 from modelscope.utils.constant import Tasks
@@ -234,6 +234,38 @@ def load_models():
         except Exception as e:
             logger.warning(f"⚠️ SenseVoice模型加载失败: {e}，将禁用SenseVoice功能")
             sensevoice_pipeline = None
+
+def cleanup_temp_dir():
+    """清理超过1小时的临时文件"""
+    try:
+        temp_dir = Config.TEMP_DIR
+        if not os.path.exists(temp_dir):
+            return
+        
+        current_time = time.time()
+        cleaned_count = 0
+        
+        for filename in os.listdir(temp_dir):
+            filepath = os.path.join(temp_dir, filename)
+            if os.path.isfile(filepath):
+                try:
+                    file_age = current_time - os.path.getmtime(filepath)
+                    if file_age > 3600:  # 1小时
+                        os.remove(filepath)
+                        cleaned_count += 1
+                        logger.debug(f"清理旧临时文件: {filename}")
+                except Exception as e:
+                    logger.warning(f"清理文件失败 {filename}: {e}")
+        
+        if cleaned_count > 0:
+            logger.info(f"临时文件清理完成，删除了 {cleaned_count} 个文件")
+        
+        # 每小时执行一次
+        threading.Timer(3600, cleanup_temp_dir).start()
+    except Exception as e:
+        logger.error(f"临时文件清理失败: {e}")
+        # 即使失败也要继续定时任务
+        threading.Timer(3600, cleanup_temp_dir).start()
 
 def load_speaker_db():
     global speaker_db
@@ -1391,6 +1423,17 @@ def get_sample_audio(speaker_name, sample_id):
         return jsonify({"error": "Failed to retrieve sample audio"}), 500
 
 
+@app.route('/audio_segments/<path:filename>')
+def serve_audio_segment(filename):
+    """提供音频片段静态文件服务"""
+    try:
+        audio_segments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio_segments')
+        return send_from_directory(audio_segments_dir, filename)
+    except Exception as e:
+        logger.error(f"获取音频片段失败: {str(e)}")
+        return jsonify({"error": "Audio segment not found"}), 404
+
+
 @app.route("/logs/stream")
 def stream_logs():
     """SSE endpoint for real-time log streaming"""
@@ -1419,6 +1462,11 @@ if __name__ == "__main__":
         sys.exit(1)
 
     load_models()
+    
+    # 启动临时文件清理定时任务
+    cleanup_temp_dir()
+    logger.info("临时文件清理定时任务已启动")
+    
     print("🎉 服务启动成功！")
     print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")
     print("📌 语音转录API: http://127.0.0.1:5008/transcribe")
