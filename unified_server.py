@@ -202,14 +202,33 @@ def transcribe_internal(wav_path):
                     identity = None
                     confidence = 0.0
                     recognition_details = {}
+                    whisper_text = None
+                    sensevoice_text = None
                     
                     segment_path = processed_path + f".seg_{i}.wav"
                     try:
-                        from asr_server import extract_segment
+                        from asr_server import extract_segment, transcribe_with_whisper, transcribe_with_sensevoice
                         if extract_segment(processed_path, start, end, segment_path):
                             result = identify_speaker_fusion(segment_path)
                             if result:
                                 identity, confidence, recognition_details = result
+                            
+                            # 性能优化: 只有识别出的说话人才进行Whisper和SenseVoice处理
+                            if identity is not None:
+                                # Whisper对比识别
+                                whisper_text = transcribe_with_whisper(segment_path)
+                                
+                                # SenseVoice识别和情感检测
+                                sensevoice_result = transcribe_with_sensevoice(segment_path)
+                                if sensevoice_result:
+                                    sensevoice_text, sensevoice_emotion = sensevoice_result
+                                    # 使用SenseVoice的情感结果(如果检测到)
+                                    if sensevoice_emotion is not None:
+                                        emotion = sensevoice_emotion
+                                
+                                logger.info(f"      [性能] 已识别说话人 {identity}, 完整处理")
+                            else:
+                                logger.info(f"      [性能] 未识别说话人, 跳过Whisper/SenseVoice处理")
                                 
                     except Exception as e:
                         logger.warning(f"      [3.{i+1}] 声纹识别出错: {e}")
@@ -261,6 +280,8 @@ def transcribe_internal(wav_path):
                         "end": end,
                         "spk": identity or "Unknown",
                         "emotion": emotion,
+                        "whisper_text": whisper_text,
+                        "sensevoice_text": sensevoice_text,
                         "confidence": float(f"{confidence:.3f}"),
                         "recognition_details": recognition_details
                     })
