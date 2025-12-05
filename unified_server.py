@@ -179,9 +179,14 @@ def transcribe_internal(wav_path):
                     
                     # 清理emotion/event标签
                     emotion = "neutral"
+                    emotion_source = "funasr"  # 默认来源
+                    original_emotion_tag = None
+                    
                     for tag, emo in EMOTION_TAGS.items():
                         if tag in seg_text:
                             emotion = emo
+                            emotion_source = "funasr"
+                            original_emotion_tag = tag
                             seg_text = seg_text.replace(tag, "")
                     
                     for tag in INVALID_TAGS:
@@ -225,6 +230,8 @@ def transcribe_internal(wav_path):
                                     # 使用SenseVoice的情感结果(如果检测到)
                                     if sensevoice_emotion is not None:
                                         emotion = sensevoice_emotion
+                                        emotion_source = "sensevoice"
+                                        original_emotion_tag = f"<|{sensevoice_emotion}|>"
                                 
                                 logger.info(f"      [性能] 已识别说话人 {identity}, 完整处理")
                             else:
@@ -264,6 +271,40 @@ def transcribe_internal(wav_path):
                         # 如果填充词占比超过60%,认为是噪音
                         return filler_ratio > 0.6
                     
+                    # 计算文本质量指标
+                    def calculate_text_quality(text):
+                        """计算文本质量评估指标"""
+                        from collections import Counter
+                        if not text:
+                            return {
+                                "is_noise": True,
+                                "noise_score": 1.0,
+                                "repeat_ratio": 0.0,
+                                "filler_ratio": 0.0
+                            }
+                        
+                        # 计算重复字符占比
+                        char_counts = Counter(text)
+                        most_common_char, most_common_count = char_counts.most_common(1)[0]
+                        repeat_ratio = most_common_count / len(text)
+                        
+                        # 计算填充词占比
+                        filler_words = ['嗯', '啊', '呃', '额', '哦', '唔']
+                        text_no_punct = re.sub(r'[，。、！？,.!?]', '', text)
+                        filler_count = sum(text_no_punct.count(w) for w in filler_words) if text_no_punct else 0
+                        filler_ratio = filler_count / len(text_no_punct) if text_no_punct else 0
+                        
+                        # 综合噪音评分 (0-1, 越高越可能是噪音)
+                        noise_score = (repeat_ratio * 0.6 + filler_ratio * 0.4)
+                        is_noise_flag = repeat_ratio > 0.4 or filler_ratio > 0.6
+                        
+                        return {
+                            "is_noise": is_noise_flag,
+                            "noise_score": round(noise_score, 3),
+                            "repeat_ratio": round(repeat_ratio, 3),
+                            "filler_ratio": round(filler_ratio, 3)
+                        }
+                    
                     # 过滤噪音
                     if is_noise(clean_text):
                         logger.info(f"      [3.{i+1}] 检测到噪音，已跳过。")
@@ -274,7 +315,16 @@ def transcribe_internal(wav_path):
                         logger.info(f"      [3.{i+1}] 未识别到说话人，已跳过。")
                         continue
                     
+                    # 计算语速指标
+                    duration_seconds = duration_ms / 1000.0
+                    word_count = len(clean_text)  # 中文按字符数计算
+                    speech_rate = word_count / duration_seconds if duration_seconds > 0 else 0
+                    
+                    # 计算文本质量
+                    text_quality = calculate_text_quality(clean_text)
+                    
                     processed_segments.append({
+                        # === 原有字段（保持不变）===
                         "text": clean_text,
                         "start": start,
                         "end": end,
@@ -283,7 +333,25 @@ def transcribe_internal(wav_path):
                         "whisper_text": whisper_text,
                         "sensevoice_text": sensevoice_text,
                         "confidence": float(f"{confidence:.3f}"),
-                        "recognition_details": recognition_details
+                        "recognition_details": recognition_details,
+                        
+                        # === 新增字段：语速指标 ===
+                        "speech_metrics": {
+                            "duration_seconds": round(duration_seconds, 2),
+                            "word_count": word_count,
+                            "speech_rate": round(speech_rate, 2)  # 字/秒
+                        },
+                        
+                        # === 新增字段：文本质量评估 ===
+                        "text_quality": text_quality,
+                        
+                        # === 新增字段：情感详细信息 ===
+                        "emotion_info": {
+                            "emotion": emotion,
+                            "source": emotion_source,  # "funasr" 或 "sensevoice"
+                            "original_tag": original_emotion_tag,  # 原始情感标签，如 "<|happy|>"
+                            "detected_by_sensevoice": emotion_source == "sensevoice"
+                        }
                     })
                 
                 logger.info("  [生命周期: 3. 逐段声纹识别] 完成。")
