@@ -1183,8 +1183,9 @@ def transcribe_audio():
 
                         if (end - start) > Config.MIN_SPEAKER_DURATION_MS:
                             # 创建持久化的音频片段目录
-                            # 使用文件名（不含扩展名）作为子目录
-                            base_filename = os.path.splitext(file.filename)[0]
+                            # 使用原始文件名（不含扩展名和_TEMP后缀）作为子目录
+                            original_filename = file.filename.replace('_TEMP', '')  # 移除_TEMP后缀
+                            base_filename = os.path.splitext(original_filename)[0]
                             segments_dir = os.path.join("audio_segments", base_filename)
                             os.makedirs(segments_dir, exist_ok=True)
                             

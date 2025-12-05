@@ -309,6 +309,11 @@ def process_one_file(filename):
         full_text = result.get("full_text", "")
         segments = result.get("segments", [])
         
+        # 调试日志
+        logger.info(f"  API 返回: full_text长度={len(full_text)}, segments数量={len(segments)}")
+        if segments:
+            logger.info(f"  第一个分段: {segments[0].get('spk', 'N/A')} - {segments[0].get('text', 'N/A')[:30]}")
+        
         if not segments:
             logger.warning(f"  未检测到有效语音分段")
             return False

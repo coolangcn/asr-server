@@ -407,6 +407,147 @@ def api_data_range():
             "message": str(e)
         }), 500
 
+@app.route('/api/emotion-timeline')
+def api_emotion_timeline():
+    """获取情感时间线数据"""
+    try:
+        from collections import Counter
+        
+        # 情感评分映射
+        emotion_scores = {
+            "happy": 1.0,
+            "neutral": 0.0,
+            "sad": -0.8,
+            "angry": -1.0
+        }
+        
+        # 获取所有转录记录
+        all_items = db_get_transcripts(offset=0, limit=10000)
+        
+        # 按日期分组统计
+        daily_data = {}
+        
+        for item in all_items:
+            # 获取日期
+            dt = None
+            if item.get('recording_time'):
+                try:
+                    dt = datetime.datetime.fromisoformat(item.get('recording_time'))
+                except:
+                    pass
+            
+            if dt is None:
+                try:
+                    dt = datetime.datetime.fromisoformat(item.get('created_at', ''))
+                except:
+                    continue
+            
+            date_key = dt.strftime('%Y-%m-%d')
+            
+            # 初始化日期数据
+            if date_key not in daily_data:
+                daily_data[date_key] = {
+                    'emotions': Counter(),
+                    'total_segments': 0
+                }
+            
+            # 统计情感
+            segments = item.get('segments', [])
+            for seg in segments:
+                emotion = seg.get('emotion')
+                if emotion:
+                    daily_data[date_key]['emotions'][emotion] += 1
+                    daily_data[date_key]['total_segments'] += 1
+        
+        # 计算每日情感分数
+        timeline = []
+        for date_key in sorted(daily_data.keys()):
+            data = daily_data[date_key]
+            emotions = dict(data['emotions'])
+            
+            # 计算加权情感分数
+            total = sum(emotions.values())
+            if total > 0:
+                weighted_sum = sum(emotions.get(e, 0) * emotion_scores.get(e, 0) for e in emotions)
+                score = weighted_sum / total
+            else:
+                score = 0.0
+            
+            timeline.append({
+                'date': date_key,
+                'score': round(score, 3),
+                'emotions': emotions,
+                'total_segments': data['total_segments']
+            })
+        
+        return jsonify({'timeline': timeline})
+        
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/heatmap')
+def api_heatmap():
+    """获取对话热力图数据（24小时 x 说话人）"""
+    try:
+        # 获取所有转录记录
+        all_items = db_get_transcripts(offset=0, limit=10000)
+        
+        # 初始化热力图数据
+        hours = [f"{h:02d}:00" for h in range(24)]
+        speaker_activity = {}  # {speaker: [hour0_count, hour1_count, ...]}
+        
+        for item in all_items:
+            # 获取录音时间
+            dt = None
+            if item.get('recording_time'):
+                try:
+                    dt = datetime.datetime.fromisoformat(item.get('recording_time'))
+                except:
+                    pass
+            
+            if dt is None:
+                try:
+                    dt = datetime.datetime.fromisoformat(item.get('created_at', ''))
+                except:
+                    continue
+            
+            hour = dt.hour
+            
+            # 统计每个说话人在该小时的活跃度
+            segments = item.get('segments', [])
+            for seg in segments:
+                speaker = seg.get('spk', 'Unknown')
+                if speaker not in speaker_activity:
+                    speaker_activity[speaker] = [0] * 24
+                speaker_activity[speaker][hour] += 1
+        
+        # 构建响应
+        speakers = sorted(speaker_activity.keys())
+        data = []
+        
+        # 转换为热力图格式 [[hour_index, speaker_index, value], ...]
+        for speaker_idx, speaker in enumerate(speakers):
+            for hour_idx in range(24):
+                count = speaker_activity[speaker][hour_idx]
+                if count > 0:  # 只包含有数据的点
+                    data.append([hour_idx, speaker_idx, count])
+        
+        return jsonify({
+            'hours': hours,
+            'speakers': speakers,
+            'data': data,
+            'max_value': max(max(counts) for counts in speaker_activity.values()) if speaker_activity else 0
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e)
+        }), 500
+
 @app.route('/api/config', methods=['GET'])
 def api_get_config():
     return jsonify(CONFIG)
