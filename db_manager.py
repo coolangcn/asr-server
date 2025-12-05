@@ -118,7 +118,7 @@ def init_db():
 def save_to_db(filename: str, full_text: str, segments_list: List[Dict], 
                recording_time: Optional[datetime] = None) -> bool:
     """
-    保存转录记录到数据库
+    保存转录记录到数据库（如果文件已存在则覆盖）
     
     Args:
         filename: 文件名
@@ -140,6 +140,14 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         if recording_time is None:
             recording_time = parse_recording_time(filename)
         
+        # 先删除已存在的记录（如果有）
+        cursor.execute(
+            "DELETE FROM transcriptions WHERE filename = %s",
+            (filename,)
+        )
+        deleted_count = cursor.rowcount
+        
+        # 插入新记录
         cursor.execute(
             "INSERT INTO transcriptions (filename, full_text, segments_json, recording_time) VALUES (%s, %s, %s, %s)",
             (filename, full_text, segments_json, recording_time)
@@ -148,7 +156,12 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         conn.commit()
         cursor.close()
         time_str = recording_time.strftime('%Y-%m-%d %H:%M:%S') if recording_time else '当前时间'
-        print(f"  [DB] Saved {filename} (录音时间: {time_str})")
+        
+        if deleted_count > 0:
+            print(f"  [DB] 覆盖 {filename} (录音时间: {time_str}, 删除了 {deleted_count} 条旧记录)")
+        else:
+            print(f"  [DB] 新增 {filename} (录音时间: {time_str})")
+        
         return True
     except Exception as e:
         print(f"  [DB Error] {e}")
