@@ -13,7 +13,7 @@ import torchaudio
 import shutil
 import re
 from collections import Counter
-from db_manager import save_to_db, update_topics, parse_recording_time
+from db_manager import save_to_db, update_topics, parse_recording_time, init_pool, init_db
 from logging.handlers import TimedRotatingFileHandler
 import whisper
 import requests
@@ -1686,6 +1686,16 @@ if __name__ == "__main__":
     except FileNotFoundError:
         logger.critical("❌ 系统未安装 FFmpeg！")
         sys.exit(1)
+
+    # 初始化数据库连接池和表结构
+    print("初始化数据库连接池...")
+    if not init_pool():
+        logger.critical("❌ 数据库连接池初始化失败！")
+        sys.exit(1)
+    
+    print("初始化数据库表结构...")
+    if not init_db():
+        logger.warning("⚠️ 数据库表结构初始化失败，但服务将继续运行")
 
     load_models()
     
