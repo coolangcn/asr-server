@@ -1,0 +1,182 @@
+﻿
+  +
+  +
+> +def transcribe_wit
+h_whisper(audio_path)
+:
+  +    """
+  +    浣跨敤Whisper璇嗗埆闊
+抽鐗囨锛堜綔涓篎unASR鐨勫姣斿弬
+鑰冿級
+  +    
+  +    Args:
+  +        audio_path
+: 闊抽鐗囨璺緞
+  +        
+  +    Returns:
+  +        str: Whisp
+er璇嗗埆鐨勬枃鏈紝濡傛灉澶辫触杩斿洖N
+one
+  +    """
+  +    if not Config.
+ENABLE_WHISPER_COMPAR
+ISON or whisper_model
+ is None:
+  +        return Non
+e
+  +    
+  +    try:
+  +        result = w
+hisper_model.transcri
+be(
+  +            audio_
+path,
+  +            langua
+ge='zh',
+  +            fp16=T
+rue,  # GPU鍔犻€?+     
+       verbose=False
+  +        )
+  +        whisper_te
+xt = result['text'].s
+trip()
+  +        logger.inf
+o(f"      [Whisper瀵规瘮
+] {whisper_text}")
+  +        return whi
+sper_text
+  +    except Excepti
+on as e:
+  +        logger.war
+ning(f"      [Whisper
+瀵规瘮] 璇嗗埆澶辫触: {e}")
+  +        return Non
+e
+  +
+  +def detect_emotion
+_for_segment(audio_pa
+th):
+  +    """浣跨敤SenseVoi
+ce妫€娴嬮煶棰戞鐨勬儏鎰?""
+  +    if not Config.
+ENABLE_EMOTION_DETECT
+ION or emotion_pipeli
+ne is None:
+  +        return "ne
+utral"
+  +    
+   def extract_embedd
+ing_from_file(sv_pipe
+, wav_path):
+       try:
+> @@ -765,7 +839,7 @@
+ def transcribe_audio
+():
+   
+               logger
+.info("  [鐢熷懡鍛ㄦ湡: 2. 
+VAD & ASR] 寮€濮?(FunAS
+R璇煶妫€娴嬩笌鏂囧瓧杞綍)...")
+               res = 
+asr_pipeline.generate
+(input=proc_temp, lan
+guage="auto", use_itn
+=True, use_punc=True)
+  -            logger
+.info(f"  [VAD 璋冭瘯] F
+unASR generate() 鍘熷杩
+斿洖: {json.dumps(res, 
+ensure_ascii=False, i
+ndent=2)}")
+  +            # logg
+er.info(f"  [VAD 璋冭瘯]
+ FunASR generate() 鍘熷
+杩斿洖: {json.dumps(res
+, ensure_ascii=False,
+ indent=2)}")
+               full_t
+ext = ""
+               segmen
+ts = []
+   
+> @@ -815,8 +889,15 @
+@ def transcribe_audi
+o():
+                     
+          if extract_
+segment(proc_temp, st
+art, end, seg_wav):
+                     
+              temp_fi
+les.append(seg_wav)
+                     
+              identit
+y, confidence, recogn
+ition_details = ident
+ify_speaker_fusion(se
+g_wav)
+  +                  
+              # 鎯呮劅妫€
+娴?+                  
+              emotion
+ = detect_emotion_for
+_segment(seg_wav)
+  +                  
+              # Whisp
+er瀵规瘮璇嗗埆
+  +                  
+              whisper
+_text = transcribe_wi
+th_whisper(seg_wav)
+                     
+      else:
+                     
+          logger.info
+(f"      [3.{i+1}] 鍒嗘
+鏃堕暱杩囩煭({end-start}ms
+)锛岃烦杩囧０绾硅瘑鍒€?)
+  +                  
+          # 鍗充娇璺宠繃澹扮汗
+璇嗗埆锛屼篃瑕佸垵濮嬪寲杩欎簺鍙橀噺
+  +                  
+          emotion = "
+neutral"
+  +                  
+          whisper_tex
+t = None
+   
+   
+                     
+      if Config.ONLY_
+REGISTERED_SPEAKERS a
+nd identity is None: 
+continue
+> @@ -824,6 +905,7 @@
+ def transcribe_audio
+():
+                     
+      processed_segme
+nts.append({
+                     
+          "text": cle
+an_text, "start": sta
+rt, "end": end,
+                     
+          "spk": iden
+tity or "Unknown", "e
+motion": emotion,
+  +                  
+          "whisper_te
+xt": whisper_text,
+                     
+          "confidence
+": float(f"{confidenc
+e:.3f}"),
+                     
+          "recognitio
+n_details": recogniti
+on_details
+                     
+      })
+
+

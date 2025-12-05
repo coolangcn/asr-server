@@ -1,0 +1,123 @@
+﻿diff --git a/asr_server.py b/asr_server.py
+index 440ebfb..76087b0 100644
+--- a/asr_server.py
++++ b/asr_server.py
+@@ -15,6 +15,7 @@ import re
+ from collections import Counter
+ from db_manager import save_to_db
+ from logging.handlers import TimedRotatingFileHandler
++import whisper
+ 
+ # =================銆?閰嶇疆 銆?================
+ class Config:
+@@ -314,6 +315,79 @@ def extract_segment(source_path, start_ms, end_ms, output_path):
+     except:
+         return False
+ 
++
++
++def transcribe_with_whisper(audio_path):
++    """
++    浣跨敤Whisper璇嗗埆闊抽鐗囨锛堜綔涓篎unASR鐨勫姣斿弬鑰冿級
++    
++    Args:
++        audio_path: 闊抽鐗囨璺緞
++        
++    Returns:
++        str: Whisper璇嗗埆鐨勬枃鏈紝濡傛灉澶辫触杩斿洖None
++    """
++    if not Config.ENABLE_WHISPER_COMPARISON or whisper_model is None:
++        return None
++    
++    try:
++        result = whisper_model.transcribe(
++            audio_path,
++            language='zh',
++            fp16=True,  # GPU鍔犻€?+            verbose=False
++        )
++        whisper_text = result['text'].strip()
++        logger.info(f"      [Whisper瀵规瘮] {whisper_text}")
++        return whisper_text
++    except Exception as e:
++        logger.warning(f"      [Whisper瀵规瘮] 璇嗗埆澶辫触: {e}")
++        return None
++
++def detect_emotion_for_segment(audio_path):
++    """浣跨敤SenseVoice妫€娴嬮煶棰戞鐨勬儏鎰?""
++    if not Config.ENABLE_EMOTION_DETECTION or emotion_pipeline is None:
++        return "neutral"
++    
++    try:
++        result = emotion_pipeline(
++            audio_in=audio_path,
++            language="auto",
++            use_itn=True
++        )
++        
++        if not result or len(result) == 0:
++            return "neutral"
++        
++        raw_text = result[0].get("text", "")
++        logger.info(f"      [SenseVoice鎯呮劅] 鍘熷杈撳嚭: {raw_text}")
++        
++        # 鎻愬彇鎯呮劅鏍囩
++        emotion = "neutral"
++        raw_text_lower = raw_text.lower()
++        
++        EMOTION_MAP = {
++            '<|happy|>': 'happy',
++            '<|sad|>': 'sad', 
++            '<|angry|>': 'angry',
++            '<|neutral|>': 'neutral',
++            '<|fearful|>': 'fearful',
++            '<|disgusted|>': 'disgusted',
++            '<|surprised|>': 'surprised'
++        }
++        
++        for tag, emo in EMOTION_MAP.items():
++            if tag in raw_text_lower:
++                emotion = emo
++                logger.info(f"      [SenseVoice鎯呮劅] 妫€娴嬪埌鎯呮劅: {emotion}")
++                break
++        
++        return emotion
++    except Exception as e:
++        logger.warning(f"      [SenseVoice鎯呮劅] 妫€娴嬪け璐? {e}")
++        return "neutral"
++
++
+ # =================== 鎻愬彇 embedding ===================
+ def extract_embedding_from_file(sv_pipe, wav_path):
+     try:
+@@ -765,7 +839,7 @@ def transcribe_audio():
+ 
+             logger.info("  [鐢熷懡鍛ㄦ湡: 2. VAD & ASR] 寮€濮?(FunASR璇煶妫€娴嬩笌鏂囧瓧杞綍)...")
+             res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True, use_punc=True)
+-            logger.info(f"  [VAD 璋冭瘯] FunASR generate() 鍘熷杩斿洖: {json.dumps(res, ensure_ascii=False, indent=2)}")
++            # logger.info(f"  [VAD 璋冭瘯] FunASR generate() 鍘熷杩斿洖: {json.dumps(res, ensure_ascii=False, indent=2)}")
+             full_text = ""
+             segments = []
+ 
+@@ -815,8 +889,15 @@ def transcribe_audio():
+                             if extract_segment(proc_temp, start, end, seg_wav):
+                                 temp_files.append(seg_wav)
+                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav)
++                                # 鎯呮劅妫€娴?+                                emotion = detect_emotion_for_segment(seg_wav)
++                                # Whisper瀵规瘮璇嗗埆
++                                whisper_text = transcribe_with_whisper(seg_wav)
+                         else:
+                             logger.info(f"      [3.{i+1}] 鍒嗘鏃堕暱杩囩煭({end-start}ms)锛岃烦杩囧０绾硅瘑鍒€?)
++                            # 鍗充娇璺宠繃澹扮汗璇嗗埆锛屼篃瑕佸垵濮嬪寲杩欎簺鍙橀噺
++                            emotion = "neutral"
++                            whisper_text = None
+ 
+ 
+                         if Config.ONLY_REGISTERED_SPEAKERS and identity is None: continue
+@@ -824,6 +905,7 @@ def transcribe_audio():
+                         processed_segments.append({
+                             "text": clean_text, "start": start, "end": end,
+                             "spk": identity or "Unknown", "emotion": emotion,
++                            "whisper_text": whisper_text,
+                             "confidence": float(f"{confidence:.3f}"),
+                             "recognition_details": recognition_details
+                         })

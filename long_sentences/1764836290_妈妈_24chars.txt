@@ -1,0 +1,14 @@
+说话人: 妈妈
+文本长度: 24 字
+时间: 170ms - 15390ms
+情感: neutral
+置信度: 0.667
+
+=== FunASR 识别结果 ===
+我们一那我魔都阳光星宝贝就会一南空爸爸爸自己去，
+
+=== Whisper 识别结果 ===
+优优独播剧场——YoYo Television Series Exclusive
+
+=== SenseVoice 识别结果 ===
+Right away。
