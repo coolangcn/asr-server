@@ -1394,10 +1394,14 @@ def transcribe_audio():
                                 temp_files.append(seg_wav_temp)
                                 
                                 # 复制到持久化目录
-                                shutil.copy2(seg_wav_temp, seg_wav_persistent)
-                                
-                                # 保存相对路径供客户端访问
-                                segment_audio_path = f"/audio_segments/{base_filename}/{seg_filename}"
+                                try:
+                                    shutil.copy2(seg_wav_temp, seg_wav_persistent)
+                                    # 只有成功复制后才保存路径
+                                    segment_audio_path = f"/audio_segments/{base_filename}/{seg_filename}"
+                                    logger.debug(f"      [音频片段] 已保存: {seg_wav_persistent}")
+                                except Exception as copy_error:
+                                    logger.error(f"      [音频片段] 复制失败: {copy_error}")
+                                    segment_audio_path = None  # 如果复制失败,不设置路径
 
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp)
                                 
@@ -1459,7 +1463,7 @@ def transcribe_audio():
                                         speaker_name = identity  # 已确保identity不为None
                                         saved_filename = f"{timestamp}_{speaker_name}_{len(clean_text)}chars.wav"
                                         saved_path = os.path.join(Config.LONG_SENTENCES_DIR, saved_filename)
-                                        shutil.copy2(seg_wav, saved_path)
+                                        shutil.copy2(seg_wav_temp, saved_path)
                                         
                                         # 同时保存文本信息
                                         txt_path = saved_path.replace('.wav', '.txt')

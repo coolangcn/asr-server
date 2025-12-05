@@ -91,7 +91,8 @@ def get_system_status():
     try:
         if os.path.exists(CONFIG["SOURCE_DIR"]):
             files = [f for f in os.listdir(CONFIG["SOURCE_DIR"]) 
-                     if f.lower().endswith(('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg'))]
+                     if f.lower().endswith(('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg'))
+                     and 'TEMP' not in f]  # 排除包含TEMP的文件
             status["pending_files"] = len(files)
         else:
             status["pending_files"] = -1
