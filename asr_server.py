@@ -1295,7 +1295,8 @@ def register_speaker():
                     try: os.remove(f)
                     except: pass
 
-@app.route("/transcribe", methods=["POST"])
+
+@app.route("/transcribes", methods=["POST"])
 def transcribe_audio():
     # 确保临时目录存在
     os.makedirs(Config.TEMP_DIR, exist_ok=True)
@@ -1307,6 +1308,18 @@ def transcribe_audio():
             if 'audio_file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
             
             file = request.files['audio_file']
+            
+            # 忽略包含 TEMP 的文件名 (静默跳过,不处理)
+            if 'TEMP' in file.filename:
+                logger.info(f"⏭️ 忽略临时文件: {file.filename}")
+                return jsonify({
+                    "message": "Temporary file ignored",
+                    "filename": file.filename,
+                    "full_text": "",
+                    "segments": [],
+                    "meta": {"ignored": True}
+                }), 200
+            
             raw_temp = os.path.join(Config.TEMP_DIR, f"raw_{int(time.time())}_{file.filename}")
             file.save(raw_temp)
             temp_files.append(raw_temp)
@@ -1683,6 +1696,105 @@ def stream_logs():
     
     return Response(generate_logs(), mimetype='text/event-stream')
 
+# =================== 文件监控 ===================
+def monitor_files():
+    """监控源目录中的新音频文件并自动转录"""
+    logger.info("📂 文件监控线程已启动")
+    logger.info(f"   监控目录: {FileMonitorConfig.SOURCE_DIR}")
+    logger.info(f"   扫描间隔: {FileMonitorConfig.SCAN_INTERVAL}秒")
+    logger.info(f"   支持格式: {', '.join(FileMonitorConfig.SUPPORTED_FORMATS)}")
+    
+    # 确保必要的目录存在
+    os.makedirs(FileMonitorConfig.SOURCE_DIR, exist_ok=True)
+    processed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR)
+    os.makedirs(processed_dir, exist_ok=True)
+    
+    processed_files = set()  # 记录已处理的文件，避免重复处理
+    
+    while True:
+        try:
+            # 扫描源目录
+            if not os.path.exists(FileMonitorConfig.SOURCE_DIR):
+                logger.warning(f"⚠️ 源目录不存在: {FileMonitorConfig.SOURCE_DIR}")
+                time.sleep(FileMonitorConfig.SCAN_INTERVAL)
+                continue
+            
+            files = []
+            for filename in os.listdir(FileMonitorConfig.SOURCE_DIR):
+                filepath = os.path.join(FileMonitorConfig.SOURCE_DIR, filename)
+                
+                # 只处理文件，跳过目录
+                if not os.path.isfile(filepath):
+                    continue
+                
+                # 检查文件扩展名
+                ext = os.path.splitext(filename)[1].lower()
+                if ext not in FileMonitorConfig.SUPPORTED_FORMATS:
+                    continue
+                
+                # 跳过包含TEMP的文件
+                if 'TEMP' in filename or '_TEMP' in filename:
+                    continue
+                
+                # 跳过已处理的文件
+                if filename in processed_files:
+                    continue
+                
+                files.append((filename, filepath))
+            
+            # 处理找到的文件
+            if files:
+                logger.info(f"🔍 发现 {len(files)} 个待处理文件")
+                
+                for filename, filepath in files:
+                    try:
+                        logger.info(f"📤 开始处理: {filename}")
+                        
+                        # 调用本地转录API
+                        with open(filepath, 'rb') as f:
+                            files_data = {'audio_file': (filename, f, 'audio/mpeg')}
+                            response = requests.post(
+                                'http://localhost:5008/transcribes',
+                                files=files_data,
+                                timeout=600  # 10分钟超时
+                            )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            logger.info(f"✅ 转录完成: {filename}")
+                            logger.info(f"   文本长度: {len(result.get('full_text', ''))} 字")
+                            logger.info(f"   分段数: {len(result.get('segments', []))}")
+                            
+                            # 移动到已处理目录
+                            processed_path = os.path.join(processed_dir, filename)
+                            try:
+                                shutil.move(filepath, processed_path)
+                                logger.info(f"📦 已移动到: {FileMonitorConfig.PROCESSED_DIR}/{filename}")
+                            except Exception as move_error:
+                                logger.warning(f"⚠️ 移动文件失败: {move_error}")
+                            
+                            # 标记为已处理
+                            processed_files.add(filename)
+                            
+                        else:
+                            logger.error(f"❌ 转录失败: {filename} (HTTP {response.status_code})")
+                            logger.error(f"   响应: {response.text[:200]}")
+                            
+                    except requests.exceptions.Timeout:
+                        logger.error(f"⏱️ 转录超时: {filename}")
+                    except Exception as e:
+                        logger.error(f"❌ 处理文件失败: {filename}")
+                        logger.error(f"   错误: {str(e)}")
+                        logger.error(traceback.format_exc())
+            
+            # 等待下一次扫描
+            time.sleep(FileMonitorConfig.SCAN_INTERVAL)
+            
+        except Exception as e:
+            logger.error(f"❌ 文件监控异常: {str(e)}")
+            logger.error(traceback.format_exc())
+            time.sleep(FileMonitorConfig.SCAN_INTERVAL)
+
 # =================== 启动 ===================
 if __name__ == "__main__":
     try:
@@ -1707,9 +1819,17 @@ if __name__ == "__main__":
     cleanup_temp_dir()
     logger.info("临时文件清理定时任务已启动")
     
+    # 启动文件监控线程
+    monitor_thread = threading.Thread(target=monitor_files, daemon=True)
+    monitor_thread.start()
+    logger.info("文件监控线程已启动")
+    
     print("🎉 服务启动成功！")
     print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")
-    print("📌 语音转录API: http://127.0.0.1:5008/transcribe")
+    print("📌 语音转录API: http://127.0.0.1:5008/transcribes (本地监控专用)")
+    print("📌 外部调用API: http://127.0.0.1:5008/transcribe (保留给NAS使用)")
+    print(f"📂 文件监控目录: {FileMonitorConfig.SOURCE_DIR}")
+    print(f"⏱️  扫描间隔: {FileMonitorConfig.SCAN_INTERVAL}秒")
     print("🔧 API使用方法: POST请求，参数名 'audio_file'，上传音频文件")
-    print("🔍 示例命令: curl -X POST -F \"audio_file=@your_audio.wav\" http://127.0.0.1:5008/transcribe")
+    print("🔍 示例命令: curl -X POST -F \"audio_file=@your_audio.wav\" http://127.0.0.1:5008/transcribes")
     app.run(host=Config.HOST, port=Config.PORT, debug=False, threaded=True)
