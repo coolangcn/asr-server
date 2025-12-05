@@ -132,8 +132,12 @@ def transcribe_internal(wav_path):
             logger.error(f"文件不存在: {wav_path}")
             return None
         
-        # 预处理音频
-        processed_path = wav_path + ".processed.wav"
+        # 预处理音频 - 确保在temp目录创建
+        # 从wav_path提取文件名，在temp目录创建processed文件
+        temp_dir = os.path.dirname(wav_path)  # wav_path已经在temp目录中
+        wav_basename = os.path.basename(wav_path)
+        processed_path = os.path.join(temp_dir, wav_basename.replace("_TEMP.wav", "_TEMP.processed.wav"))
+        
         if not preprocess_audio(wav_path, processed_path):
             logger.error("音频预处理失败")
             return None
@@ -509,8 +513,11 @@ def process_one_file(filename):
             except Exception as e:
                 logger.warning(f"  [Cleanup] 删除临时文件失败: {e}")
         
-        # 清理.processed.wav文件
-        processed_path = wav_path + ".processed.wav"
+        # 清理.processed.wav文件（使用正确的路径）
+        temp_dir = os.path.dirname(wav_path)
+        wav_basename = os.path.basename(wav_path)
+        processed_path = os.path.join(temp_dir, wav_basename.replace("_TEMP.wav", "_TEMP.processed.wav"))
+        
         if os.path.exists(processed_path):
             try:
                 os.remove(processed_path)
