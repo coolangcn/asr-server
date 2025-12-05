@@ -1742,9 +1742,15 @@ def monitor_files():
                 
                 files.append((filename, filepath))
             
+            # 按文件名排序，确保时间戳早的文件先处理
+            # 文件名格式如: TermuxAudioRecording_2025-11-18_00-34-27.m4a
+            # 或: recording-20251115-131250.m4a
+            files.sort(key=lambda x: x[0])  # 按文件名字母顺序排序，时间戳早的在前
+            
             # 处理找到的文件
             if files:
                 logger.info(f"🔍 发现 {len(files)} 个待处理文件")
+                logger.info(f"   处理顺序: {files[0][0]} → ... → {files[-1][0]}")
                 
                 for filename, filepath in files:
                     try:
