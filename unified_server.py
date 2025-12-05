@@ -199,12 +199,14 @@ def transcribe_internal(wav_path):
                     clean_text = seg_text.strip()
                     
                     if not clean_text:
-                        logger.info(f"      [3.{i+1}] 分段文本在清洗后为空，已跳过。")
+                        # 跳过空文本（静默）
+                        logger.debug(f"  #{i+1} 跳过: 文本为空")
                         continue
                     
                     duration_ms = end - start
                     if duration_ms < ASRConfig.MIN_SPEAKER_DURATION_MS:
-                        logger.info(f"      [3.{i+1}] 分段时长不足 {ASRConfig.MIN_SPEAKER_DURATION_MS}ms，已跳过。")
+                        # 跳过时长不足（静默）
+                        logger.debug(f"  #{i+1} 跳过: 时长{duration_ms}ms < {ASRConfig.MIN_SPEAKER_DURATION_MS}ms")
                         continue
                     
                     # 声纹识别
@@ -237,9 +239,11 @@ def transcribe_internal(wav_path):
                                         emotion_source = "sensevoice"
                                         original_emotion_tag = f"<|{sensevoice_emotion}|>"
                                 
-                                logger.info(f"      [性能] 已识别说话人 {identity}, 完整处理")
+                                # 识别成功（静默）
+                                logger.debug(f"  #{i+1} 识别: {identity} ({confidence:.3f})")
                             else:
-                                logger.info(f"      [性能] 未识别说话人, 跳过Whisper/SenseVoice处理")
+                                # 未识别（静默）
+                                logger.debug(f"  #{i+1} 未识别")
                                 
                     except Exception as e:
                         logger.warning(f"      [3.{i+1}] 声纹识别出错: {e}")
@@ -311,12 +315,14 @@ def transcribe_internal(wav_path):
                     
                     # 过滤噪音
                     if is_noise(clean_text):
-                        logger.info(f"      [3.{i+1}] 检测到噪音，已跳过。")
+                        # 跳过噪音（静默）
+                        logger.debug(f"  #{i+1} 跳过: 噪音")
                         continue
                     
                     # 只保留已注册说话人,丢弃Unknown
                     if ASRConfig.ONLY_REGISTERED_SPEAKERS and identity is None:
-                        logger.info(f"      [3.{i+1}] 未识别到说话人，已跳过。")
+                        # 跳过未识别（静默）
+                        logger.debug(f"  #{i+1} 跳过: 未识别说话人")
                         continue
                     
                     # 计算语速指标
@@ -365,10 +371,12 @@ def transcribe_internal(wav_path):
         
         # 清理临时文件
         if os.path.exists(processed_path):
+            processed_basename = os.path.basename(processed_path)
             try:
                 os.remove(processed_path)
-            except:
-                pass
+                logger.debug(f"  [Cleanup] 已删除处理后文件: {processed_basename}")
+            except Exception as e:
+                logger.warning(f"  [Cleanup] 删除处理后文件失败: {processed_basename}, 错误: {e}")
         
         rtf = process_time / audio_duration if audio_duration > 0 else 0
         

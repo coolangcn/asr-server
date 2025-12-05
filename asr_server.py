@@ -507,7 +507,7 @@ def identify_speaker_fusion(segment_path):
     logger.info(f"📋 声纹数据库包含 {len(speaker_db)} 个说话人")
 
     for model_name, sv_pipe in sv_pipelines.items():
-        logger.info(f"🔍 开始使用模型: {model_name}")
+        # 模型处理（静默）
         
         emb_a = extract_embedding_from_file(sv_pipe, segment_path)
         if emb_a is None:
@@ -519,7 +519,7 @@ def identify_speaker_fusion(segment_path):
         conf = Config.SV_MODELS[model_name]
         threshold = conf['threshold']
         gap = conf['gap']
-        logger.info(f"📌 模型 {model_name} 阈值: {threshold}, 置信度间隔: {gap}")
+        # 配置已在启动时显示，无需重复
 
         for name, speaker_data in speaker_db.items():
             # 使用平均嵌入进行比较
@@ -528,7 +528,8 @@ def identify_speaker_fusion(segment_path):
             emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
             score = 1 - cosine(emb_a.flatten(), emb_b)
             scores.append((name, score))
-            logger.info(f"💯 模型 {model_name} 与说话人 {name} 的相似度: {score:.6f}")
+            # DEBUG: 详细评分
+            logger.debug(f"  {model_name}: {name}={score:.3f}")
 
         if not scores:
             logger.warning(f"⚠️ 模型 {model_name} 未找到匹配的说话人数据")
@@ -540,12 +541,14 @@ def identify_speaker_fusion(segment_path):
         top2_name, top2_score = scores[1] if len(scores) > 1 else (None, 0.0)
         score_gap = top1_score - top2_score
         
-        logger.info(f"🏆 模型 {model_name} 识别结果: 第一名 {top1_name} (得分: {top1_score:.6f}), 第二名 {top2_name} (得分: {top2_score:.6f}), 差距: {score_gap:.6f}")
+        # DEBUG: 模型识别结果
+        logger.debug(f"  {model_name}: {top1_name}={top1_score:.3f} (gap={score_gap:.3f})")
 
         if top1_score >= threshold and score_gap >= gap:
             model_votes[model_name] = top1_name
             model_scores[model_name] = top1_score
-            logger.info(f"✅ 模型 {model_name} 验证通过: {top1_name} (得分: {top1_score:.6f} ≥ 阈值 {threshold})")
+            # 验证通过（静默）
+            pass
         else:
             model_votes[model_name] = "Unknown"
             model_scores[model_name] = top1_score
@@ -554,14 +557,17 @@ def identify_speaker_fusion(segment_path):
                 reason.append(f"得分 {top1_score:.6f} < 阈值 {threshold}")
             if score_gap < gap:
                 reason.append(f"差距 {score_gap:.6f} < 置信度间隔 {gap}")
-            logger.info(f"❌ 模型 {model_name} 验证失败: {', '.join(reason)}")
+            # 验证失败（静默）
+            pass
 
-    logger.info(f"📊 多模型投票结果: {model_votes}")
+    # DEBUG: 投票结果
+    logger.debug(f"  投票: {model_votes}")
     
     # 2/3投票逻辑
     votes = [v for v in model_votes.values() if v not in ["Unknown", "Failed", "NoDB"]]
     if not votes:
-        logger.info("❌ 交叉验证失败: 所有模型均未识别出有效候选人")
+        # 识别失败（由上层记录）
+        logger.debug("  未识别: 所有模型均未通过")
         return None, 0.0, []
 
     vote_counts = Counter(votes)
@@ -574,7 +580,8 @@ def identify_speaker_fusion(segment_path):
         winning_scores = [model_scores[model] for model, vote in model_votes.items() if vote == winner]
         avg_confidence = np.mean(winning_scores)
         
-        logger.info(f"🎉 交叉验证成功 (多数票): [{winner}] 获得 {count} 票 | 平均置信度: {avg_confidence:.3f}")
+        # 识别成功（由上层记录）
+        logger.debug(f"  识别: {winner} (置信度={avg_confidence:.3f}, 票数={count})")
         
         # 生成详细信息
         recognition_details = []
@@ -593,7 +600,8 @@ def identify_speaker_fusion(segment_path):
             recognition_details.append(f"模型 {model_name}: {result} (相似度: {model_scores.get(model_name, 0):.6f})")
         recognition_details.append("最终识别结果: 识别失败，没有候选人获得足够票数 (多数票 ≥ 2)")
         
-        logger.info(f"❌ 交叉验证失败: 没有候选人获得足够票数 (多数票 ≥ 2)")
+        # 识别失败（由上层记录）
+        logger.debug(f"  未识别: 票数不足 ({winner}={count}<2)")
         return None, 0.0, []
 
 # =================== Flask 接口 ===================
