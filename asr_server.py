@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, sys, logging, json, threading, subprocess, time, traceback, tempfile
+import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse
 import numpy as np
 from scipy.spatial.distance import cosine
 from flask import Flask, request, jsonify, render_template, send_file, send_from_directory, Response
@@ -1394,7 +1394,7 @@ def transcribe_audio():
                             # 使用原始文件名（不含扩展名和_TEMP后缀）作为子目录
                             original_filename = file.filename.replace('_TEMP', '')  # 移除_TEMP后缀
                             base_filename = os.path.splitext(original_filename)[0]
-                            segments_dir = os.path.join("audio_segments", base_filename)
+                            segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, "audio_segments", base_filename)
                             os.makedirs(segments_dir, exist_ok=True)
                             
                             # 临时文件用于处理
@@ -1670,7 +1670,7 @@ def get_sample_audio(speaker_name, sample_id):
 def serve_audio_segment(filename):
     """提供音频片段静态文件服务"""
     try:
-        audio_segments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio_segments')
+        audio_segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, 'audio_segments')
         return send_from_directory(audio_segments_dir, filename)
     except Exception as e:
         logger.error(f"获取音频片段失败: {str(e)}")
@@ -1762,7 +1762,7 @@ def monitor_files():
                             response = requests.post(
                                 'http://localhost:5008/transcribes',
                                 files=files_data,
-                                timeout=600  # 10分钟超时
+                                timeout=7200  # 2小时超时
                             )
                         
                         if response.status_code == 200:
@@ -1802,7 +1802,24 @@ def monitor_files():
             time.sleep(FileMonitorConfig.SCAN_INTERVAL)
 
 # =================== 启动 ===================
+def parse_args():
+    parser = argparse.ArgumentParser(description='ASR Service')
+    parser.add_argument('--source-path', type=str, help='Source directory for audio files')
+    parser.add_argument('--port', type=int, help='Port to run the server on')
+    return parser.parse_args()
+
 if __name__ == "__main__":
+    args = parse_args()
+    
+    # Update config from args
+    if args.source_path:
+        FileMonitorConfig.SOURCE_DIR = args.source_path
+        print(f"配置更新: 源目录 -> {args.source_path}")
+        
+    if args.port:
+        Config.PORT = args.port
+        print(f"配置更新: 端口 -> {args.port}")
+
     try:
         subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except FileNotFoundError:
