@@ -1593,7 +1593,7 @@
         }
 
         // 添加滚动监听 - 滚动到底部时加载更多
-        ['view-dashboard', 'view-chat', 'view-analysis'].forEach(containerId => {
+        ['view-dashboard', 'chat-content', 'view-analysis'].forEach(containerId => {
             const container = document.getElementById(containerId);
             if (container) {
                 container.addEventListener('scroll', () => {
