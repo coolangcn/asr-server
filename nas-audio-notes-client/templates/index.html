@@ -670,6 +670,14 @@
             if (tabName === 'chat') {
                 setTimeout(initTimeline, 100);
             }
+
+            // Fix ECharts resize
+            if (tabName === 'analysis') {
+                setTimeout(() => {
+                    if (emotionChartInst) emotionChartInst.resize();
+                    if (heatmapChartInst) heatmapChartInst.resize();
+                }, 50);
+            }
         }
 
         // 初始化导航状态
@@ -1281,9 +1289,32 @@
 
             let html = "";
 
+            // 1. 图表区域
+            html += `
+            <div class="col-span-1 lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="glass-card rounded-2xl p-6">
+                    <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-heart-pulse text-pink-400"></i>
+                        情感趋势
+                    </h3>
+                    <div id="emotion-chart" style="width: 100%; height: 300px;"></div>
+                </div>
+                <div class="glass-card rounded-2xl p-6">
+                    <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                         <i class="fa-solid fa-fire text-orange-400"></i>
+                        对话热力图
+                    </h3>
+                    <div id="heatmap-chart" style="width: 100%; height: 300px;"></div>
+                </div>
+            </div>
+            `;
+
+            // 2. 统计摘要区域 (保留现有的)
+            html += `<div class="col-span-1 lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6">`;
+
             // 概览卡片
             html += `
-            <div class="col-span-1 lg:col-span-2 glass-card rounded-2xl p-6 mb-6">
+            <div class="glass-card rounded-2xl p-6">
                 <h3 class="text-lg font-bold text-white mb-4">说话人活跃度排行</h3>
                 <div class="space-y-4">
             `;
@@ -1291,7 +1322,7 @@
             sortedStats.forEach(([spk, data], index) => {
                 const style = getSpeakerStyle(spk);
                 const colorName = style.match(/text-(\w+)-400/)[1];
-                const percent = Math.min(100, (data.count / sortedStats[0][1].count) * 100);
+                const percent = Math.min(100, (sortedStats.length > 0 ? (data.count / sortedStats[0][1].count) * 100 : 0));
 
                 html += `
                 <div class="relative">
@@ -1310,7 +1341,7 @@
             });
             html += `</div></div>`;
 
-            // 情感分布 (模拟图表，实际可以用Chart.js)
+            // 情感分布
             html += `
             <div class="glass-card rounded-2xl p-6">
                 <h3 class="text-lg font-bold text-white mb-4">情感分布</h3>
@@ -1335,9 +1366,132 @@
                 `;
             });
 
-            html += `</div></div>`;
+            html += `</div></div></div>`; // Close grid and col-span-2
 
             container.innerHTML = html;
+
+            // 3. 初始化图表
+            requestAnimationFrame(() => {
+                initEmotionChart(items);
+                initHeatmapChart(items);
+            });
+        }
+
+        // ECharts 实例变量
+        let emotionChartInst = null;
+        let heatmapChartInst = null;
+
+        // ECharts 初始化函数
+        function initEmotionChart(items) {
+            const chartDom = document.getElementById('emotion-chart');
+            if (!chartDom) return;
+            if (emotionChartInst) {
+                emotionChartInst.dispose();
+            }
+            emotionChartInst = echarts.init(chartDom, 'dark');
+            const myChart = emotionChartInst;
+
+            // 数据处理：按日期计算情感分数
+            const dailyScores = {};
+            const emotionWeights = { 'happy': 1, 'laughter': 0.8, 'surprised': 0.5, 'neutral': 0, 'sad': -0.8, 'angry': -1, 'fearful': -0.5 };
+
+            items.forEach(item => {
+                const date = (parseFilenameTime(item.filename) || item.created_at).split('T')[0];
+                if (!dailyScores[date]) dailyScores[date] = { score: 0, count: 0 };
+
+                item.segments.forEach(seg => {
+                    const w = emotionWeights[seg.emotion] !== undefined ? emotionWeights[seg.emotion] : 0;
+                    dailyScores[date].score += w;
+                    dailyScores[date].count++;
+                });
+            });
+
+            const dates = Object.keys(dailyScores).sort();
+            const scores = dates.map(d => dailyScores[d].count > 0 ? (dailyScores[d].score / dailyScores[d].count).toFixed(2) : 0);
+
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: dates },
+                yAxis: { type: 'value', min: -1, max: 1 },
+                series: [{
+                    data: scores,
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: { color: '#818cf8' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(129, 140, 248, 0.5)' },
+                            { offset: 1, color: 'rgba(129, 140, 248, 0)' }
+                        ])
+                    }
+                }]
+            };
+            myChart.setOption(option);
+            window.addEventListener('resize', () => myChart.resize());
+        }
+
+        function initHeatmapChart(items) {
+            const chartDom = document.getElementById('heatmap-chart');
+            if (!chartDom) return;
+            if (heatmapChartInst) {
+                heatmapChartInst.dispose();
+            }
+            heatmapChartInst = echarts.init(chartDom, 'dark');
+            const myChart = heatmapChartInst;
+
+            // 数据处理：统计每小时各说话人的发言数
+            // X轴: 小时 (0-23), Y轴: 说话人
+            const hours = Array.from({ length: 24 }, (_, i) => i);
+            const speakers = new Set();
+            const dataMap = {}; // key: "speaker|hour", value: count
+
+            items.forEach(item => {
+                const timeStr = parseFilenameTime(item.filename) || item.created_at;
+                const hour = new Date(timeStr).getHours();
+
+                item.segments.forEach(seg => {
+                    const spk = seg.spk;
+                    speakers.add(spk);
+                    const key = `${spk}|${hour}`;
+                    dataMap[key] = (dataMap[key] || 0) + 1;
+                });
+            });
+
+            const speakerList = Array.from(speakers).sort();
+            const data = [];
+
+            speakerList.forEach((spk, yIndex) => {
+                hours.forEach((h, xIndex) => {
+                    const val = dataMap[`${spk}|${h}`] || 0;
+                    if (val > 0) data.push([xIndex, yIndex, val]);
+                });
+            });
+
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: { position: 'top' },
+                grid: { height: '50%', top: '10%' },
+                xAxis: { type: 'category', data: hours, splitArea: { show: true } },
+                yAxis: { type: 'category', data: speakerList, splitArea: { show: true } },
+                visualMap: {
+                    min: 0,
+                    max: 50, // 假设最大值，可动态计算
+                    calculable: true,
+                    orient: 'horizontal',
+                    left: 'center',
+                    bottom: '15%',
+                    inRange: { color: ['#1f2937', '#6366f1'] }
+                },
+                series: [{
+                    type: 'heatmap',
+                    data: data,
+                    label: { show: true },
+                    emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
+                }]
+            };
+            myChart.setOption(option);
+            window.addEventListener('resize', () => myChart.resize());
         }
 
         function getEmotionIcon(emo) {
