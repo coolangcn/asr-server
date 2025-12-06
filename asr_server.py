@@ -1344,6 +1344,7 @@ def transcribe_audio():
             # logger.info(f"  [VAD 调试] FunASR generate() 原始返回: {json.dumps(res, ensure_ascii=False, indent=2)}")
             full_text = ""
             segments = []
+            processed_segments = []
 
             if res and isinstance(res, list) and len(res) > 0:
                 item = res[0]
