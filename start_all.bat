@@ -22,8 +22,8 @@ start "Web Viewer" D:\AI\asr_env\Scripts\python.exe web_viewer.py
 REM 返回主目录
 cd ..
 
-REM 启动 ASR Server（包含文件监控、数据库保存、LLM 处理）
-start "ASR Server" D:\AI\asr_env\Scripts\python.exe asr_server.py
+REM 启动 ASR Server（包含文件监控、数据库保存、LLM 处理，已添加自动重启能力）
+start "ASR Server" run_asr_server.bat
 
 REM 等待服务启动
 timeout /t 5 /nobreak >nul
