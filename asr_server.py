@@ -88,7 +88,7 @@ class FileMonitorConfig:
 
 # LLM 配置
 class LLMConfig:
-    USE_GEMINI_LLM = True
+    USE_GEMINI_LLM = False
     GEMINI_API_KEY = "cncncncn"
     GEMINI_API_BASE_URL = "https://gl.moco.fun/proxy/gemini"
     GEMINI_MODEL_NAME = "gemini-2.5-flash"
@@ -311,6 +311,9 @@ def generate_conversation_summary(segments, audio_duration):
 
 def call_gemini_api(prompt):
     """调用 Gemini API"""
+    if not LLMConfig.USE_GEMINI_LLM:
+        return None
+        
     try:
         # 检查缓存
         cache_key = hashlib.md5(prompt.encode()).hexdigest()
@@ -407,6 +410,11 @@ def process_llm_batch():
     """批量处理 LLM 任务"""
     global llm_last_batch_time
     
+    if not LLMConfig.USE_GEMINI_LLM:
+        with llm_batch_lock:
+            llm_batch_queue.clear()
+        return
+        
     with llm_batch_lock:
         if not llm_batch_queue:
             return
