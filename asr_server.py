@@ -82,9 +82,10 @@ class Config:
 class FileMonitorConfig:
     SOURCE_DIR = "V:\\Sony-2"
     PROCESSED_DIR = "processed"
+    FAILED_DIR = "failed"
     TRANSCRIPTS_DIR = "transcripts"
     SCAN_INTERVAL = 3  # 秒
-    SUPPORTED_FORMATS = ['.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg']
+    SUPPORTED_FORMATS = ['.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc']
 
 # LLM 配置
 class LLMConfig:
@@ -1717,12 +1718,15 @@ def monitor_files():
     os.makedirs(FileMonitorConfig.SOURCE_DIR, exist_ok=True)
     processed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR)
     os.makedirs(processed_dir, exist_ok=True)
+    failed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.FAILED_DIR)
+    os.makedirs(failed_dir, exist_ok=True)
     
     processed_files = set()  # 记录已处理的文件，避免重复处理
     
     while True:
         try:
             # 扫描源目录
+            logger.info(f"🔍 正在扫描: {FileMonitorConfig.SOURCE_DIR}")
             if not os.path.exists(FileMonitorConfig.SOURCE_DIR):
                 logger.warning(f"⚠️ 源目录不存在: {FileMonitorConfig.SOURCE_DIR}")
                 time.sleep(FileMonitorConfig.SCAN_INTERVAL)
@@ -1795,12 +1799,37 @@ def monitor_files():
                             logger.error(f"❌ 转录失败: {filename} (HTTP {response.status_code})")
                             logger.error(f"   响应: {response.text[:200]}")
                             
+                            # 移动到失败目录
+                            failed_path = os.path.join(failed_dir, filename)
+                            try:
+                                shutil.move(filepath, failed_path)
+                                logger.info(f"🚫 已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{filename}")
+                            except Exception as move_error:
+                                logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
+                            
                     except requests.exceptions.Timeout:
                         logger.error(f"⏱️ 转录超时: {filename}")
+                        # 超时也认为是失败，移动到失败目录
+                        failed_path = os.path.join(failed_dir, filename)
+                        try:
+                            shutil.move(filepath, failed_path)
+                            logger.info(f"🚫 超时已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{filename}")
+                        except Exception as move_error:
+                            logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
+                            
                     except Exception as e:
                         logger.error(f"❌ 处理文件失败: {filename}")
                         logger.error(f"   错误: {str(e)}")
                         logger.error(traceback.format_exc())
+                        
+                        # 其他异常也移动到失败目录
+                        failed_path = os.path.join(failed_dir, filename)
+                        try:
+                            if os.path.exists(filepath):
+                                shutil.move(filepath, failed_path)
+                                logger.info(f"🚫 发生异常已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{filename}")
+                        except Exception as move_error:
+                            logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
             
             # 等待下一次扫描
             time.sleep(FileMonitorConfig.SCAN_INTERVAL)
