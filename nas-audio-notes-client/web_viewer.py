@@ -5,6 +5,8 @@ import os
 import re
 import json
 import sys
+import threading
+import time
 from flask import Flask, render_template, jsonify, request, Response, send_file
 import datetime
 import requests
@@ -73,66 +75,111 @@ def format_timestamp(milliseconds):
     except:
         return "00:00:00.000"
 
-def get_system_status():
-    status = {
-        "asr_server": "unknown",
-        "pending_files": 0,
-        "last_log": "等待日志..."
-    }
-    try:
-        try:
-            requests.get(CONFIG["ASR_API_URL"].replace("/transcribe", "/"), timeout=3)
-            status["asr_server"] = "online"
-        except requests.exceptions.RequestException:
-             status["asr_server"] = "offline"
-    except:
-        status["asr_server"] = "offline"
+# 全局状态缓存
+g_status_cache = {
+    "asr_server": "unknown",
+    "pending_files": 0,
+    "last_log": "等待初始化...",
+    "updated_at": 0
+}
+g_status_lock = threading.Lock()
 
+def read_last_lines(filepath, line_count=20, encoding='utf-8', errors='ignore'):
+    """高效读取文件最后几行"""
+    try:
+        with open(filepath, 'rb') as f:
+            # 移动到文件末尾
+            try:
+                f.seek(-2048, os.SEEK_END) # 假设最后20行大约2KB,可根据实际情况调整
+            except IOError:
+                # 文件太小
+                f.seek(0)
+            
+            lines = f.readlines()
+            decoded_lines = [line.decode(encoding, errors).strip() for line in lines]
+            return decoded_lines[-line_count:]
+    except Exception:
+        return []
+
+def update_system_status():
+    """后台更新系统状态"""
+    global g_status_cache
+    
+    # 1. 检查 ASR Server
+    asr_status = "offline"
+    try:
+        requests.get(CONFIG["ASR_API_URL"].replace("/transcribe", "/"), timeout=2)
+        asr_status = "online"
+    except:
+        pass
+
+    # 2. 检查待处理文件 (可能耗时)
+    pending_count = -1
     try:
         if os.path.exists(CONFIG["SOURCE_DIR"]):
+            # 只计算数量，不获取完整列表，稍微快一点点，但listdir本身在网络驱动器上慢
+            # 优化: 设定一个超时或快速失败机制? 这里暂时保持原逻辑，但因为在后台线程，不会阻塞UI
             files = [f for f in os.listdir(CONFIG["SOURCE_DIR"]) 
                      if f.lower().endswith(('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg'))
-                     and 'TEMP' not in f]  # 排除包含TEMP的文件
-            status["pending_files"] = len(files)
-        else:
-            status["pending_files"] = -1
+                     and 'TEMP' not in f]
+            pending_count = len(files)
     except:
-        status["pending_files"] = -1
+        pass
 
+    # 3. 读取日志
+    last_log = "读取日志失败"
     try:
-        # 优先读取本地目录下的日志，或者配置里的日志
         log_path = CONFIG["LOG_FILE_PATH"]
-        # 如果配置的日志不存在，尝试在当前目录找
         if not os.path.exists(log_path):
              log_path = "transcribe.log"
 
         if os.path.exists(log_path):
-            # 读取最后 20 行
-            try:
-                if sys.platform == "win32":
-                    # On Windows, read file directly
-                    with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        lines = f.readlines()
-                        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        status["last_log"] = f"[{current_time}] " + "".join(lines[-20:])
+            lines = read_last_lines(log_path, 20)
+            # 去掉每行的时间戳和日志级别，只保留消息内容
+            # 格式: "2025-12-22 09:26:34,414 | INFO | 消息内容"
+            cleaned_lines = []
+            for line in lines:
+                # 尝试分割日志行，提取消息部分
+                parts = line.split(' | ', 2)  # 最多分割2次
+                if len(parts) >= 3:
+                    # 第三部分是消息内容
+                    cleaned_lines.append(parts[2])
                 else:
-                    # On other systems, use tail command
-                    cmd = f"tail -n 20 {log_path}"
-                    result = subprocess.check_output(cmd, shell=True).decode('utf-8')
-                    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    status["last_log"] = f"[{current_time}] " + result
-            except Exception:
-                # Fallback for any error (e.g., tail not found even on non-Windows)
-                with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = f.readlines()
-                    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    status["last_log"] = f"[{current_time}] " + "".join(lines[-20:])
+                    # 如果格式不匹配，保留原始行
+                    cleaned_lines.append(line)
+            last_log = "\n".join(cleaned_lines)
         else:
-            status["last_log"] = f"找不到日志文件: {log_path}"
+            last_log = f"找不到日志文件: {log_path}"
     except Exception as e:
-        status["last_log"] = f"读取日志失败: {e}"
+        last_log = f"读取日志异常: {str(e)}"
 
-    return status
+    # 更新缓存
+    with g_status_lock:
+        g_status_cache = {
+            "asr_server": asr_status,
+            "pending_files": pending_count,
+            "last_log": last_log,
+            "updated_at": time.time()
+        }
+
+def status_monitor_loop():
+    """状态监控循环"""
+    print("[StatusMonitor] 启动后台状态监控线程...")
+    while True:
+        try:
+            update_system_status()
+        except Exception as e:
+            print(f"[StatusMonitor] 更新失败: {e}")
+        time.sleep(3) # 每3秒更新一次
+
+def start_status_monitor():
+    thread = threading.Thread(target=status_monitor_loop, daemon=True)
+    thread.start()
+
+def get_system_status():
+    """获取缓存的系统状态"""
+    with g_status_lock:
+        return g_status_cache.copy()
 
 def get_transcripts(offset=0, limit=20):
     """获取转录记录（使用PostgreSQL，支持分页）"""
@@ -655,6 +702,9 @@ if __name__ == "__main__":
         args = parse_args()
         update_config(args)
         
+        # 启动后台状态监控
+        start_status_monitor()
+
         print(f"[Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}", flush=True)
         app.run(host='0.0.0.0', port=CONFIG["WEB_PORT"], debug=False)
     except BaseException as e:
