@@ -1767,6 +1767,23 @@ def monitor_files():
                 
                 for filename, filepath in files:
                     try:
+                        # 检查录音时间,跳过凌晨1点到早上6点之间的录音
+                        recording_time = parse_recording_time(filename)
+                        if recording_time:
+                            hour = recording_time.hour
+                            if 1 <= hour < 6:
+                                logger.info(f"⏭️ 跳过凌晨录音: {filename} (录音时间: {recording_time.strftime('%Y-%m-%d %H:%M:%S')})")
+                                # 直接移动到已处理目录,不进行转录
+                                processed_path = os.path.join(processed_dir, filename)
+                                try:
+                                    shutil.move(filepath, processed_path)
+                                    logger.info(f"📦 已移动到: {FileMonitorConfig.PROCESSED_DIR}/{filename}")
+                                except Exception as move_error:
+                                    logger.warning(f"⚠️ 移动文件失败: {move_error}")
+                                # 标记为已处理
+                                processed_files.add(filename)
+                                continue
+                        
                         logger.info(f"📤 开始处理: {filename}")
                         
                         # 调用本地转录API
