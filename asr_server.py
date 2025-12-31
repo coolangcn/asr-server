@@ -49,20 +49,20 @@ class Config:
         "eres2net_large": {
             "id": "iic/speech_eres2net_large_200k_sv_zh-cn_16k-common",
             "rev": "v1.0.0",
-            "threshold": 0.50,  # 提高阈值以提高准确率
-            "gap": 0.08         # 降低置信度间隔要求
+            "threshold": 0.60,  # 提高阈值以减少误识别
+            "gap": 0.10         # 提高置信度间隔要求以增强区分度
         },
         "rdino_ecapa": {
             "id": "iic/speech_rdino_ecapa_tdnn_sv_zh-cn_cnceleb_16k",
             "rev": "v1.0.0",
-            "threshold": 0.50,  # 提高阈值以提高准确率
-            "gap": 0.08         # 降低置信度间隔要求
+            "threshold": 0.60,  # 提高阈值以减少误识别
+            "gap": 0.10         # 提高置信度间隔要求以增强区分度
         },
         "camplusplus": {
             "id": "iic/speech_campplus_sv_zh-cn_16k-common",
             "rev": "v1.0.0",
-            "threshold": 0.50,  # 提高阈值以提高准确率
-            "gap": 0.08         # 降低置信度间隔要求
+            "threshold": 0.60,  # 提高阈值以减少误识别
+            "gap": 0.10         # 提高置信度间隔要求以增强区分度
         }
     }
     
