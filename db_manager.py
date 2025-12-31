@@ -6,7 +6,7 @@ from psycopg2 import pool
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 
 # PostgreSQL 连接配置
@@ -18,6 +18,9 @@ DATABASE_URL = os.getenv(
 
 # 连接池
 connection_pool = None
+
+# 东八区时区 (UTC+8)
+UTC_PLUS_8 = timezone(timedelta(hours=8))
 
 def init_pool():
     """初始化数据库连接池"""
@@ -156,10 +159,13 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         )
         deleted_count = cursor.rowcount
         
+        # 获取东八区当前时间
+        created_at = datetime.now(UTC_PLUS_8)
+        
         # 插入新记录
         cursor.execute(
-            "INSERT INTO transcriptions (filename, full_text, segments_json, recording_time, summary_json) VALUES (%s, %s, %s, %s, %s)",
-            (filename, full_text, segments_json, recording_time, summary_json)
+            "INSERT INTO transcriptions (filename, created_at, full_text, segments_json, recording_time, summary_json) VALUES (%s, %s, %s, %s, %s, %s)",
+            (filename, created_at, full_text, segments_json, recording_time, summary_json)
         )
         
         conn.commit()
