@@ -21,8 +21,31 @@ import hashlib
 from datetime import datetime
 
 # =================【 配置 】=================
+import platform
+
+def get_device():
+    """自动检测可用设备: CUDA (NVIDIA GPU) → MPS (Apple Silicon) → CPU"""
+    if torch.cuda.is_available():
+        return "cuda:0"
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return "mps"
+    else:
+        return "cpu"
+
+def get_whisper_model():
+    """根据设备选择合适的 Whisper 模型大小
+    
+    - CUDA: large-v3 (~10GB VRAM)
+    - MPS/CPU: medium (~5GB RAM) 避免内存溢出
+    """
+    if torch.cuda.is_available():
+        return "large-v3"
+    else:
+        return "medium"
+
 class Config:
-    DEVICE = "cuda:0"
+    DEVICE = get_device()
+    WHISPER_MODEL = get_whisper_model()
     HOST = '0.0.0.0'
     PORT = 5008
     SPEAKER_DB_FILE = "speaker_db_multi.json"    
@@ -80,7 +103,11 @@ class Config:
 
 # 文件监控配置
 class FileMonitorConfig:
-    SOURCE_DIR = "V:\\Sony-2"
+    # 跨平台路径处理: Windows 使用盘符路径, macOS 使用 /Volumes 挂载路径
+    if platform.system() == "Darwin":
+        SOURCE_DIR = "/Volumes/Sony-2"  # macOS 挂载路径
+    else:
+        SOURCE_DIR = "V:\\Sony-2"  # Windows 路径
     PROCESSED_DIR = "processed"
     FAILED_DIR = "failed"
     TRANSCRIPTS_DIR = "transcripts"
@@ -250,11 +277,11 @@ def load_models():
 
     # 4. 加载 Whisper 模型 (可选)
     if Config.ENABLE_WHISPER_COMPARISON:
-        print(f"🎤 加载 Whisper large-v3 模型 (最新最佳版本,需要~10GB显存)...")
+        print(f"🎤 加载 Whisper {Config.WHISPER_MODEL} 模型...")
 
         try:
-            whisper_model = whisper.load_model("large-v3", device=Config.DEVICE.split(':')[0])
-            print("✅ Whisper large-v3 模型加载完成")
+            whisper_model = whisper.load_model(Config.WHISPER_MODEL, device=Config.DEVICE.split(':')[0])
+            print(f"✅ Whisper {Config.WHISPER_MODEL} 模型加载完成")
 
         except Exception as e:
             logger.warning(f"⚠️ Whisper模型加载失败: {e}，将禁用Whisper对比功能")
