@@ -32,6 +32,13 @@ def get_device():
     else:
         return "cpu"
 
+def get_modelscope_device():
+    """ModelScope pipeline 设备 (不支持 MPS，仅支持 cuda/cpu)"""
+    if torch.cuda.is_available():
+        return "cuda"
+    else:
+        return "cpu"
+
 def get_whisper_model():
     """根据设备选择合适的 Whisper 模型大小
     
@@ -45,6 +52,7 @@ def get_whisper_model():
 
 class Config:
     DEVICE = get_device()
+    MODELSCOPE_DEVICE = get_modelscope_device()
     WHISPER_MODEL = get_whisper_model()
     HOST = '0.0.0.0'
     PORT = 5008
@@ -271,7 +279,7 @@ def load_models():
             task=Tasks.speaker_verification,
             model=conf['id'], 
             model_revision=conf['rev'], 
-            device=Config.DEVICE.split(':')[0]
+            device=Config.MODELSCOPE_DEVICE
         )
     print(f"✅ 服务就绪 | ASR: SenseVoice | SV: {list(sv_pipelines.keys())}\n")
 
@@ -1741,8 +1749,9 @@ def monitor_files():
     logger.info(f"   扫描间隔: {FileMonitorConfig.SCAN_INTERVAL}秒")
     logger.info(f"   支持格式: {', '.join(FileMonitorConfig.SUPPORTED_FORMATS)}")
     
-    # 确保必要的目录存在
-    os.makedirs(FileMonitorConfig.SOURCE_DIR, exist_ok=True)
+    # 确保必要的目录存在 (跳过已存在的挂载点)
+    if not os.path.exists(FileMonitorConfig.SOURCE_DIR):
+        os.makedirs(FileMonitorConfig.SOURCE_DIR, exist_ok=True)
     processed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR)
     os.makedirs(processed_dir, exist_ok=True)
     failed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.FAILED_DIR)
