@@ -1439,7 +1439,16 @@ def transcribe_audio():
                             # 使用原始文件名（不含扩展名和_TEMP后缀）作为子目录
                             original_filename = file.filename.replace('_TEMP', '')  # 移除_TEMP后缀
                             base_filename = os.path.splitext(original_filename)[0]
-                            segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, "audio_segments", base_filename)
+                            
+                            # 从文件名解析日期，或使用当前日期
+                            date_str = datetime.now().strftime("%Y-%m-%d")
+                            # 尝试从文件名提取日期 (格式: YYYY-MM-DD 或 YYYYMMDD 或 recording-YYYYMMDD)
+                            date_match = re.search(r'(\d{4})-?(\d{2})-?(\d{2})', base_filename)
+                            if date_match:
+                                date_str = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
+                            
+                            # 按日期分类的目录结构: audio_segments/YYYY-MM-DD/filename/
+                            segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, "audio_segments", date_str, base_filename)
                             os.makedirs(segments_dir, exist_ok=True)
                             
                             # 临时文件用于处理
@@ -1454,8 +1463,8 @@ def transcribe_audio():
                                 # 复制到持久化目录
                                 try:
                                     shutil.copy2(seg_wav_temp, seg_wav_persistent)
-                                    # 只有成功复制后才保存路径
-                                    segment_audio_path = f"/audio_segments/{base_filename}/{seg_filename}"
+                                    # 只有成功复制后才保存路径 (包含日期子目录)
+                                    segment_audio_path = f"/audio_segments/{date_str}/{base_filename}/{seg_filename}"
                                     logger.debug(f"      [音频片段] 已保存: {seg_wav_persistent}")
                                 except Exception as copy_error:
                                     logger.error(f"      [音频片段] 复制失败: {copy_error}")
@@ -1809,8 +1818,11 @@ def monitor_files():
                             hour = recording_time.hour
                             if 1 <= hour < 6:
                                 logger.info(f"⏭️ 跳过凌晨录音: {filename} (录音时间: {recording_time.strftime('%Y-%m-%d %H:%M:%S')})")
-                                # 直接移动到已处理目录,不进行转录
-                                processed_path = os.path.join(processed_dir, filename)
+                                # 直接移动到已处理目录,不进行转录 (按日期分类)
+                                date_subdir = recording_time.strftime("%Y-%m-%d")
+                                processed_date_dir = os.path.join(processed_dir, date_subdir)
+                                os.makedirs(processed_date_dir, exist_ok=True)
+                                processed_path = os.path.join(processed_date_dir, filename)
                                 try:
                                     shutil.move(filepath, processed_path)
                                     logger.info(f"📦 已移动到: {FileMonitorConfig.PROCESSED_DIR}/{filename}")
@@ -1837,11 +1849,14 @@ def monitor_files():
                             logger.info(f"   文本长度: {len(result.get('full_text', ''))} 字")
                             logger.info(f"   分段数: {len(result.get('segments', []))}")
                             
-                            # 移动到已处理目录
-                            processed_path = os.path.join(processed_dir, filename)
+                            # 移动到已处理目录 (按日期分类)
+                            date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
+                            processed_date_dir = os.path.join(processed_dir, date_subdir)
+                            os.makedirs(processed_date_dir, exist_ok=True)
+                            processed_path = os.path.join(processed_date_dir, filename)
                             try:
                                 shutil.move(filepath, processed_path)
-                                logger.info(f"📦 已移动到: {FileMonitorConfig.PROCESSED_DIR}/{filename}")
+                                logger.info(f"📦 已移动到: {FileMonitorConfig.PROCESSED_DIR}/{date_subdir}/{filename}")
                             except Exception as move_error:
                                 logger.warning(f"⚠️ 移动文件失败: {move_error}")
                             
@@ -1852,8 +1867,11 @@ def monitor_files():
                             logger.error(f"❌ 转录失败: {filename} (HTTP {response.status_code})")
                             logger.error(f"   响应: {response.text[:200]}")
                             
-                            # 移动到失败目录
-                            failed_path = os.path.join(failed_dir, filename)
+                            # 移动到失败目录 (按日期分类)
+                            date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
+                            failed_date_dir = os.path.join(failed_dir, date_subdir)
+                            os.makedirs(failed_date_dir, exist_ok=True)
+                            failed_path = os.path.join(failed_date_dir, filename)
                             try:
                                 shutil.move(filepath, failed_path)
                                 logger.info(f"🚫 已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{filename}")
@@ -1862,11 +1880,14 @@ def monitor_files():
                             
                     except requests.exceptions.Timeout:
                         logger.error(f"⏱️ 转录超时: {filename}")
-                        # 超时也认为是失败，移动到失败目录
-                        failed_path = os.path.join(failed_dir, filename)
+                        # 超时也认为是失败，移动到失败目录 (按日期分类)
+                        date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
+                        failed_date_dir = os.path.join(failed_dir, date_subdir)
+                        os.makedirs(failed_date_dir, exist_ok=True)
+                        failed_path = os.path.join(failed_date_dir, filename)
                         try:
                             shutil.move(filepath, failed_path)
-                            logger.info(f"🚫 超时已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{filename}")
+                            logger.info(f"🚫 超时已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{date_subdir}/{filename}")
                         except Exception as move_error:
                             logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
                             
@@ -1875,12 +1896,15 @@ def monitor_files():
                         logger.error(f"   错误: {str(e)}")
                         logger.error(traceback.format_exc())
                         
-                        # 其他异常也移动到失败目录
-                        failed_path = os.path.join(failed_dir, filename)
+                        # 其他异常也移动到失败目录 (按日期分类)
+                        date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
+                        failed_date_dir = os.path.join(failed_dir, date_subdir)
+                        os.makedirs(failed_date_dir, exist_ok=True)
+                        failed_path = os.path.join(failed_date_dir, filename)
                         try:
                             if os.path.exists(filepath):
                                 shutil.move(filepath, failed_path)
-                                logger.info(f"🚫 发生异常已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{filename}")
+                                logger.info(f"🚫 发生异常已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{date_subdir}/{filename}")
                         except Exception as move_error:
                             logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
             
