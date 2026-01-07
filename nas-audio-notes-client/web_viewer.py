@@ -18,9 +18,18 @@ from db_manager import init_pool, get_transcripts as db_get_transcripts
 # 获取脚本自身所在的目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DEFAULT_SOURCE_DIR = "V:\\Sony-2"
+# 跨平台路径配置
+import platform
+if platform.system() == "Darwin":
+    # macOS 路径 - 与 asr_server.py 的 FileMonitorConfig.SOURCE_DIR 保持一致
+    DEFAULT_SOURCE_DIR = "/Volumes/Sony-2"
+    DEFAULT_LOG_FILE_PATH = os.path.expanduser("~/asr-server/log/asr-server.log")
+else:
+    # Windows 路径
+    DEFAULT_SOURCE_DIR = "V:\\Sony-2"
+    DEFAULT_LOG_FILE_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "log", "asr-server.log")
+
 DEFAULT_ASR_API_URL = "http://localhost:5008/transcribe"
-DEFAULT_LOG_FILE_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "log", "asr-server.log")
 DEFAULT_WEB_PORT = 5009 
 
 # 全局配置变量
@@ -29,7 +38,8 @@ CONFIG = {
     "ASR_API_URL": DEFAULT_ASR_API_URL,
     "LOG_FILE_PATH": DEFAULT_LOG_FILE_PATH,
     "WEB_PORT": DEFAULT_WEB_PORT,
-    "DATABASE_URL": "postgresql://postgres:difyai123456@192.168.1.188:5432/postgres"
+    "DATABASE_URL": "postgresql://cnncn:74123698cN@cncn.postgres.database.azure.com:5432/postgres?sslmode=require"
+
 }
 
 # 从JSON文件加载配置
@@ -116,22 +126,26 @@ def update_system_status():
     # 2. 检查待处理文件 (可能耗时)
     pending_count = -1
     try:
-        if os.path.exists(CONFIG["SOURCE_DIR"]):
-            # 只计算数量，不获取完整列表，稍微快一点点，但listdir本身在网络驱动器上慢
-            # 优化: 设定一个超时或快速失败机制? 这里暂时保持原逻辑，但因为在后台线程，不会阻塞UI
-            files = [f for f in os.listdir(CONFIG["SOURCE_DIR"]) 
+        source_dir = CONFIG["SOURCE_DIR"]
+        if os.path.exists(source_dir) and os.path.isdir(source_dir):
+            files = [f for f in os.listdir(source_dir) 
                      if f.lower().endswith(('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg'))
                      and 'TEMP' not in f]
             pending_count = len(files)
-    except:
-        pass
+        else:
+            # 目录不存在时显示0而不是-1
+            pending_count = 0
+    except Exception as e:
+        print(f"[StatusMonitor] 检查待处理文件失败: {e}")
+        pending_count = -1
 
     # 3. 读取日志
     last_log = "读取日志失败"
     try:
         log_path = CONFIG["LOG_FILE_PATH"]
         if not os.path.exists(log_path):
-             log_path = "transcribe.log"
+            # macOS 备用路径
+            log_path = os.path.expanduser("~/asr-server/log/asr-server.log")
 
         if os.path.exists(log_path):
             lines = read_last_lines(log_path, 20)
@@ -664,15 +678,20 @@ def serve_long_sentence_audio(filename):
     try:
         # Long sentences are saved in the ASR server directory
         asr_server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        long_sentences_dir = os.path.join(asr_server_dir, "asr-server", "long_sentences")
+        long_sentences_dir = os.path.join(asr_server_dir, "long_sentences")
         
         # Fallback: try relative path from current directory
         if not os.path.exists(long_sentences_dir):
             long_sentences_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "long_sentences")
         
-        # Another fallback: absolute path
+        # Platform-specific fallbacks
         if not os.path.exists(long_sentences_dir):
-            long_sentences_dir = r"d:\AI\asr-server\long_sentences"
+            if platform.system() == "Darwin":
+                # macOS 路径
+                long_sentences_dir = os.path.expanduser("~/asr-server/long_sentences")
+            else:
+                # Windows 路径
+                long_sentences_dir = r"d:\AI\asr-server\long_sentences"
         
         full_path = os.path.join(long_sentences_dir, filename)
         

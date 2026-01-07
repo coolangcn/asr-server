@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 # PostgreSQL 连接配置
-DATABASE_URL = "postgresql://postgres:difyai123456@192.168.1.188:5433/postgres"
+DATABASE_URL = "postgresql://cnncn:74123698cN@cncn.postgres.database.azure.com:5432/postgres?sslmode=require"
 
 # 连接池
 connection_pool = None
