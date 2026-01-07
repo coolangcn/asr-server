@@ -112,10 +112,8 @@ class Config:
 # 文件监控配置
 class FileMonitorConfig:
     # 跨平台路径处理: Windows 使用盘符路径, macOS 使用 /Volumes 挂载路径
-    if platform.system() == "Darwin":
-        SOURCE_DIR = "/Volumes/Sony-2"  # macOS 挂载路径
-    else:
-        SOURCE_DIR = "V:\\Sony-2"  # Windows 路径
+    SOURCE_DIR = "/Volumes/download/records/Sony-2"  # macOS SMB挂载路径
+
     PROCESSED_DIR = "processed"
     FAILED_DIR = "failed"
     TRANSCRIPTS_DIR = "transcripts"

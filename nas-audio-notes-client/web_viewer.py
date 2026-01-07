@@ -21,8 +21,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 跨平台路径配置
 import platform
 if platform.system() == "Darwin":
-    # macOS 路径 - 与 asr_server.py 的 FileMonitorConfig.SOURCE_DIR 保持一致
-    DEFAULT_SOURCE_DIR = "/Volumes/Sony-2"
+    # macOS 路径 - 与实际 SMB 挂载路径保持一致
+    DEFAULT_SOURCE_DIR = "/Volumes/download/records/Sony-2"
     DEFAULT_LOG_FILE_PATH = os.path.expanduser("~/asr-server/log/asr-server.log")
 else:
     # Windows 路径
@@ -661,12 +661,18 @@ def serve_audio_segment(filepath):
         segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")
         full_path = os.path.join(segments_dir, filepath)
         
+        # 调试日志
+        print(f"[Audio] 请求: {filepath}")
+        print(f"[Audio] SOURCE_DIR: {CONFIG['SOURCE_DIR']}")
+        print(f"[Audio] 完整路径: {full_path}")
+        print(f"[Audio] 文件存在: {os.path.exists(full_path)}")
+        
         # 安全检查：确保路径在segments目录内
         if not os.path.abspath(full_path).startswith(os.path.abspath(segments_dir)):
             return jsonify({"error": "Invalid path"}), 403
         
         if not os.path.exists(full_path):
-            return jsonify({"error": "Audio segment not found"}), 404
+            return jsonify({"error": f"Audio segment not found: {full_path}"}), 404
         
         return send_file(full_path, mimetype='audio/wav')
     except Exception as e:
