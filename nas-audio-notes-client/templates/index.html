@@ -694,9 +694,17 @@
 
         function formatTime(isoString) {
             if (!isoString) return '';
+            // 将 ISO 字符串解析为日期对象
             const date = new Date(isoString);
+            // 如果日期无效，返回空字符串
+            if (isNaN(date.getTime())) return '';
+            // 使用东八区 (UTC+8) 格式化时间
             return date.toLocaleString('zh-CN', {
-                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                timeZone: 'Asia/Shanghai',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
             });
         }
 
@@ -725,7 +733,9 @@
         function processStats(items) {
             // 简单的数据预处理
             return items.map(item => {
-                item.date_group = item.created_at ? item.created_at.split('T')[0] : 'Unknown';
+                // 优先使用 recording_time，如果没有则使用 created_at
+                const timeStr = item.recording_time || item.created_at;
+                item.date_group = timeStr ? timeStr.split('T')[0] : 'Unknown';
                 return item;
             });
         }
@@ -779,7 +789,7 @@
                             </div>
                             <div>
                                 <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
+                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.recording_time || item.created_at)}</span>
                             </div>
                         </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
@@ -836,8 +846,8 @@
             Object.keys(allGroups).sort().reverse().forEach(date => {
                 // 对同一天内的记录按文件名时间严格倒序排列(最新的在上面)
                 allGroups[date].sort((a, b) => {
-                    const timeA = parseFilenameTime(a.filename) || a.created_at;
-                    const timeB = parseFilenameTime(b.filename) || b.created_at;
+                    const timeA = parseFilenameTime(a.filename) || a.recording_time || a.created_at;
+                    const timeB = parseFilenameTime(b.filename) || b.recording_time || b.created_at;
                     return new Date(timeB) - new Date(timeA);  // 倒序: 新 - 旧
                 });
 
@@ -852,8 +862,8 @@
                 </div>`;
 
                 allGroups[date].forEach(item => {
-                    // 文件头 - 添加data-file-time属性用于时间轴
-                    const fileTime = parseFilenameTime(item.filename) || item.created_at;
+                    // 文件头 - 添加 data-file-time 属性用于时间轴
+                    const fileTime = parseFilenameTime(item.filename) || item.recording_time || item.created_at;
                     const fileDate = new Date(fileTime);
                     const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -889,7 +899,7 @@
                                 ${showAvatar ? `
                                 <div class="flex items-baseline gap-2 mb-1">
                                     <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
-                                    <span class="text-[10px] text-gray-600">${formatTime(item.created_at)}</span>
+                                    <span class="text-[10px] text-gray-600">${formatTime(item.recording_time || item.created_at)}</span>
                                 </div>
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
@@ -977,7 +987,7 @@
                             </div>
                             <div>
                                 <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.created_at)}</span>
+                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.recording_time || item.created_at)}</span>
                             </div>
                         </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
@@ -1021,8 +1031,8 @@
 
                 // 对同一天内的记录按文件名时间严格倒序排列
                 groups[date].sort((a, b) => {
-                    const timeA = parseFilenameTime(a.filename) || a.created_at;
-                    const timeB = parseFilenameTime(b.filename) || b.created_at;
+                    const timeA = parseFilenameTime(a.filename) || a.recording_time || a.created_at;
+                    const timeB = parseFilenameTime(b.filename) || b.recording_time || b.created_at;
                     return new Date(timeB) - new Date(timeA);
                 });
 
@@ -1040,7 +1050,7 @@
                 }
 
                 groups[date].forEach(item => {
-                    const fileTime = parseFilenameTime(item.filename) || item.created_at;
+                    const fileTime = parseFilenameTime(item.filename) || item.recording_time || item.created_at;
                     const fileDate = new Date(fileTime);
                     const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -1073,7 +1083,7 @@
                                 ${showAvatar ? `
                                 <div class="flex items-baseline gap-2 mb-1">
                                     <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
-                                    <span class="text-[10px] text-gray-600">${formatTime(item.created_at)}</span>
+                                    <span class="text-[10px] text-gray-600">${formatTime(item.recording_time || item.created_at)}</span>
                                 </div>
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
@@ -1397,7 +1407,7 @@
             const emotionWeights = { 'happy': 1, 'laughter': 0.8, 'surprised': 0.5, 'neutral': 0, 'sad': -0.8, 'angry': -1, 'fearful': -0.5 };
 
             items.forEach(item => {
-                const date = (parseFilenameTime(item.filename) || item.created_at).split('T')[0];
+                const date = (parseFilenameTime(item.filename) || item.recording_time || item.created_at).split('T')[0];
                 if (!dailyScores[date]) dailyScores[date] = { score: 0, count: 0 };
 
                 item.segments.forEach(seg => {
@@ -1448,7 +1458,7 @@
             const dataMap = {}; // key: "speaker|hour", value: count
 
             items.forEach(item => {
-                const timeStr = parseFilenameTime(item.filename) || item.created_at;
+                const timeStr = parseFilenameTime(item.filename) || item.recording_time || item.created_at;
                 const hour = new Date(timeStr).getHours();
 
                 item.segments.forEach(seg => {
