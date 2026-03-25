@@ -19,6 +19,7 @@ import whisper
 import requests
 import hashlib
 from datetime import datetime
+from email_utils import send_cry_alert_email   # 增加邮件通知支持
 
 # =================【 配置 】=================
 import platform
@@ -122,10 +123,10 @@ class FileMonitorConfig:
 
 # LLM 配置
 class LLMConfig:
-    USE_GEMINI_LLM = False
-    GEMINI_API_KEY = "cncncncn"
-    GEMINI_API_BASE_URL = "https://gl.moco.fun/proxy/gemini"
-    GEMINI_MODEL_NAME = "gemini-2.5-flash"
+    USE_GEMINI_LLM = True
+    GEMINI_API_KEY = "AIzaSyDxnEpT5mIEiGhwR7xeAmUBpB2o45hW_00"
+    GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com"
+    GEMINI_MODEL_NAME = "gemini-2.5-pro"
     
     # 批量处理配置
     LLM_BATCH_MODE = True
@@ -241,6 +242,13 @@ llm_batch_lock = threading.Lock()
 llm_last_batch_time = time.time()
 llm_cache = {}  # 缓存 LLM 响应
 llm_cache_lock = threading.Lock()
+# =========================================================
+
+# =================【 哭声事件冷却机制 】=================
+# 同一哭闹事件窗口内（CRY_COOLDOWN_SEC 秒）只触发一次 Gemini 分析
+CRY_COOLDOWN_SEC = 600  # 10 分钟内视为同一哭闹事件，不重复分析
+_last_cry_trigger_time = 0.0   # 上次触发 Gemini 分析的时间戳
+_cry_cooldown_lock = threading.Lock()
 # =========================================================
 
 # =================== 模型加载 ===================
@@ -384,6 +392,151 @@ def call_gemini_api(prompt):
     except Exception as e:
         logger.error(f"  [LLM] API 调用失败: {e}")
         return None
+
+def call_gemini_audio_api(audio_paths, prompt):
+    """调用 Gemini API 并上传一个或多个音频(支持上下文合并)"""
+    import base64
+    if not LLMConfig.USE_GEMINI_LLM:
+        return None
+        
+    try:
+        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/{LLMConfig.GEMINI_MODEL_NAME}:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": LLMConfig.GEMINI_API_KEY
+        }
+        
+        parts_list = [{"text": prompt}]
+        
+        if isinstance(audio_paths, str):
+            audio_paths = [audio_paths]
+            
+        total_size = 0
+        MAX_INLINE_SIZE = 15 * 1024 * 1024 # 防止超出 Gemini Inline Base64 限制 (20MB)
+        
+        for path in audio_paths:
+            if not os.path.exists(path):
+                continue
+            file_size = os.path.getsize(path)
+            if total_size + file_size > MAX_INLINE_SIZE:
+                logger.warning(f"  [BabyCry] 上下文音频片段过大，截断。已加载: {total_size/1024/1024:.1f}MB")
+                break
+                
+            with open(path, "rb") as f:
+                audio_data = base64.b64encode(f.read()).decode("utf-8")
+                
+            ext = os.path.splitext(path)[1].lower()
+            mime_type = "audio/wav" if ext == ".wav" else "audio/m4a"
+            parts_list.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": audio_data
+                }
+            })
+            total_size += file_size
+
+        if len(parts_list) == 1:
+            return None # 没有任何有效音频
+            
+        data = {
+            "contents": [{
+                "parts": parts_list
+            }],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 4096}
+        }
+        
+        response = requests.post(url, headers=headers, json=data, timeout=LLMConfig.LLM_REQUEST_TIMEOUT + 40)
+        
+        try:
+            result = response.json()
+        except:
+            logger.error(f"  [BabyCry LLM] 返回非JSON数据: {response.text}")
+            return None
+
+        if not response.ok:
+            logger.error(f"  [BabyCry LLM] API HTTP 错误 {response.status_code}: {result}")
+            return None
+            
+        if 'candidates' in result and len(result['candidates']) > 0:
+            content = result['candidates'][0].get('content', {})
+            if 'parts' in content and len(content['parts']) > 0:
+                return content['parts'][0].get('text', '')
+            elif result['candidates'][0].get('finishReason') == 'MAX_TOKENS':
+                logger.error(f"  [BabyCry LLM] 生成 Token 超限 (通常由于思考模式过长): {result}")
+                return None
+            else:
+                logger.error(f"  [BabyCry LLM] 安全拦截或空回复: {result}")
+                return None
+        else:
+            logger.error(f"  [BabyCry LLM] API 返回异常结构: {result}")
+            return None
+    except Exception as e:
+        logger.error(f"  [BabyCry LLM] 发送请求异常: {e}")
+        return None
+
+def process_baby_cry_async(filename, audio_path, start_time, end_time):
+    """异步处理宝宝哭声分析，支持加载前后5分钟录音作为上下文"""
+    import time, re, json
+    time.sleep(1) # 等待文件落盘
+    if not os.path.exists(audio_path):
+        return None, None
+        
+    logger.info(f"👶 [BabyCry] 开始收集上下文音频并发送分析... ({start_time}ms - {end_time}ms)")
+    
+    # 搜集前后 5 分钟 (300秒) 的同目录相关录音
+    audio_paths_to_send = []
+    context_files_before = []
+    context_files_after = []
+    
+    from db_manager import parse_recording_time
+    record_dt = parse_recording_time(filename)
+    
+    if record_dt:
+        date_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR, record_dt.strftime("%Y-%m-%d"))
+        if os.path.exists(date_dir):
+            for f in os.listdir(date_dir):
+                if f.endswith(tuple(FileMonitorConfig.SUPPORTED_FORMATS)):
+                    f_dt = parse_recording_time(f)
+                    if f_dt:
+                        diff = (f_dt - record_dt).total_seconds()
+                        if -300 <= diff < 0: # 前5分钟内
+                            context_files_before.append((f_dt, os.path.join(date_dir, f)))
+                        elif 0 < diff <= 300: # 后5分钟内
+                            context_files_after.append((f_dt, os.path.join(date_dir, f)))
+                            
+        context_files_before.sort(key=lambda x: x[0])
+        context_files_after.sort(key=lambda x: x[0])
+        
+        audio_paths_to_send.extend([x[1] for x in context_files_before])
+        audio_paths_to_send.append(audio_path) # 核心哭声片段放在中间
+        audio_paths_to_send.extend([x[1] for x in context_files_after])
+    else:
+        # 如果无法解析时间，仅发送自身
+        audio_paths_to_send.append(audio_path)
+    
+    context_len = len(audio_paths_to_send) - 1
+    logger.info(f"👶 [BabyCry] 收集完毕，共附带 {context_len} 个相邻时段记录作为多模态上下文...")
+    
+    prompt = "以下是多段连续的录音（时间顺序排列），其中包含了两岁半宝宝的哭泣声（位于中间的某段）。请结合完整的上下文音频（前后高达5分钟的情境），综合推理宝宝在这段时间哭泣的真正原因（如困倦Sleepy、饥饿Hungry、情绪发泄Frustration、疼痛Pain、要求未被满足等），并给出针对此时情境的安抚建议。请严格按如下JSON格式返回：{\"category\": \"核心原因简短分类(如：困倦/饥饿/疼痛/情绪等)\", \"reason\": \"结合上下文的深度分析原因\", \"advice\": \"针对此时情境的安抚建议\"}"
+    response_text = call_gemini_audio_api(audio_paths_to_send, prompt)
+    
+    if not response_text:
+        return None, None
+        
+    try:
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group())
+            category = result.get("category", "未知")
+            reason = result.get("reason", "未知")
+            advice = result.get("advice", "无")
+            from db_manager import save_cry_analysis
+            save_cry_analysis(filename, start_time/1000.0, end_time/1000.0, reason, advice, reason_category=category, event_files=audio_paths_to_send)
+            logger.info(f"👶 [宝宝哭声深度分析] 分类: {category}, 原因: {reason[:50]}...")
+            return reason, advice
+    except Exception as e:
+        logger.error(f"  [BabyCry 解析错误] {e}")
+    return None, None
 
 def extract_conversation_topics(full_text, segments):
     """提取对话主题"""
@@ -764,7 +917,7 @@ def extract_embedding_from_file(sv_pipe, wav_path):
         return None
 
 # =================== 多模型交叉验证 ===================
-def identify_speaker_fusion(segment_path):
+def identify_speaker_fusion(segment_path, is_cry=False):
     if not speaker_db: 
         logger.info("🤷‍♂️ 声纹数据库为空，无法进行识别")
         return None, 0.0, []
@@ -794,6 +947,14 @@ def identify_speaker_fusion(segment_path):
             # 使用平均嵌入进行比较
             if "avg_embeddings" not in speaker_data or model_name not in speaker_data["avg_embeddings"]: 
                 continue
+            
+            # --- 状态联动优化 (Identity-State Locking) ---
+            # 如果不是哭声，但当前对比的是专门的哭声声纹 "Baby"，则跳过，防止误报
+            if not is_cry and name == "Baby":
+                logger.debug(f"  [Jump] 非哭声状态，跳过针对 '{name}' 的声效匹配")
+                continue
+            # -------------------------------------------
+
             emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
             score = 1 - cosine(emb_a.flatten(), emb_b)
             scores.append((name, score))
@@ -813,7 +974,16 @@ def identify_speaker_fusion(segment_path):
         # DEBUG: 模型识别结果
         logger.debug(f"  {model_name}: {top1_name}={top1_score:.3f} (gap={score_gap:.3f})")
 
-        if top1_score >= threshold and score_gap >= gap:
+        # 哭声识别增强逻辑 (Cry-Aware BIAS)
+        actual_threshold = threshold
+        actual_gap = gap
+        # 针对宝宝/大可/Baby 等说话人，在有哭声标签时特许降低门槛
+        if is_cry and top1_name and top1_name.lower() in ["baby", "宝宝", "大可"]:
+            actual_threshold = threshold * 0.75  # 0.60 -> 0.45
+            actual_gap = gap * 0.3               # 0.10 -> 0.03
+            logger.info(f"🍼 [Cry-Aware BIAS] 检测到哭声标签，为 {top1_name} 开启识别补偿: 得分 {top1_score:.3f} (阈值 {actual_threshold:.3f})")
+
+        if top1_score >= actual_threshold and score_gap >= actual_gap:
             model_votes[model_name] = top1_name
             model_scores[model_name] = top1_score
             # 验证通过（静默）
@@ -822,10 +992,10 @@ def identify_speaker_fusion(segment_path):
             model_votes[model_name] = "Unknown"
             model_scores[model_name] = top1_score
             reason = []
-            if top1_score < threshold:
-                reason.append(f"得分 {top1_score:.6f} < 阈值 {threshold}")
-            if score_gap < gap:
-                reason.append(f"差距 {score_gap:.6f} < 置信度间隔 {gap}")
+            if top1_score < actual_threshold:
+                reason.append(f"得分 {top1_score:.6f} < 阈值 {actual_threshold}")
+            if score_gap < actual_gap:
+                reason.append(f"差距 {score_gap:.6f} < 置信度间隔 {actual_gap}")
             # 验证失败（静默）
             pass
 
@@ -885,6 +1055,147 @@ def register_page():
 @app.route("/manage")
 def manage_page():
     return render_template("manage.html")
+
+@app.route("/baby_cry")
+def baby_cry_page():
+    return render_template("baby_cry.html")
+
+@app.route("/api/cry_events", methods=["GET"])
+def api_get_cry_events():
+    from db_manager import get_baby_cry_events
+    try:
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+        events = get_baby_cry_events(offset, limit)
+        return jsonify({"events": events})
+    except Exception as e:
+        logger.error(f"获取宝宝哭声记录失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/analyze_cry", methods=["POST"])
+def api_analyze_cry():
+    """
+    主动触发单次哭声 Gemini 深度分析（供 reprocess 脚本在合并事件后调用）。
+
+    Body JSON:
+      {
+        "filename":    "代表文件名（用于保存数据库记录）",
+        "audio_path":  "代表文件绝对路径",
+        "start_ms":    0,
+        "end_ms":      60000,
+        "audio_paths": ["/path/a.m4a", "/path/b.m4a", ...]   ← 可选，事件全部文件（已排序）
+      }
+
+    若 audio_paths 非空，直接将这些文件发给 Gemini，跳过自动上下文搜索。
+    若未提供 audio_paths，则降级为旧的 process_baby_cry_async 自动搜索逻辑。
+    """
+    import re as _re, json as _json
+    try:
+        body = request.get_json(force=True)
+        filename   = body.get("filename", "")
+        audio_path = body.get("audio_path", "")
+        start_ms   = int(body.get("start_ms", 0))
+        end_ms     = int(body.get("end_ms", start_ms + 60000))
+        audio_paths = body.get("audio_paths")   # 可选：事件文件列表
+
+        if not filename or not audio_path:
+            return jsonify({"error": "filename 和 audio_path 为必填项"}), 400
+        if not os.path.exists(audio_path):
+            return jsonify({"error": f"音频文件不存在: {audio_path}"}), 404
+
+        # ── 模式1：调用方提供了完整事件文件列表，直接送 Gemini ──
+        if audio_paths and isinstance(audio_paths, list) and len(audio_paths) > 0:
+            valid_paths = [p for p in audio_paths if os.path.exists(p)]
+            logger.info(
+                f"👶 [analyze_cry API] 事件模式：直接发送 {len(valid_paths)} 个文件给 Gemini "
+                f"(代表文件: {filename})"
+            )
+            prompt = (
+                "以下是多段连续的录音（时间顺序排列），其中包含了两岁半宝宝的哭泣声。"
+                "请结合完整的上下文音频（前后高达10分钟的情境），综合推理宝宝在这段时间哭泣的真正原因"
+                "（如困倦Sleepy、饥饿Hungry、情绪发泄Frustration、疼痛Pain、要求未被满足等），"
+                "并给出针对此时情境的安抚建议。"
+                "请严格按如下JSON格式返回：{\"category\": \"核心原因简短分类(如：困倦/饥饿/疼痛/情绪等)\", \"reason\": \"结合上下文的深度分析原因\", \"advice\": \"针对此时情境的安抚建议\"}"
+            )
+            response_text = call_gemini_audio_api(valid_paths, prompt)
+            if response_text:
+                json_match = _re.search(r'\{.*\}', response_text, _re.DOTALL)
+                if json_match:
+                    result = _json.loads(json_match.group())
+                    category = result.get("category", "未知")
+                    reason = result.get("reason", "未知")
+                    advice = result.get("advice", "无")
+                    from db_manager import save_cry_analysis
+                    save_cry_analysis(filename, start_ms / 1000.0, end_ms / 1000.0, reason, advice, reason_category=category, event_files=valid_paths)
+                    logger.info(f"👶 [analyze_cry API] 分析完成: [{category}] {reason[:50]}...")
+                    return jsonify({"category": category, "reason": reason, "advice": advice})
+            return jsonify({"reason": None, "advice": None, "message": "Gemini 未返回有效分析结果"}), 200
+
+        # ── 模式2：降级为旧的自动上下文搜索 ──
+        logger.info(f"👶 [analyze_cry API] 自动搜索模式: {filename} ({start_ms}ms-{end_ms}ms)")
+        reason, advice = process_baby_cry_async(filename, audio_path, start_ms, end_ms)
+        if reason:
+            return jsonify({"reason": reason, "advice": advice or ""})
+        return jsonify({"reason": None, "advice": None, "message": "Gemini 未返回有效分析结果"}), 200
+
+    except Exception as e:
+        logger.error(f"[analyze_cry API] 异常: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/trigger_reprocess", methods=["POST"])
+def trigger_reprocess():
+    """触发重新处理历史音频任务"""
+    import subprocess
+    try:
+        date_param = request.args.get('date', '')
+        start_time = request.args.get('start_time', '')
+        end_time = request.args.get('end_time', '')
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reprocess_history_cries.py")
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "history_process.log")
+        
+        # 写入一条启动信息
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 开始执行历史音频重分析(过滤={date_param} {start_time}~{end_time})...\n")
+            
+        args = [sys.executable, "-u", script_path]
+        args.append(date_param if date_param else "")
+        args.append(start_time if start_time else "")
+        args.append(end_time if end_time else "")
+            
+        with open(log_file, "a", encoding="utf-8") as f:
+            # -u 让 python 进程无缓冲输出
+            subprocess.Popen(
+                args, 
+                stdout=f, 
+                stderr=subprocess.STDOUT,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            
+        logger.info(f"✅ 历史音频重分析进程已独立启动，输出重定向至: {log_file}")
+        return jsonify({"message": "任务已在独立进程中启动，请查看下方实时日志。"})
+    except Exception as e:
+        logger.error(f"❌ 运行历史分析脚本失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/reprocess_logs", methods=["GET"])
+def get_reprocess_logs():
+    """获取历史分析进程的实时日志"""
+    try:
+        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "history_process.log")
+        if not os.path.exists(log_file):
+            return jsonify({"logs": "尚未开始处理，或日志文件不存在..."})
+        
+        with open(log_file, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(size - 20000, 0), 0) # 读取最后大概20KB
+            logs_bytes = f.read()
+            logs = logs_bytes.decode('utf-8', errors='replace')
+            return jsonify({"logs": logs})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/speakers", methods=["GET"])
 def get_speakers():
@@ -1468,29 +1779,30 @@ def transcribe_audio():
                                     logger.error(f"      [音频片段] 复制失败: {copy_error}")
                                     segment_audio_path = None  # 如果复制失败,不设置路径
 
-                                identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp)
+                                # 1. 深度状态探测 (SenseVoice) - 提前进行以支持声纹偏置逻辑
+                                sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav_temp)
+                                is_cry_segment = sensevoice_text and "<|cry|>" in sensevoice_text.lower()
                                 
-                                # 性能优化: 只有识别出的说话人才进行Whisper和SenseVoice处理
+                                # 2. 声纹识别 (带状态偏置)
+                                identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp, is_cry=is_cry_segment)
+                                
+                                # 3. 补全其他信息 (Whisper/Emotion)
+                                whisper_text = None
+                                emotion = sensevoice_emotion
+                                
                                 if identity is not None:
-                                    # 情感检测
-                                    emotion = detect_emotion_for_segment(seg_wav_temp)
-                                    # Whisper对比识别
+                                    # 如果 SenseVoice 没给情感，尝试次级情感探测模型
+                                    if emotion is None:
+                                        emotion = detect_emotion_for_segment(seg_wav_temp)
+                                    
+                                    # Whisper 对比识别 (可选)
                                     whisper_text = transcribe_with_whisper(seg_wav_temp)
-                                    
-                                    # SenseVoice识别和情感检测
-                                    sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav_temp)
-                                    
-                                    # 使用SenseVoice的情感结果(如果检测到)
-                                    if sensevoice_emotion is not None:
-                                        emotion = sensevoice_emotion
-                                    
-                                    logger.info(f"      [性能] 已识别说话人 {identity}, 完整处理")
+                                    logger.info(f"      [性能] 已识别说话人 {identity}, 状态: {'Crying' if is_cry_segment else 'Normal'}")
                                 else:
-                                    # Unknown说话人跳过额外处理
-                                    logger.info(f"      [性能] 未识别说话人, 跳过Whisper/SenseVoice处理")
+                                    # Unknown 说话人
+                                    logger.info(f"      [性能] 未识别说话人，跳过后续处理")
                                     whisper_text = None
-                                    sensevoice_text = None
-                                    emotion = None  # 未识别到情感时为None,不使用neutral
+                                    # 注意：即使 identity 为 None，如果 sensevoice_text 有内容，我们也保留它以便后续分析
                                 
                                 # 保存超过15个字的语句音频
                                 # 检测是否为噪音(重复字符过多)
@@ -1597,7 +1909,7 @@ def transcribe_audio():
                             if not original_emotion_tag:
                                 original_emotion_tag = f"<|{emotion}|>"
                         
-                        processed_segments.append({
+                        segment_info = {
                             "text": clean_text, "start": start, "end": end,
                             "spk": identity or "Unknown", "emotion": emotion,
                             "whisper_text": whisper_text,
@@ -1623,8 +1935,72 @@ def transcribe_audio():
                                 "original_tag": original_emotion_tag,
                                 "detected_by_sensevoice": emotion_source == "sensevoice"
                             }
-                        })
-                    logger.info("  [生命周期: 3. 逐段声纹识别] 完成。")
+                        }
+                        
+                        # 检测宝宝哭喊声触发分析逻辑
+                        speaker_name_check = (identity or "Unknown").lower()
+                        # 用户明确：Baby声纹本身就是纯净哭名，无需判断 SenseVoice 的 Emotion
+                        if ("baby" in speaker_name_check or "宝宝" in speaker_name_check) and segment_audio_path:
+                            logger.info(f"👶 检测到宝宝哭泣，触发长句分析模块! 时间 {start}ms-{end}ms")
+                            
+                            # 强行覆盖情感标识 (SenseVoice往往对纯哭声默认给出neutral)
+                            segment_info["emotion"] = "sad"
+                            segment_info["emotion_info"]["emotion"] = "sad"
+                            segment_info["emotion_info"]["source"] = "forced_baby_cry_rule"
+                            
+                            # skip_cry=true: 只标记哭声，完全跳过 Gemini 分析（供 reprocess 脚本阶段一使用）
+                            skip_cry_flag = request.form.get('skip_cry', 'false').lower() == 'true'
+                            if skip_cry_flag:
+                                segment_info["is_baby_cry"] = True
+                                logger.info(f"      [skip_cry] 哭声已标记，跳过 Gemini 分析")
+                            else:
+                                # 拼接完整的持久化音频绝对路径
+                                abs_seg_path = os.path.join(FileMonitorConfig.SOURCE_DIR, segment_audio_path.lstrip('/'))
+                                
+                                # 冷却机制：10分钟内同一哭闹事件只触发一次 Gemini 分析
+                                global _last_cry_trigger_time
+                                now = time.time()
+                                with _cry_cooldown_lock:
+                                    in_cooldown = (now - _last_cry_trigger_time) < CRY_COOLDOWN_SEC
+                                    if not in_cooldown:
+                                        _last_cry_trigger_time = now
+                                
+                                if in_cooldown:
+                                    segment_info["is_baby_cry"] = True
+                                    elapsed = int(now - _last_cry_trigger_time)
+                                    logger.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CRY_COOLDOWN_SEC}s 内跳过 Gemini 重复分析")
+                                else:
+                                    # ── 重构：瞬时邮件通知 + 延迟 5 分钟深度分析 ──
+                                    # 1. 发送即时邮件预警
+                                    time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    send_cry_alert_email(file.filename, time_str)
+                                    
+                                    # 标记当前片段为哭声，供返回响应使用
+                                    segment_info["is_baby_cry"] = True
+
+                                    # 2. 启动后台延迟分析任务
+                                    def start_delayed_analysis(fname, a_path, s_ms, e_ms):
+                                        logger.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后搜集全量上下文 (包含后果)...")
+                                        time.sleep(300)
+                                        process_baby_cry_async(fname, a_path, s_ms, e_ms)
+                                    
+                                    sync_llm_flag = request.form.get('sync_llm', 'false').lower() == 'true'
+                                    if sync_llm_flag:
+                                        # 如果是同步请求，强行等待（供特殊调试使用，日常监控通常不走此路）
+                                        time.sleep(300)
+                                        reason, advice = process_baby_cry_async(file.filename, abs_seg_path, start, end)
+                                        if reason:
+                                            segment_info["baby_cry_reason"] = reason
+                                            segment_info["baby_cry_advice"] = advice
+                                    else:
+                                        # 日常监控走此异步分支：邮件已出，5分钟后出报告
+                                        threading.Thread(
+                                            target=start_delayed_analysis, 
+                                            args=(file.filename, abs_seg_path, start, end), 
+                                            daemon=True
+                                        ).start()
+
+                        processed_segments.append(segment_info)
 
                 segments = processed_segments
                 full_text = "".join([s["text"] for s in segments]) # Reconstruct from clean segments
@@ -1776,27 +2152,44 @@ def monitor_files():
                 continue
             
             files = []
-            for filename in os.listdir(FileMonitorConfig.SOURCE_DIR):
-                filepath = os.path.join(FileMonitorConfig.SOURCE_DIR, filename)
+            for item in os.listdir(FileMonitorConfig.SOURCE_DIR):
+                item_path = os.path.join(FileMonitorConfig.SOURCE_DIR, item)
                 
-                # 只处理文件，跳过目录
-                if not os.path.isfile(filepath):
+                # 跳过特殊目录
+                if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR, "audio_segments", "logs"] or item.startswith('.'):
                     continue
                 
-                # 检查文件扩展名
-                ext = os.path.splitext(filename)[1].lower()
-                if ext not in FileMonitorConfig.SUPPORTED_FORMATS:
-                    continue
-                
-                # 跳过包含TEMP的文件
-                if 'TEMP' in filename or '_TEMP' in filename:
-                    continue
-                
-                # 跳过已处理的文件
-                if filename in processed_files:
-                    continue
-                
-                files.append((filename, filepath))
+                # 收集文件列表 (支持根目录和一级子目录)
+                items_to_check = []
+                if os.path.isfile(item_path):
+                    items_to_check.append(item_path)
+                elif os.path.isdir(item_path):
+                    try:
+                        for subitem in os.listdir(item_path):
+                            if not subitem.startswith('.'):
+                                subitem_path = os.path.join(item_path, subitem)
+                                if os.path.isfile(subitem_path):
+                                    items_to_check.append(subitem_path)
+                    except Exception as e:
+                        logger.error(f"读取子目录 {item_path} 失败: {e}")
+                                
+                for filepath in items_to_check:
+                    filename = os.path.basename(filepath)
+                    
+                    # 检查文件扩展名
+                    ext = os.path.splitext(filename)[1].lower()
+                    if ext not in FileMonitorConfig.SUPPORTED_FORMATS:
+                        continue
+                    
+                    # 跳过包含TEMP的文件
+                    if 'TEMP' in filename or '_TEMP' in filename:
+                        continue
+                    
+                    # 跳过已处理的文件
+                    if filename in processed_files:
+                        continue
+                    
+                    files.append((filename, filepath))
             
             # 按文件名排序，确保时间戳早的文件先处理
             # 文件名格式如: TermuxAudioRecording_2025-11-18_00-34-27.m4a

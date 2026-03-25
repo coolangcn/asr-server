@@ -64,6 +64,18 @@
     </script>
 
     <style>
+        /* 隐藏原生日期时间选择器的下拉箭头图标，保留点击区域 */
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="time"]::-webkit-calendar-picker-indicator {
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: pointer;
+        }
+
         /* 自定义滚动条 */
         ::-webkit-scrollbar {
             width: 6px;
@@ -415,8 +427,13 @@
             </button>
             <button onclick="switchTab('speaker')" id="nav-speaker"
                 class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
-                <i class="fa-solid fa-chart-pie text-lg group-hover:text-pink-400 transition-colors"></i>
+                <i class="fa-solid fa-microphone text-lg group-hover:text-pink-400 transition-colors"></i>
                 <span class="font-medium">声纹管理</span>
+            </button>
+            <button onclick="switchTab('babycry')" id="nav-babycry"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-baby text-lg group-hover:text-yellow-400 transition-colors"></i>
+                <span class="font-medium">宝宝分析</span>
             </button>
         </nav>
 
@@ -630,6 +647,87 @@
         <div id="view-speaker" class="view-container flex-1 overflow-hidden p-0 hidden">
             <iframe src="/register_page" style="width:100%; height:100%; border:none;"></iframe>
         </div>
+
+        <div id="view-babycry" class="view-container flex-1 overflow-hidden p-0 hidden">
+            <div class="w-full h-full flex flex-col">
+                <!-- Main Header -->
+                <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl flex justify-between items-center">
+                    <div>
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-baby text-yellow-400 mb-1"></i> 宝宝哭闹分析时光轴
+                        </h2>
+                        <div class="mt-2 text-sm text-gray-400 flex items-center gap-3">
+                            <span id="triggerStatus" class="font-medium text-blue-400"></span>
+                        </div>
+                    </div>
+                    <!-- Beautiful Glassmorphism Range Picker -->
+                    <div class="flex items-center space-x-2 bg-[#1a1f2e]/80 backdrop-blur-xl border border-blue-500/20 rounded-2xl p-1.5 shadow-2xl shadow-blue-900/20">
+                        <!-- Date Picker -->
+                        <div class="relative flex items-center bg-gray-900/60 rounded-xl px-3 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
+                            <i class="fa-regular fa-calendar-days text-blue-400/70 group-hover:text-blue-400 transition-colors mr-2"></i>
+                            <input type="date" id="reprocessDate" class="bg-transparent text-sm text-gray-200 outline-none w-[115px] cursor-pointer text-center font-medium font-mono" aria-label="选择过滤日期">
+                        </div>
+
+                        <div class="w-px h-6 bg-gradient-to-b from-transparent via-gray-600 to-transparent"></div>
+
+                        <!-- Time Range Start -->
+                        <div class="relative flex items-center bg-gray-900/60 rounded-xl px-2 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
+                            <i class="fa-regular fa-clock text-blue-400/70 group-hover:text-blue-400 transition-colors mr-2"></i>
+                            <input type="time" id="reprocessStartTime" class="bg-transparent text-sm text-gray-200 outline-none w-[70px] cursor-pointer text-center font-medium font-mono" aria-label="开始时间">
+                        </div>
+
+                        <span class="text-gray-500 text-sm font-bold animate-pulse px-1">~</span>
+
+                        <!-- Time Range End -->
+                        <div class="relative flex items-center bg-gray-900/60 rounded-xl px-2 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
+                            <i class="fa-regular fa-clock text-blue-400/70 group-hover:text-blue-400 transition-colors mr-2"></i>
+                            <input type="time" id="reprocessEndTime" class="bg-transparent text-sm text-gray-200 outline-none w-[70px] cursor-pointer text-center font-medium font-mono" aria-label="结束时间">
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button id="reprocessBtn" onclick="triggerReprocess()" class="ml-1 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 border border-white/10 relative overflow-hidden flex items-center whitespace-nowrap group">
+                            <i class="fa-solid fa-bolt text-yellow-300 mr-2 group-hover:animate-bounce"></i>定向检索
+                        </button>
+                        
+                        <!-- Stop Button -->
+                        <button id="stopReprocessBtn" onclick="stopReprocess()" class="ml-2 px-4 py-2.5 bg-gray-800/80 hover:bg-red-600/90 text-gray-300 hover:text-white active:scale-95 rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg border border-gray-600/50 hover:border-red-500 hover:shadow-red-500/30 relative overflow-hidden flex items-center whitespace-nowrap group" title="随时停止分析">
+                            <i class="fa-solid fa-stop mr-2 group-hover:scale-110 transition-transform text-red-400 group-hover:text-white"></i>马上停止
+                        </button>
+                    </div>
+                </header>
+
+                <!-- Process Logs Area -->
+                <div id="logContainer" style="display: none;" class="px-6 py-4 bg-gray-900 border-b border-gray-800 z-10 relative">
+                    <div style="background: #111827; color: #a9dc76; padding: 15px; border-radius: 8px; font-family: monospace; height: 150px; overflow-y: auto; font-size: 13px; white-space: pre-wrap; line-height: 1.5; border: 1px solid #374151;" id="processLogs">准备拉起独立后台进程读取日志...</div>
+                </div>
+
+                <!-- Content with Timeline -->
+                <div class="flex-1 flex overflow-hidden relative">
+                    <div class="flex-1 flex flex-col overflow-hidden">
+                        <div class="max-w-4xl mx-auto w-full h-full flex flex-col bg-gray-900/30 border-x border-gray-800/50 relative z-0">
+                            <div id="babycry-content" class="flex-1 p-6 space-y-8 pb-20 overflow-y-auto w-full">
+                                <div class="text-center text-gray-500 mt-20"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i><br>加载数据中...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Timeline Scrubber -->
+                    <div id="babycry-timeline-container" class="w-20 bg-transparent flex flex-col relative cursor-pointer z-0">
+                        <div id="babycry-timeline" class="flex-1 overflow-y-auto relative py-8 px-2">
+                            <div class="absolute left-1/2 top-0 bottom-0 w-px bg-gray-700/20 transform -translate-x-1/2"></div>
+                            <div id="babycry-timeline-markers" class="relative"></div>
+                            <div id="babycry-timeline-indicator" class="absolute left-1/2 transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300 ease-out pointer-events-none z-10" style="top: 0%;">
+                                <div class="w-3 h-3 bg-yellow-500 rounded-full shadow-lg shadow-yellow-500/50"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Hover tooltip placed outside -->
+        <div id="babycry-timeline-hover-tooltip" style="position: fixed; opacity: 0; pointer-events: none; z-index: 9999; background: rgba(17, 24, 39, 0.95); color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);"></div>
+
     </main>
 
     <script>
@@ -1214,13 +1312,13 @@
             updateIndicator();
         }
 
-        function generateTimelineMarkers(items, markersEl) {
+        function generateTimelineMarkers(items, markersEl, attrName = 'data-year-month') {
             markersEl.innerHTML = '';
 
             // Group by year and month from file times
             const yearMonthGroups = {};
             items.forEach((item, index) => {
-                const yearMonth = item.dataset.yearMonth;
+                const yearMonth = item.getAttribute(attrName) || item.dataset.yearMonth;
                 if (!yearMonth) return;
 
                 const [year, month] = yearMonth.split('-');
@@ -1932,33 +2030,292 @@
             if (tabName === 'speaker') {
                 loadSpeakers();
             }
-        };
-        // Audio preview functionality
-        let currentAudio = null;
-
-        function playAudio(audioPath) {
-            // Stop current audio if playing
-            if (currentAudio) {
-                currentAudio.pause();
-                currentAudio = null;
+            if (tabName === 'babycry') {
+                setTimeout(initBabyCryTimeline, 100);
+                if (!window.babyCryLoaded) {
+                    fetchBabyCryEvents();
+                    window.babyCryLoaded = true;
+                }
             }
-
-            // Create and play new audio
-            currentAudio = new Audio(audioPath);
-            currentAudio.play().catch(err => {
-                console.error('Audio playback failed:', err);
-                alert('音频播放失败: ' + err.message);
-            });
-
-            // Clean up when finished
-            currentAudio.onended = () => {
-                currentAudio = null;
-            };
+        };
+        function jumpToChat(time) {
+            if (!time) return;
+            switchTab('chat');
+            
+            // 给 UI 切换留出一点缓冲时间
+            setTimeout(() => {
+                const targetDate = new Date(time);
+                const allChatItems = Array.from(document.querySelectorAll('[data-file-time]'));
+                
+                if (allChatItems.length === 0) {
+                    console.warn("No chat items loaded yet");
+                    return;
+                }
+                
+                let closestEl = null;
+                let minDiff = Infinity;
+                
+                allChatItems.forEach(el => {
+                    const elTime = new Date(el.getAttribute('data-file-time'));
+                    const diff = Math.abs(elTime - targetDate);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestEl = el;
+                    }
+                });
+                
+                if (closestEl) {
+                    closestEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // 高亮效果
+                    closestEl.classList.add('ring-2', 'ring-accent-500', 'bg-accent-500/10', 'rounded-2xl', 'scale-[1.02]', 'transition-all', 'duration-500');
+                    setTimeout(() => {
+                        closestEl.classList.remove('ring-2', 'ring-accent-500', 'bg-accent-500/10', 'scale-[1.02]');
+                    }, 3000);
+                }
+            }, 300);
         }
 
+        // === Baby Cry Logic ===
+        let bcLogInterval = null;
 
+        async function fetchBcLogs() {
+            try {
+                const response = await fetch('/api/reprocess_logs');
+                const result = await response.json();
+                if (result.logs) {
+                    const logEl = document.getElementById('processLogs');
+                    const isScrolledToBottom = logEl.scrollHeight - logEl.clientHeight <= logEl.scrollTop + 10;
+                    logEl.textContent = result.logs;
+                    if (isScrolledToBottom) logEl.scrollTop = logEl.scrollHeight;
+                    
+                    if (typeof fetchBabyCryEvents === "function") {
+                        fetchBabyCryEvents(true);
+                    }
+                }
+            } catch (e) {
+                console.error("Fetch log error:", e);
+            }
+        }
 
+        async function triggerReprocess() {
+            const btn = document.getElementById('reprocessBtn');
+            const dateInput = document.getElementById('reprocessDate').value;
+            let startTime = document.getElementById('reprocessStartTime').value;
+            let endTime = document.getElementById('reprocessEndTime').value;
+            
+            // 将选择的 HH:MM 格式转换为文件名中的 HH-MM 格式
+            if (startTime) startTime = startTime.replace(/:/g, '-');
+            if (endTime) endTime = endTime.replace(/:/g, '-');
+            
+            const statusLabel = document.getElementById('triggerStatus');
+            btn.disabled = true;
+            statusLabel.textContent = "⏳ 正在拉起独立后台分析任务...";
+            
+            document.getElementById('logContainer').style.display = 'block';
+            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 1500);
+            
+            try {
+                let url = '/api/trigger_reprocess?1=1';
+                if (dateInput) {
+                    url += '&date=' + encodeURIComponent(dateInput);
+                }
+                if (startTime) {
+                    url += '&start_time=' + encodeURIComponent(startTime);
+                }
+                if (endTime) {
+                    url += '&end_time=' + encodeURIComponent(endTime);
+                }
+                const response = await fetch(url, { method: 'POST' });
+                const result = await response.json();
+                if (response.ok) {
+                    statusLabel.style.color = '#3b82f6';
+                    statusLabel.textContent = "✅ " + result.message;
+                } else {
+                    statusLabel.style.color = '#ef4444';
+                    statusLabel.textContent = "❌ 触发失败: " + result.error;
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                statusLabel.style.color = '#ef4444';
+                statusLabel.textContent = "❌ 网络连接失败";
+                btn.disabled = false;
+            }
+        }
 
+        function renderBabyCry(items) {
+            const container = document.getElementById('babycry-content');
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 mt-20">暂无相关长历史记录</div>';
+                return;
+            }
+            
+            const groups = {};
+            items.forEach(item => {
+                const date = item.timestamp ? item.timestamp.split('T')[0] : (item.recording_time ? item.recording_time.split('T')[0] : 'Unknown');
+                if (!groups[date]) groups[date] = [];
+                groups[date].push(item);
+            });
+
+            // 分类图标映射
+            const categoryIcons = {
+                '困倦': 'fa-moon text-indigo-400',
+                '饥饿': 'fa-bottle-milk text-orange-400',
+                '疼痛': 'fa-kit-medical text-red-400',
+                '情绪': 'fa-face-sad-tear text-pink-400',
+                '满足': 'fa-face-smile text-emerald-400',
+                'Sleepy': 'fa-moon text-indigo-400',
+                'Hungry': 'fa-bottle-milk text-orange-400',
+                'Pain': 'fa-kit-medical text-red-400'
+            };
+
+            let html = "";
+            Object.keys(groups).sort().reverse().forEach(date => {
+                html += `
+                <div class="relative flex items-center justify-center my-8" data-date="${date}">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-800"></div>
+                    </div>
+                    <div class="relative bg-gray-900 px-4 py-1 rounded-full border border-gray-800 text-xs font-medium text-gray-500">
+                        ${date}
+                    </div>
+                </div>`;
+
+                groups[date].forEach(item => {
+                    const fileTime = item.recording_time || item.timestamp;
+                    const fileDate = new Date(fileTime);
+                    const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
+                    const category = item.reason_category || '深度分析中';
+                    const iconClass = Object.entries(categoryIcons).find(([k]) => category.includes(k))?.[1] || 'fa-magnifying-glass-chart text-emerald-400';
+                    
+                    html += `
+                    <div class="mb-8 animate-fade-in" data-bc-time="${fileTime}" data-bc-year-month="${fileYearMonth}">
+                        <div class="flex items-center gap-2 mb-4 px-4">
+                            <i class="fa-solid fa-baby-carriage text-yellow-600/70 text-xs"></i>
+                            <span class="text-xs font-mono text-gray-400">${item.filename}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${formatTime(fileTime)}</span>
+                        </div>
+                        
+                        <div class="flex gap-4 mb-2 px-2 hover:bg-white/5 rounded-xl transition-colors p-4 -mx-2 border border-transparent hover:border-gray-800/50 group/card">
+                            <div class="w-10 flex-shrink-0 flex flex-col items-center mt-1">
+                                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-500/20 to-orange-600/20 border border-yellow-500/30 flex items-center justify-center shadow-xl shadow-yellow-900/10 group-hover/card:scale-110 transition-transform">
+                                    <span class="text-xl">👶</span>
+                                </div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-800 text-gray-200 border border-gray-700 shadow-sm">
+                                        <i class="fa-solid ${iconClass.split(' ')[0]} ${iconClass.split(' ')[1]}"></i> ${category}
+                                    </span>
+                                    <div class="h-px flex-1 bg-gradient-to-r from-gray-800 to-transparent"></div>
+                                </div>
+                                <div class="text-gray-300 leading-relaxed text-sm my-3">
+                                    <div class="mb-4 text-gray-200 font-medium bg-white/5 p-3 rounded-xl border border-white/5 shadow-inner">
+                                        <i class="fa-solid fa-quote-left text-yellow-600/30 text-xl absolute -mt-2 -ml-1"></i>
+                                        ${item.analysis_text || item.reason || '暂无详细分析内容'}
+                                    </div>
+                                    <div class="bg-emerald-500/5 p-4 rounded-xl text-emerald-400/90 text-xs border border-emerald-500/10 shadow-sm">
+                                        <div class="flex items-start gap-3">
+                                            <div class="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0 text-[10px]">
+                                                <i class="fa-solid fa-lightbulb"></i>
+                                            </div>
+                                            <div><strong class="text-emerald-300 block mb-1">安抚建议：</strong>${item.advice || '请关注宝宝情绪状态'}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex gap-3 mt-4">
+                                    ${item.audio_path || item.filename ?
+                                    `<button onclick="playAudio('${item.audio_path || '/api/audio/' + item.filename}')" class="text-xs flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-500/10 hover:bg-primary-500/20 border border-primary-500/20 transition-all text-primary-400 font-medium group/btn">
+                                        <i class="fa-solid fa-play group-hover/btn:scale-110 transition-transform"></i> 回放现场录音
+                                    </button>` : ''}
+                                    
+                                    <button onclick="jumpToChat('${fileTime}')" class="text-xs flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-500/10 hover:bg-accent-500/20 border border-accent-500/20 transition-all text-accent-400 font-medium group/btn">
+                                        <i class="fa-solid fa-clock-rotate-left group-hover/btn:rotate-[-45deg] transition-transform"></i> 定位到时光轴
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function fetchBabyCryEvents(silent = false) {
+            try {
+                const response = await fetch('/api/cry_events');
+                const data = await response.json();
+                renderBabyCry(data.events || []);
+                setTimeout(initBabyCryTimeline, 100);
+            } catch (e) {
+                console.error("Failed to fetch baby cry events", e);
+                document.getElementById('babycry-content').innerHTML = '<div class="text-center text-red-500 mt-20">数据加载失败</div>';
+            }
+        }
+
+        function initBabyCryTimeline() {
+            const contentEl = document.getElementById('babycry-content');
+            const timelineEl = document.getElementById('babycry-timeline');
+            const timelineContainer = document.getElementById('babycry-timeline-container');
+            const markersEl = document.getElementById('babycry-timeline-markers');
+            const indicatorEl = document.getElementById('babycry-timeline-indicator');
+            const hoverTooltip = document.getElementById('babycry-timeline-hover-tooltip');
+
+            if (!contentEl || !timelineContainer || !markersEl) return;
+            const items = Array.from(contentEl.querySelectorAll('[data-bc-time]'));
+            if (items.length === 0) return;
+
+            generateTimelineMarkers(items, markersEl, 'data-bc-year-month');
+
+            function getDateAtPosition(mouseY) {
+                const rect = timelineContainer.getBoundingClientRect();
+                const relativeY = mouseY - rect.top;
+                const percentage = Math.max(0, Math.min(1, relativeY / rect.height));
+                const itemIndex = Math.round(percentage * (items.length - 1));
+                const item = items[itemIndex];
+                if (item) {
+                    const yearMonth = item.getAttribute('data-bc-year-month');
+                    return { yearMonth: yearMonth.replace('-', '/'), item };
+                }
+                return null;
+            }
+
+            timelineContainer.addEventListener('mousemove', (e) => {
+                const result = getDateAtPosition(e.clientY);
+                if (result) {
+                    hoverTooltip.textContent = result.yearMonth;
+                    hoverTooltip.style.left = (e.clientX - 70) + 'px';
+                    hoverTooltip.style.top = e.clientY + 'px';
+                    hoverTooltip.style.opacity = '1';
+                }
+            });
+            timelineContainer.addEventListener('mouseleave', () => hoverTooltip.style.opacity = '0');
+            timelineContainer.addEventListener('click', (e) => {
+                const result = getDateAtPosition(e.clientY);
+                if (result && result.item) result.item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+
+            function updateIndicator() {
+                const contentRect = contentEl.getBoundingClientRect();
+                let closestIndex = 0; let closestDistance = Infinity;
+                items.forEach((item, index) => {
+                    const diff = Math.abs(item.getBoundingClientRect().top - contentRect.top);
+                    if (diff < closestDistance) { closestDistance = diff; closestIndex = index; }
+                });
+                indicatorEl.style.top = `${(closestIndex / Math.max(items.length - 1, 1)) * 100}%`;
+            }
+
+            let scrollTimeout;
+            contentEl.addEventListener('scroll', () => {
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(updateIndicator, 10);
+                if (contentEl.scrollHeight > contentEl.clientHeight) {
+                    const scrollPercentage = contentEl.scrollTop / (contentEl.scrollHeight - contentEl.clientHeight);
+                    timelineEl.scrollTop = scrollPercentage * Math.max(0, timelineEl.scrollHeight - timelineEl.clientHeight);
+                }
+            });
+            updateIndicator();
+        }
     </script>
 </body>
 

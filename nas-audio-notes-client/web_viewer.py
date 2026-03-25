@@ -125,13 +125,29 @@ def update_system_status():
 
     # 2. 检查待处理文件 (可能耗时)
     pending_count = -1
+    SKIP_DIRS = {'processed', 'failed', 'temp', 'audio_segments', '__pycache__'}
+    AUDIO_EXTS = ('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg')
     try:
         source_dir = CONFIG["SOURCE_DIR"]
         if os.path.exists(source_dir) and os.path.isdir(source_dir):
-            files = [f for f in os.listdir(source_dir) 
-                     if f.lower().endswith(('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg'))
-                     and 'TEMP' not in f]
-            pending_count = len(files)
+            count = 0
+            # 扫描根目录及一级子目录（日期文件夹）
+            for entry in os.listdir(source_dir):
+                if entry in SKIP_DIRS:
+                    continue
+                entry_path = os.path.join(source_dir, entry)
+                if os.path.isfile(entry_path):
+                    if entry.lower().endswith(AUDIO_EXTS) and 'TEMP' not in entry:
+                        count += 1
+                elif os.path.isdir(entry_path):
+                    # 日期子目录（如 2026-03-25/）
+                    try:
+                        for f in os.listdir(entry_path):
+                            if f.lower().endswith(AUDIO_EXTS) and 'TEMP' not in f:
+                                count += 1
+                    except Exception:
+                        pass
+            pending_count = count
         else:
             # 目录不存在时显示0而不是-1
             pending_count = 0
@@ -327,6 +343,58 @@ def proxy_register_page():
         return html
     except Exception as e:
         return f"<h1>Error loading speaker registration page</h1><p>{str(e)}</p>", 500
+
+@app.route('/baby_cry_page')
+def proxy_baby_cry_page():
+    """转发宝宝哭闹分析页面"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/baby_cry", timeout=10)
+        html = response.text
+        html = html.replace('/api/', '/api/') # 本地代理也是 /api/
+        # 修改静态资源和导航链接
+        html = html.replace('href="/manage"', 'href="/"')
+        return html
+    except Exception as e:
+        return f"<h1>Error loading baby cry page</h1><p>{str(e)}</p>", 500
+
+@app.route('/api/trigger_reprocess', methods=['POST'])
+def proxy_trigger_reprocess():
+    try:
+        date_param = request.args.get('date', '')
+        start_time = request.args.get('start_time', '')
+        end_time = request.args.get('end_time', '')
+        url = f"{ASR_SERVER_URL}/api/trigger_reprocess?date={date_param}&start_time={start_time}&end_time={end_time}"
+        response = requests.post(url, timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/stop_reprocess', methods=['POST'])
+def proxy_stop_reprocess():
+    try:
+        url = f"{ASR_SERVER_URL}/api/stop_reprocess"
+        response = requests.post(url, timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/cry_events', methods=['GET'])
+def proxy_cry_events():
+    try:
+        limit = request.args.get('limit', 100)
+        offset = request.args.get('offset', 0)
+        response = requests.get(f"{ASR_SERVER_URL}/api/cry_events?limit={limit}&offset={offset}", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/reprocess_logs', methods=['GET'])
+def proxy_reprocess_logs():
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/reprocess_logs", timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/status')
 def api_status():

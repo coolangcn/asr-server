@@ -112,6 +112,33 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_recording_time ON transcriptions(recording_time DESC NULLS LAST);
         ''')
         
+        # 创建宝宝哭声分析表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS baby_cry_events (
+            id SERIAL PRIMARY KEY,
+            filename TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            recording_time TIMESTAMP,
+            start_time REAL,
+            end_time REAL,
+            reason TEXT,
+            advice TEXT,
+            reason_category TEXT,
+            event_files_json TEXT
+        );
+        ''')
+        
+        # 兼容性升级逻辑
+        try:
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS reason_category TEXT;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS event_files_json TEXT;")
+        except Exception as e:
+            print(f"[DB] 字段升级提示: {e}")
+
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_cry_filename ON baby_cry_events(filename);
+        ''')
+        
         conn.commit()
         cursor.close()
         print("[DB] 数据库表结构初始化成功")
@@ -260,6 +287,78 @@ def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
     except Exception as e:
         print(f"[DB Error] 查询失败: {e}")
         return []
+    finally:
+        if conn:
+            return_connection(conn)
+
+def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
+    """获取记录的宝宝哭声分析事件"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return []
+            
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json FROM baby_cry_events ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s",
+            (limit, offset)
+        )
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        
+        results = []
+        for row in rows:
+            results.append({
+                'id': row[0],
+                'filename': row[1],
+                'created_at': row[2].isoformat() if row[2] else None,
+                'recording_time': row[3].isoformat() if row[3] else None,
+                'start_time': row[4],
+                'end_time': row[5],
+                'analysis_text': row[6], # 对应 reason 字段
+                'advice': row[7],
+                'reason_category': row[8],
+                'event_files': json.loads(row[9]) if row[9] else []
+            })
+        
+        return results
+    except Exception as e:
+        print(f"[DB Error] 查询哭声记录失败: {e}")
+        return []
+    finally:
+        if conn:
+            return_connection(conn)
+
+def save_cry_analysis(filename: str, start_time: float, end_time: float, reason: str, advice: str, 
+                      reason_category: str = None, event_files: list = None) -> bool:
+    """保存宝宝哭声分析结果"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        recording_time = parse_recording_time(filename)
+        created_at = datetime.now(UTC_PLUS_8)
+        event_files_json = json.dumps(event_files, ensure_ascii=False) if event_files else None
+        
+        cursor.execute(
+            "INSERT INTO baby_cry_events (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json)
+        )
+        
+        conn.commit()
+        cursor.close()
+        print(f"  [DB] 已保存宝宝哭声分析 [{filename}] {start_time:.1f}s-{end_time:.1f}s: [{reason_category or '未分类'}]")
+        return True
+    except Exception as e:
+        print(f"  [DB Error] 保存哭声分析失败: {e}")
+        if conn:
+            conn.rollback()
+        return False
     finally:
         if conn:
             return_connection(conn)

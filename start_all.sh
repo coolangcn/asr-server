@@ -10,6 +10,11 @@ echo "======================================"
 echo "  启动 ASR 服务套件 (macOS)"
 echo "======================================"
 echo ""
+echo "清理可能残留的旧进程..."
+pkill -f "python3 asr_server.py" || true
+pkill -f "python3 web_viewer.py" || true
+sleep 1
+echo ""
 echo "正在启动..."
 echo "- ASR API 服务 (端口 5008)"
 echo "- Web 转录查看器 (端口 5009)"
