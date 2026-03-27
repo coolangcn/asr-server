@@ -1,1095 +1,661 @@
-2026-03-27 16:03:59,184 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:03:59,205 | INFO | download models from model hub: ms
-2026-03-27 16:04:00,174 | WARNING | trust_remote_code: False
-2026-03-27 16:04:01,384 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:04:01,388 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:04:02,018 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:04:02,018 | INFO | excludes: None
-2026-03-27 16:04:02,107 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:04:02,580 | INFO | Building VAD model.
-2026-03-27 16:04:02,580 | INFO | download models from model hub: ms
-2026-03-27 16:04:03,514 | WARNING | trust_remote_code: False
-2026-03-27 16:04:03,519 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:04:03,519 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:04:03,526 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:04:03,526 | INFO | excludes: None
-2026-03-27 16:04:03,527 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:04:03,532 | INFO | Building punc model.
-2026-03-27 16:04:03,532 | INFO | download models from model hub: ms
-2026-03-27 16:04:04,404 | WARNING | trust_remote_code: False
-2026-03-27 16:04:22,548 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:04:22,549 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:04:23,699 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:04:23,699 | INFO | excludes: None
-2026-03-27 16:04:23,809 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:04:24,291 | INFO | Building SPK model.
-2026-03-27 16:04:24,291 | INFO | download models from model hub: ms
-2026-03-27 16:04:25,496 | WARNING | trust_remote_code: False
-2026-03-27 16:04:25,642 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:04:25,645 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:04:25,727 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:04:25,728 | INFO | excludes: None
-2026-03-27 16:04:25,742 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:05:26,934 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:05:26,956 | INFO | download models from model hub: ms
-2026-03-27 16:05:27,940 | WARNING | trust_remote_code: False
-2026-03-27 16:05:29,149 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:05:29,153 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:05:29,786 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:05:29,786 | INFO | excludes: None
-2026-03-27 16:05:29,867 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:05:30,376 | INFO | Building VAD model.
-2026-03-27 16:05:30,376 | INFO | download models from model hub: ms
-2026-03-27 16:05:31,262 | WARNING | trust_remote_code: False
-2026-03-27 16:05:31,267 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:05:31,267 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:05:31,273 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:05:31,273 | INFO | excludes: None
-2026-03-27 16:05:31,274 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:05:31,283 | INFO | Building punc model.
-2026-03-27 16:05:31,283 | INFO | download models from model hub: ms
-2026-03-27 16:05:32,169 | WARNING | trust_remote_code: False
-2026-03-27 16:05:49,799 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:05:49,800 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:05:50,282 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:05:50,282 | INFO | excludes: None
-2026-03-27 16:05:50,360 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:05:50,551 | INFO | Building SPK model.
-2026-03-27 16:05:50,551 | INFO | download models from model hub: ms
-2026-03-27 16:05:51,938 | WARNING | trust_remote_code: False
-2026-03-27 16:05:52,051 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:05:52,053 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:05:52,149 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:05:52,149 | INFO | excludes: None
-2026-03-27 16:05:52,163 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:06:16,830 | INFO | download models from model hub: ms
-2026-03-27 16:06:17,730 | WARNING | trust_remote_code: False
-2026-03-27 16:06:18,465 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:06:18,467 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:06:19,692 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:06:19,692 | INFO | excludes: None
-2026-03-27 16:06:19,965 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 16:06:20,658 | INFO | 🎉 所有模型加载完成！
-2026-03-27 16:06:20,659 | INFO | 📂 文件监控线程启动，正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 16:06:26,406 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-21-44.m4a
-2026-03-27 16:06:27,857 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:27,860 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:06:27,862 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:30,176 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:06:30,177 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:06:38,282 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:06:38,286 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-21-44.m4a (500)
-2026-03-27 16:06:38,327 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-22-45.m4a
-2026-03-27 16:06:39,619 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:39,625 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:06:39,629 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:41,203 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:06:41,203 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:06:44,356 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:06:44,357 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-22-45.m4a (500)
-2026-03-27 16:06:44,405 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-23-45.m4a
-2026-03-27 16:06:45,708 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:45,710 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:06:45,713 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:47,122 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:06:47,122 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:06:55,097 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:06:55,100 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-23-45.m4a (500)
-2026-03-27 16:06:55,154 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-24-46.m4a
-2026-03-27 16:06:56,500 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:56,503 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:06:56,506 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:06:57,973 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:06:57,973 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:07:06,021 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:07:06,024 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-24-46.m4a (500)
-2026-03-27 16:07:06,070 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-25-46.m4a
-2026-03-27 16:07:07,445 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:07,449 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:07:07,453 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:09,010 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:07:09,010 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:07:12,760 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:07:12,763 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-25-46.m4a (500)
-2026-03-27 16:07:12,812 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-26-47.m4a
-2026-03-27 16:07:14,134 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:14,137 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:07:14,140 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:15,541 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:07:15,541 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:07:20,074 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:07:20,076 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-26-47.m4a (500)
-2026-03-27 16:07:20,121 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-27-47.m4a
-2026-03-27 16:07:21,460 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:21,463 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:07:21,465 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:22,830 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:07:22,830 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:07:25,941 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:07:25,943 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-27-47.m4a (500)
-2026-03-27 16:07:26,010 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-28-48.m4a
-2026-03-27 16:07:27,358 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:27,361 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:07:27,363 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:28,745 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:07:28,745 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:07:33,708 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:07:33,711 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-28-48.m4a (500)
-2026-03-27 16:07:33,759 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-29-48.m4a
-2026-03-27 16:07:35,104 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:35,107 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:07:35,109 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:36,528 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:07:36,529 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:07:44,113 | ERROR | ❌ 转录异常: string indices must be integers
-2026-03-27 16:07:44,116 | ERROR | ❌ 自动转录失败: TermuxAudioRecording_2026-03-26_20-29-48.m4a (500)
-2026-03-27 16:07:44,150 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-30-49.m4a
-2026-03-27 16:07:45,507 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:07:45,510 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:07:45,513 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:08:15,447 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:08:15,465 | INFO | download models from model hub: ms
-2026-03-27 16:08:15,876 | WARNING | trust_remote_code: False
-2026-03-27 16:08:17,110 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:08:17,112 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:08:17,624 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:08:17,624 | INFO | excludes: None
-2026-03-27 16:08:17,699 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:08:18,228 | INFO | Building VAD model.
-2026-03-27 16:08:18,228 | INFO | download models from model hub: ms
-2026-03-27 16:08:18,668 | WARNING | trust_remote_code: False
-2026-03-27 16:08:18,675 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:08:18,675 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:08:18,681 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:08:18,681 | INFO | excludes: None
-2026-03-27 16:08:18,682 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:08:18,697 | INFO | Building punc model.
-2026-03-27 16:08:18,697 | INFO | download models from model hub: ms
-2026-03-27 16:08:19,103 | WARNING | trust_remote_code: False
-2026-03-27 16:08:31,436 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:08:31,437 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:08:31,869 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:08:31,869 | INFO | excludes: None
-2026-03-27 16:08:31,925 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:08:32,125 | INFO | Building SPK model.
-2026-03-27 16:08:32,125 | INFO | download models from model hub: ms
-2026-03-27 16:08:33,214 | WARNING | trust_remote_code: False
-2026-03-27 16:08:33,346 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:08:33,348 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:08:33,413 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:08:33,413 | INFO | excludes: None
-2026-03-27 16:08:33,423 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:08:47,153 | INFO | download models from model hub: ms
-2026-03-27 16:08:47,656 | WARNING | trust_remote_code: False
-2026-03-27 16:08:48,411 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:08:48,413 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:08:49,273 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:08:49,273 | INFO | excludes: None
-2026-03-27 16:08:49,709 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 16:08:50,426 | INFO | 🎉 所有模型加载完成！
-2026-03-27 16:08:50,426 | INFO | 📂 文件监控线程启动，正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 16:08:51,170 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:08:54,223 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:08:56,506 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-30-49.m4a
-2026-03-27 16:08:57,257 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:08:57,887 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:08:57,890 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:08:57,893 | ERROR | ❌ extract_embedding 失败: modelscope error: The input type is restricted to audio address and nump array.
-2026-03-27 16:08:59,162 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:08:59,163 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:09:00,305 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:09:03,334 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:11:14,939 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:11:14,959 | INFO | download models from model hub: ms
-2026-03-27 16:11:16,260 | WARNING | trust_remote_code: False
-2026-03-27 16:11:17,472 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:11:17,476 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:11:18,062 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:11:18,062 | INFO | excludes: None
-2026-03-27 16:11:18,141 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:11:18,663 | INFO | Building VAD model.
-2026-03-27 16:11:18,663 | INFO | download models from model hub: ms
-2026-03-27 16:11:19,539 | WARNING | trust_remote_code: False
-2026-03-27 16:11:19,544 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:11:19,544 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:11:19,549 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:11:19,549 | INFO | excludes: None
-2026-03-27 16:11:19,550 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:11:19,559 | INFO | Building punc model.
-2026-03-27 16:11:19,559 | INFO | download models from model hub: ms
-2026-03-27 16:11:20,415 | WARNING | trust_remote_code: False
-2026-03-27 16:11:37,804 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:11:37,805 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:11:38,267 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:11:38,267 | INFO | excludes: None
-2026-03-27 16:11:38,348 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:11:38,557 | INFO | Building SPK model.
-2026-03-27 16:11:38,557 | INFO | download models from model hub: ms
-2026-03-27 16:11:40,953 | WARNING | trust_remote_code: False
-2026-03-27 16:11:41,084 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:11:41,086 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:11:41,160 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:11:41,161 | INFO | excludes: None
-2026-03-27 16:11:41,174 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:12:06,057 | INFO | download models from model hub: ms
-2026-03-27 16:12:06,986 | WARNING | trust_remote_code: False
-2026-03-27 16:12:07,753 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:12:07,756 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:12:09,335 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:12:09,335 | INFO | excludes: None
-2026-03-27 16:12:09,743 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 16:12:10,456 | INFO | 🎉 所有模型加载完成！
-2026-03-27 16:12:10,456 | INFO | 📂 文件监控线程启动，正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 16:12:17,729 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-30-49.m4a
-2026-03-27 16:12:19,336 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:12:19,336 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:12:19,336 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:12:21,088 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:12:21,089 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:12:31,366 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:12:31,367 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:12:31,367 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:12:33,510 | INFO |       [SenseVoice] 。 (情感: happy)
-2026-03-27 16:12:34,903 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-30-49.m4a
-2026-03-27 16:12:34,969 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-31-50.m4a
-2026-03-27 16:12:36,264 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:12:36,264 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:12:36,264 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:12:37,680 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:12:37,681 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:13:07,390 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:13:07,419 | INFO | download models from model hub: ms
-2026-03-27 16:13:07,919 | WARNING | trust_remote_code: False
-2026-03-27 16:13:09,093 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:13:09,097 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:13:09,588 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:13:09,588 | INFO | excludes: None
-2026-03-27 16:13:09,657 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:13:10,108 | INFO | Building VAD model.
-2026-03-27 16:13:10,109 | INFO | download models from model hub: ms
-2026-03-27 16:13:10,569 | WARNING | trust_remote_code: False
-2026-03-27 16:13:10,576 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:13:10,577 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:13:10,583 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:13:10,583 | INFO | excludes: None
-2026-03-27 16:13:10,584 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:13:10,599 | INFO | Building punc model.
-2026-03-27 16:13:10,599 | INFO | download models from model hub: ms
-2026-03-27 16:13:10,990 | WARNING | trust_remote_code: False
-2026-03-27 16:13:23,401 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:13:23,402 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:13:23,825 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:13:23,826 | INFO | excludes: None
-2026-03-27 16:13:23,885 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:13:24,087 | INFO | Building SPK model.
-2026-03-27 16:13:24,087 | INFO | download models from model hub: ms
-2026-03-27 16:13:25,368 | WARNING | trust_remote_code: False
-2026-03-27 16:13:25,500 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:13:25,501 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:13:25,562 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:13:25,562 | INFO | excludes: None
-2026-03-27 16:13:25,572 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:13:38,768 | INFO | download models from model hub: ms
-2026-03-27 16:13:39,190 | WARNING | trust_remote_code: False
-2026-03-27 16:13:39,998 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:13:40,000 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:13:41,156 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:13:41,157 | INFO | excludes: None
-2026-03-27 16:13:41,464 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 16:13:42,129 | INFO | 🎉 所有模型加载完成！
-2026-03-27 16:13:42,129 | INFO | 📂 文件监控线程启动，正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 16:13:44,944 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:13:47,993 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:13:48,280 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-31-50.m4a
-2026-03-27 16:13:49,657 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:13:49,658 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:13:49,658 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:13:50,882 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:13:50,884 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:13:51,032 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:13:54,066 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:13:57,100 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:14:00,997 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:14:01,075 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:14:01,075 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:14:01,075 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:14:02,184 | INFO |       [SenseVoice] 理了，你不要慢慢来吗？手慢慢来啊，接321我你一号链接啊，我们直接把活动链接给大家先上哦，已经有了，大家第一楚建议大家可以先来先买这帽子今天首先我们不是正常价格给到大家的啊。就日常来说，这帽子我们还是要涨价的。包括你们今天所有买到拍到的中帽子帽子的面料也好，版型做工以及它整理的细节，我们给到大家呢也是所线所的正款两款发货的。那这款帽子有9个颜色的，可以去选择男里都能够带好的单裙一款它没问题的。裤长是多来呀，就你的日常都是装。 (情感: happy)
-2026-03-27 16:14:03,566 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-31-50.m4a
-2026-03-27 16:14:03,617 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-32-50.m4a
-2026-03-27 16:14:04,028 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:14:04,922 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:14:04,922 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:14:04,923 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:14:05,850 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:14:05,850 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:14:07,212 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:14:10,247 | ERROR | Exception on / [GET]
-Traceback (most recent call last):
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr-server/asr_server.py", line 83, in register_page
-    def register_page(): return render_template("register.html")
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 149, in render_template
-    template = app.jinja_env.get_or_select_template(template_name_or_list)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1087, in get_or_select_template
-    return self.get_template(template_name_or_list, parent, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 1016, in get_template
-    return self._load_template(name, globals)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/environment.py", line 975, in _load_template
-    template = self.loader.load(self, name, self.make_globals(globals))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/jinja2/loaders.py", line 126, in load
-    source, filename, uptodate = self.get_source(environment, name)
-                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 65, in get_source
-    return self._get_source_fast(environment, template)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mac/asr_env/lib/python3.11/site-packages/flask/templating.py", line 99, in _get_source_fast
-    raise TemplateNotFound(template)
-jinja2.exceptions.TemplateNotFound: register.html
-2026-03-27 16:15:16,873 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:15:16,899 | INFO | download models from model hub: ms
-2026-03-27 16:15:17,851 | WARNING | trust_remote_code: False
-2026-03-27 16:15:19,058 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:15:19,062 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:15:19,658 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:15:19,658 | INFO | excludes: None
-2026-03-27 16:15:19,732 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:15:20,230 | INFO | Building VAD model.
-2026-03-27 16:15:20,230 | INFO | download models from model hub: ms
-2026-03-27 16:15:21,168 | WARNING | trust_remote_code: False
-2026-03-27 16:15:21,174 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:15:21,175 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:15:21,180 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:15:21,181 | INFO | excludes: None
-2026-03-27 16:15:21,182 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:15:21,191 | INFO | Building punc model.
-2026-03-27 16:15:21,192 | INFO | download models from model hub: ms
-2026-03-27 16:15:22,113 | WARNING | trust_remote_code: False
-2026-03-27 16:15:40,905 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:15:40,905 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:15:41,403 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:15:41,404 | INFO | excludes: None
-2026-03-27 16:15:41,479 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:15:41,694 | INFO | Building SPK model.
-2026-03-27 16:15:41,694 | INFO | download models from model hub: ms
-2026-03-27 16:15:43,007 | WARNING | trust_remote_code: False
-2026-03-27 16:15:43,123 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:15:43,126 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:15:43,199 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:15:43,199 | INFO | excludes: None
-2026-03-27 16:15:43,215 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:16:07,524 | INFO | download models from model hub: ms
-2026-03-27 16:16:08,463 | WARNING | trust_remote_code: False
-2026-03-27 16:16:09,381 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:16:09,384 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:16:10,817 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:16:10,818 | INFO | excludes: None
-2026-03-27 16:16:11,170 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/models/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 16:16:11,920 | INFO | 🎉 所有模型加载完成！
-2026-03-27 16:16:11,920 | INFO | 📂 文件监控线程启动，正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 16:16:19,057 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-32-50.m4a
-2026-03-27 16:16:20,611 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:20,611 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:16:20,611 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:22,913 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:16:22,914 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:16:34,391 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:34,391 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:16:34,391 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:35,627 | INFO |       [SenseVoice] 袖黄黑皮的想要显白时髦洋气百搭柔级洋气时髦百搭常颜，为喜欢粉色轻宝宝显白百搭，爽的卡其色显白高端大气，白的感觉都很好看。然后男人在不缩，只要不粉不满足男。男头烟灰卡黑色显大方帅气。让从头到脚个的搭配，时髦髦前操。格。 (情感: happy)
-2026-03-27 16:16:37,009 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-32-50.m4a
-2026-03-27 16:16:37,087 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-33-51.m4a
-2026-03-27 16:16:38,396 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:38,396 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:16:38,397 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:39,871 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:16:39,871 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:16:47,071 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:47,072 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:16:47,072 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:48,279 | INFO |       [SenseVoice] 细节保证正反原来一模一样，接下来要100多的原创。今天我给到你们源头共厂正面给下二没给大家第约赛。 (情感: happy)
-2026-03-27 16:16:51,948 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-33-51.m4a
-2026-03-27 16:16:52,013 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-34-51.m4a
-2026-03-27 16:16:53,304 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:53,305 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:16:53,305 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:16:54,804 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:16:54,804 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:16:55,481 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:16:55,494 | INFO | download models from model hub: ms
-2026-03-27 16:16:55,900 | WARNING | trust_remote_code: False
-2026-03-27 16:16:57,372 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:16:57,375 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:16:58,732 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:16:58,733 | INFO | excludes: None
-2026-03-27 16:16:59,123 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:16:59,915 | INFO | Building VAD model.
-2026-03-27 16:16:59,916 | INFO | download models from model hub: ms
-2026-03-27 16:17:00,312 | WARNING | trust_remote_code: False
-2026-03-27 16:17:00,326 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:17:00,326 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:17:00,336 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:17:00,336 | INFO | excludes: None
-2026-03-27 16:17:00,336 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:17:00,349 | INFO | Building punc model.
-2026-03-27 16:17:00,349 | INFO | download models from model hub: ms
-2026-03-27 16:17:00,718 | WARNING | trust_remote_code: False
-2026-03-27 16:17:01,433 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:01,434 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:01,434 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:02,476 | INFO |       [SenseVoice] 痛有不容易让人失控。 (情感: happy)
-2026-03-27 16:17:03,884 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-34-51.m4a
-2026-03-27 16:17:03,952 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-35-52.m4a
-2026-03-27 16:17:05,423 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:05,424 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:05,424 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:07,033 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:17:07,034 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:17:12,299 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:12,300 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:12,300 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:13,255 | INFO |       [SenseVoice] 让人失控悲痛不容易失。 (情感: happy)
-2026-03-27 16:17:14,634 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-35-52.m4a
-2026-03-27 16:17:14,691 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:17:14,692 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:17:14,695 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-36-52.m4a
-2026-03-27 16:17:16,610 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:17:16,612 | INFO | excludes: None
-2026-03-27 16:17:16,802 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:16,803 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:16,804 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:16,902 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:17:17,230 | INFO | Building SPK model.
-2026-03-27 16:17:17,230 | INFO | download models from model hub: ms
-2026-03-27 16:17:18,245 | WARNING | trust_remote_code: False
-2026-03-27 16:17:18,378 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:17:18,380 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:17:18,455 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:17:18,455 | INFO | excludes: None
-2026-03-27 16:17:18,469 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:17:18,697 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:17:18,697 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:17:25,398 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:25,398 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:25,398 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:26,469 | INFO |       [SenseVoice] 童年的小河的开。 (情感: happy)
-2026-03-27 16:17:27,853 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-36-52.m4a
-2026-03-27 16:17:27,922 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-37-53.m4a
-2026-03-27 16:17:29,356 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:29,357 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:29,357 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:32,019 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:17:32,019 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:17:34,318 | INFO | download models from model hub: ms
-2026-03-27 16:17:34,714 | WARNING | trust_remote_code: False
-2026-03-27 16:17:35,679 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:17:35,681 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:17:36,864 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:17:36,865 | INFO | excludes: None
-2026-03-27 16:17:37,190 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 16:17:39,319 | INFO | 🎉 所有模型加载完成！
-2026-03-27 16:17:39,321 | INFO | 📂 文件监控线程启动，正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 16:17:45,319 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:45,320 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:45,320 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:46,373 | INFO |       [SenseVoice] 苍的人懂的诱火不乘着升烟火儿人烟。 (情感: happy)
-2026-03-27 16:17:47,803 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-37-53.m4a
-2026-03-27 16:17:47,907 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-38-53.m4a
-2026-03-27 16:17:49,280 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:49,280 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:49,280 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:50,793 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:17:50,793 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:17:58,440 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:58,441 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:17:58,441 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:17:59,331 | INFO |       [SenseVoice] 很快乐，如今的我已像靠生活人家小人终于。 (情感: happy)
-2026-03-27 16:18:03,296 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-38-53.m4a
-2026-03-27 16:18:03,369 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-39-54.m4a
-2026-03-27 16:18:04,731 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:04,731 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:18:04,731 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:06,140 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:18:06,140 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:18:12,384 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:12,385 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:18:12,385 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:13,780 | INFO |       [SenseVoice] 风吹过小山坡，有月你我今儿的童。 (情感: happy)
-2026-03-27 16:18:15,158 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-39-54.m4a
-2026-03-27 16:18:15,221 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-40-54.m4a
-2026-03-27 16:18:16,535 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:16,535 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:18:16,535 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:18,027 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:18:18,027 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:18:27,206 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:27,207 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:18:27,207 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:28,189 | INFO |       [SenseVoice] 。 (情感: happy)
-2026-03-27 16:18:29,577 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-40-54.m4a
-2026-03-27 16:18:29,662 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-41-55.m4a
-2026-03-27 16:18:31,001 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:31,001 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:18:31,001 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:18:32,383 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:18:32,383 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:19:09,468 | INFO | 🚀 正在加载辅助模型与声纹数据库...
-2026-03-27 16:19:09,499 | INFO | download models from model hub: ms
-2026-03-27 16:19:09,966 | WARNING | trust_remote_code: False
-2026-03-27 16:19:11,136 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:19:11,138 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 16:19:11,655 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:19:11,655 | INFO | excludes: None
-2026-03-27 16:19:11,721 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:19:12,175 | INFO | Building VAD model.
-2026-03-27 16:19:12,175 | INFO | download models from model hub: ms
-2026-03-27 16:19:12,623 | WARNING | trust_remote_code: False
-2026-03-27 16:19:12,630 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:19:12,630 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 16:19:12,636 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:19:12,636 | INFO | excludes: None
-2026-03-27 16:19:12,637 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 16:19:12,648 | INFO | Building punc model.
-2026-03-27 16:19:12,648 | INFO | download models from model hub: ms
-2026-03-27 16:19:13,018 | WARNING | trust_remote_code: False
-2026-03-27 16:19:25,337 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:19:25,338 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 16:19:25,790 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:19:25,790 | INFO | excludes: None
-2026-03-27 16:19:25,861 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 16:19:26,100 | INFO | Building SPK model.
-2026-03-27 16:19:26,100 | INFO | download models from model hub: ms
-2026-03-27 16:19:27,233 | WARNING | trust_remote_code: False
-2026-03-27 16:19:27,361 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:19:27,363 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 16:19:27,426 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:19:27,426 | INFO | excludes: None
-2026-03-27 16:19:27,436 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 16:19:42,614 | INFO | download models from model hub: ms
-2026-03-27 16:19:43,306 | WARNING | trust_remote_code: False
-2026-03-27 16:19:44,066 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:19:44,068 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 16:19:45,354 | INFO | scope_map: ['module.', 'None']
-2026-03-27 16:19:45,355 | INFO | excludes: None
-2026-03-27 16:19:45,657 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 16:19:46,298 | INFO | 🎉 所有模型加载完成！
-2026-03-27 16:19:46,299 | INFO | 📂 文件监控线程启动，正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 16:19:52,505 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-41-55.m4a
-2026-03-27 16:19:53,882 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:19:53,882 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:19:53,882 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:19:55,114 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:19:55,115 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:20:05,840 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:20:05,840 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:20:05,840 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:20:06,923 | INFO |       [SenseVoice] 不的爱是总温暖过漂孩转坎坷。 (情感: happy)
-2026-03-27 16:20:09,294 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-41-55.m4a
-2026-03-27 16:20:09,353 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-42-56.m4a
-2026-03-27 16:20:10,734 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:20:10,735 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:20:10,735 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:20:11,888 | INFO | Attempting to parse hotwords as str...
-2026-03-27 16:20:11,888 | INFO | Hotword list: ['宝宝', '哭声', '饿了', '困了', '<s>'].
-2026-03-27 16:20:21,240 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:20:21,241 | ERROR | ❌ extract_embedding 失败: modelscope error: Two input audio files are required.
-2026-03-27 16:20:21,241 | ERROR | ❌ extract_embedding 失败: [Errno 2] No such file or directory: 't'
-2026-03-27 16:20:22,287 | INFO |       [SenseVoice] 小村庄升起烟火，吞世的人生在呼唤。 (情感: happy)
-2026-03-27 16:20:23,672 | INFO | ✅ 自动转录成功: TermuxAudioRecording_2026-03-26_20-42-56.m4a
-2026-03-27 16:20:23,747 | INFO | 📤 自动扫描发现新文件，开始转录: TermuxAudioRecording_2026-03-26_20-43-56.m4a
+2026-03-27 17:37:04,836 | INFO | 📚 声纹库已挂载: 5 人
+2026-03-27 17:37:04,841 | INFO | download models from model hub: ms
+2026-03-27 17:37:05,262 | WARNING | trust_remote_code: False
+2026-03-27 17:37:06,314 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-27 17:37:06,316 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-27 17:37:06,814 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:37:06,815 | INFO | excludes: None
+2026-03-27 17:37:06,881 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-27 17:37:07,341 | INFO | Building VAD model.
+2026-03-27 17:37:07,341 | INFO | download models from model hub: ms
+2026-03-27 17:37:07,749 | WARNING | trust_remote_code: False
+2026-03-27 17:37:07,756 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-27 17:37:07,756 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-27 17:37:07,762 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:37:07,762 | INFO | excludes: None
+2026-03-27 17:37:07,763 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-27 17:37:07,779 | INFO | Building punc model.
+2026-03-27 17:37:07,779 | INFO | download models from model hub: ms
+2026-03-27 17:37:08,141 | WARNING | trust_remote_code: False
+2026-03-27 17:37:20,422 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-27 17:37:20,423 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-27 17:37:21,064 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:37:21,064 | INFO | excludes: None
+2026-03-27 17:37:21,178 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
+2026-03-27 17:37:21,426 | INFO | Building SPK model.
+2026-03-27 17:37:21,426 | INFO | download models from model hub: ms
+2026-03-27 17:37:22,995 | WARNING | trust_remote_code: False
+2026-03-27 17:37:23,258 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-27 17:37:23,259 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-27 17:37:23,325 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:37:23,325 | INFO | excludes: None
+2026-03-27 17:37:23,335 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
+2026-03-27 17:37:37,332 | WARNING | ⚠️ Whisper模型加载失败: Could not run 'aten::_sparse_coo_tensor_with_dims_and_tensors' with arguments from the 'SparseMPS' backend. This could be because the operator doesn't exist for this backend, or was omitted during the selective/custom build process (if using custom build). If you are a Facebook employee using PyTorch on mobile, please visit https://fburl.com/ptmfixes for possible resolutions. 'aten::_sparse_coo_tensor_with_dims_and_tensors' is only available for these backends: [MPS, Meta, SparseCPU, SparseMeta, BackendSelect, Python, FuncTorchDynamicLayerBackMode, Functionalize, Named, Conjugate, Negative, ZeroTensor, ADInplaceOrView, AutogradOther, AutogradCPU, AutogradCUDA, AutogradHIP, AutogradXLA, AutogradMPS, AutogradIPU, AutogradXPU, AutogradHPU, AutogradVE, AutogradLazy, AutogradMTIA, AutogradPrivateUse1, AutogradPrivateUse2, AutogradPrivateUse3, AutogradMeta, AutogradNestedTensor, Tracer, AutocastCPU, AutocastXPU, AutocastMPS, AutocastCUDA, FuncTorchBatched, BatchedNestedTensor, FuncTorchVmapMode, Batched, VmapMode, FuncTorchGradWrapper, PythonTLSSnapshot, FuncTorchDynamicLayerFrontMode, PreDispatch, PythonDispatcher].
+
+MPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/mps/MPSFallback.mm:75 [backend fallback]
+Meta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterMeta.cpp:26996 [kernel]
+SparseCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseCPU.cpp:1406 [kernel]
+SparseMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseMeta.cpp:290 [kernel]
+BackendSelect: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterBackendSelect.cpp:792 [kernel]
+Python: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:153 [backend fallback]
+FuncTorchDynamicLayerBackMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:497 [backend fallback]
+Functionalize: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/FunctionalizeFallbackKernel.cpp:349 [backend fallback]
+Named: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/NamedRegistrations.cpp:7 [backend fallback]
+Conjugate: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ConjugateFallback.cpp:17 [backend fallback]
+Negative: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/native/NegateFallback.cpp:18 [backend fallback]
+ZeroTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ZeroTensorFallback.cpp:86 [backend fallback]
+ADInplaceOrView: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/VariableFallbackKernel.cpp:96 [backend fallback]
+AutogradOther: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradCUDA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradHIP: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradXLA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradMPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradIPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradXPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradHPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradVE: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradLazy: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradMTIA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradPrivateUse1: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradPrivateUse2: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradPrivateUse3: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+Tracer: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/TraceType_2.cpp:17715 [kernel]
+AutocastCPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:321 [backend fallback]
+AutocastXPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:463 [backend fallback]
+AutocastMPS: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:209 [backend fallback]
+AutocastCUDA: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:165 [backend fallback]
+FuncTorchBatched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:731 [backend fallback]
+BatchedNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:758 [backend fallback]
+FuncTorchVmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/VmapModeRegistrations.cpp:27 [backend fallback]
+Batched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/LegacyBatchingRegistrations.cpp:1075 [backend fallback]
+VmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/VmapModeRegistrations.cpp:33 [backend fallback]
+FuncTorchGradWrapper: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/TensorWrapper.cpp:207 [backend fallback]
+PythonTLSSnapshot: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:161 [backend fallback]
+FuncTorchDynamicLayerFrontMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:493 [backend fallback]
+PreDispatch: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:165 [backend fallback]
+PythonDispatcher: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:157 [backend fallback]
+，将禁用Whisper对比功能
+2026-03-27 17:37:37,799 | INFO | download models from model hub: ms
+2026-03-27 17:37:38,211 | WARNING | trust_remote_code: False
+2026-03-27 17:37:38,936 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-27 17:37:38,938 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-27 17:37:40,735 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:37:40,736 | INFO | excludes: None
+2026-03-27 17:37:41,071 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
+2026-03-27 17:37:42,314 | INFO | 📂 文件监控启动
+2026-03-27 17:37:42,314 | INFO | 🎉 服务就绪: http://0.0.0.0:5008
+2026-03-27 17:39:17,200 | INFO | 📚 声纹库已挂载: 5 人
+2026-03-27 17:39:17,201 | INFO | download models from model hub: ms
+2026-03-27 17:39:17,780 | WARNING | trust_remote_code: False
+2026-03-27 17:39:18,916 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-27 17:39:18,918 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-27 17:39:19,411 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:39:19,411 | INFO | excludes: None
+2026-03-27 17:39:19,478 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-27 17:39:19,979 | INFO | Building VAD model.
+2026-03-27 17:39:19,979 | INFO | download models from model hub: ms
+2026-03-27 17:39:20,339 | WARNING | trust_remote_code: False
+2026-03-27 17:39:20,345 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-27 17:39:20,346 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-27 17:39:20,351 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:39:20,351 | INFO | excludes: None
+2026-03-27 17:39:20,352 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-27 17:39:20,365 | INFO | Building punc model.
+2026-03-27 17:39:20,365 | INFO | download models from model hub: ms
+2026-03-27 17:39:20,727 | WARNING | trust_remote_code: False
+2026-03-27 17:39:32,896 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-27 17:39:32,899 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-27 17:39:33,331 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:39:33,332 | INFO | excludes: None
+2026-03-27 17:39:33,395 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
+2026-03-27 17:39:33,602 | INFO | Building SPK model.
+2026-03-27 17:39:33,602 | INFO | download models from model hub: ms
+2026-03-27 17:39:34,640 | WARNING | trust_remote_code: False
+2026-03-27 17:39:34,770 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-27 17:39:34,772 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-27 17:39:34,837 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:39:34,838 | INFO | excludes: None
+2026-03-27 17:39:34,847 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
+2026-03-27 17:39:49,320 | WARNING | ⚠️ Whisper模型加载失败: Could not run 'aten::_sparse_coo_tensor_with_dims_and_tensors' with arguments from the 'SparseMPS' backend. This could be because the operator doesn't exist for this backend, or was omitted during the selective/custom build process (if using custom build). If you are a Facebook employee using PyTorch on mobile, please visit https://fburl.com/ptmfixes for possible resolutions. 'aten::_sparse_coo_tensor_with_dims_and_tensors' is only available for these backends: [MPS, Meta, SparseCPU, SparseMeta, BackendSelect, Python, FuncTorchDynamicLayerBackMode, Functionalize, Named, Conjugate, Negative, ZeroTensor, ADInplaceOrView, AutogradOther, AutogradCPU, AutogradCUDA, AutogradHIP, AutogradXLA, AutogradMPS, AutogradIPU, AutogradXPU, AutogradHPU, AutogradVE, AutogradLazy, AutogradMTIA, AutogradPrivateUse1, AutogradPrivateUse2, AutogradPrivateUse3, AutogradMeta, AutogradNestedTensor, Tracer, AutocastCPU, AutocastXPU, AutocastMPS, AutocastCUDA, FuncTorchBatched, BatchedNestedTensor, FuncTorchVmapMode, Batched, VmapMode, FuncTorchGradWrapper, PythonTLSSnapshot, FuncTorchDynamicLayerFrontMode, PreDispatch, PythonDispatcher].
+
+MPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/mps/MPSFallback.mm:75 [backend fallback]
+Meta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterMeta.cpp:26996 [kernel]
+SparseCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseCPU.cpp:1406 [kernel]
+SparseMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseMeta.cpp:290 [kernel]
+BackendSelect: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterBackendSelect.cpp:792 [kernel]
+Python: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:153 [backend fallback]
+FuncTorchDynamicLayerBackMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:497 [backend fallback]
+Functionalize: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/FunctionalizeFallbackKernel.cpp:349 [backend fallback]
+Named: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/NamedRegistrations.cpp:7 [backend fallback]
+Conjugate: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ConjugateFallback.cpp:17 [backend fallback]
+Negative: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/native/NegateFallback.cpp:18 [backend fallback]
+ZeroTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ZeroTensorFallback.cpp:86 [backend fallback]
+ADInplaceOrView: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/VariableFallbackKernel.cpp:96 [backend fallback]
+AutogradOther: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradCUDA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradHIP: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradXLA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradMPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradIPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradXPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradHPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradVE: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradLazy: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradMTIA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradPrivateUse1: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradPrivateUse2: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradPrivateUse3: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+AutogradNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
+Tracer: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/TraceType_2.cpp:17715 [kernel]
+AutocastCPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:321 [backend fallback]
+AutocastXPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:463 [backend fallback]
+AutocastMPS: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:209 [backend fallback]
+AutocastCUDA: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:165 [backend fallback]
+FuncTorchBatched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:731 [backend fallback]
+BatchedNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:758 [backend fallback]
+FuncTorchVmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/VmapModeRegistrations.cpp:27 [backend fallback]
+Batched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/LegacyBatchingRegistrations.cpp:1075 [backend fallback]
+VmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/VmapModeRegistrations.cpp:33 [backend fallback]
+FuncTorchGradWrapper: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/TensorWrapper.cpp:207 [backend fallback]
+PythonTLSSnapshot: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:161 [backend fallback]
+FuncTorchDynamicLayerFrontMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:493 [backend fallback]
+PreDispatch: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:165 [backend fallback]
+PythonDispatcher: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:157 [backend fallback]
+，将禁用Whisper对比功能
+2026-03-27 17:39:49,776 | INFO | download models from model hub: ms
+2026-03-27 17:39:50,208 | WARNING | trust_remote_code: False
+2026-03-27 17:39:50,933 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-27 17:39:50,935 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-27 17:39:52,370 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:39:52,371 | INFO | excludes: None
+2026-03-27 17:39:52,539 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
+2026-03-27 17:39:53,799 | INFO | 临时文件清理定时任务已启动
+2026-03-27 17:39:53,799 | INFO | 📂 文件监控线程已启动
+2026-03-27 17:39:53,799 | INFO | 文件监控线程已启动
+2026-03-27 17:39:53,799 | INFO |    监控目录: /Volumes/download/records/Sony-2
+2026-03-27 17:39:53,799 | INFO |    扫描间隔: 3秒
+2026-03-27 17:39:53,801 | INFO |    支持格式: .m4a, .mp3, .wav, .aac, .flac, .ogg, .acc
+2026-03-27 17:39:53,804 | INFO | 🔍 正在扫描: /Volumes/download/records/Sony-2
+2026-03-27 17:39:54,082 | INFO | 🔍 发现 1189 个待处理文件
+2026-03-27 17:39:54,082 | INFO |    处理顺序: TermuxAudioRecording_2026-03-26_21-39-26.m4a → ... → TermuxAudioRecording_2026-03-27_17-38-19.m4a
+2026-03-27 17:39:54,082 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-39-26.m4a
+2026-03-27 17:39:54,119 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-39-26.m4a
+2026-03-27 17:39:54,119 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-27 17:39:55,463 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-27 17:39:55,555 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-27 17:40:04,723 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-27 17:40:04,723 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-27 17:40:08,691 | INFO |    eres2net_large: [Baby=0.827, 大可=0.722, 妈妈=0.663, 爸爸=0.421, 婆婆=0.410]
+2026-03-27 17:40:09,405 | INFO |    rdino_ecapa: [大可=0.732, 妈妈=0.712, Baby=0.704, 婆婆=0.673, 爸爸=0.655]
+2026-03-27 17:40:09,991 | INFO |    camplusplus: [大可=0.745, 妈妈=0.666, Baby=0.661, 婆婆=0.422, 爸爸=0.416]
+2026-03-27 17:40:09,991 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-27 17:40:09,991 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 16 个分段。
+2026-03-27 17:40:09,991 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-27 17:40:09,991 | INFO |     [3.1] 处理分段 190ms - 430ms...
+2026-03-27 17:40:09,991 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-27 17:40:09,991 | INFO |     [3.2] 处理分段 1430ms - 2720ms...
+2026-03-27 17:40:10,688 | INFO |       [SenseVoice] あ。 (情感: neutral)
+2026-03-27 17:40:10,688 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1430_1_1774604410.wav
+2026-03-27 17:40:10,688 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:10,872 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:10,872 | INFO |     [3.3] 处理分段 4460ms - 7060ms...
+2026-03-27 17:40:11,500 | INFO |       [SenseVoice] 我第一个。 (情感: neutral)
+2026-03-27 17:40:11,501 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_4460_2_1774604410.wav
+2026-03-27 17:40:11,501 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:11,757 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:11,758 | INFO |     [3.4] 处理分段 8380ms - 8720ms...
+2026-03-27 17:40:11,758 | INFO |       [3.4] 分段时长过短(340ms)，跳过声纹识别。
+2026-03-27 17:40:11,758 | INFO |     [3.5] 处理分段 8720ms - 8960ms...
+2026-03-27 17:40:11,758 | INFO |       [3.5] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-27 17:40:11,758 | INFO |     [3.6] 处理分段 11010ms - 11690ms...
+2026-03-27 17:40:11,758 | INFO |       [3.6] 分段时长过短(680ms)，跳过声纹识别。
+2026-03-27 17:40:11,758 | INFO |     [3.7] 处理分段 13170ms - 13620ms...
+2026-03-27 17:40:11,758 | INFO |       [3.7] 分段时长过短(450ms)，跳过声纹识别。
+2026-03-27 17:40:11,758 | INFO |     [3.8] 处理分段 15050ms - 16750ms...
+2026-03-27 17:40:12,272 | INFO |       [SenseVoice] 。 (情感: neutral)
+2026-03-27 17:40:12,272 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_15050_7_1774604411.wav
+2026-03-27 17:40:12,272 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:12,442 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:12,442 | INFO |     [3.9] 处理分段 16750ms - 20620ms...
+2026-03-27 17:40:12,999 | INFO |       [SenseVoice] 没有拖鞋，妈妈。 (情感: happy)
+2026-03-27 17:40:13,000 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_16750_8_1774604412.wav
+2026-03-27 17:40:13,000 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:13,435 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:13,435 | INFO |     [3.10] 处理分段 21460ms - 23245ms...
+2026-03-27 17:40:14,007 | INFO |       [SenseVoice] こ好天那个看飯。 (情感: neutral)
+2026-03-27 17:40:14,007 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_21460_9_1774604413.wav
+2026-03-27 17:40:14,007 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:14,245 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:14,245 | INFO |     [3.11] 处理分段 25020ms - 26495ms...
+2026-03-27 17:40:14,798 | INFO |       [SenseVoice] 我说很甜的。 (情感: happy)
+2026-03-27 17:40:14,798 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_25020_10_1774604414.wav
+2026-03-27 17:40:14,798 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:14,974 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:14,974 | INFO |     [3.12] 处理分段 27380ms - 34310ms...
+2026-03-27 17:40:16,772 | INFO |       [SenseVoice] 你问你啥？ (情感: neutral)
+2026-03-27 17:40:16,772 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_27380_11_1774604414.wav
+2026-03-27 17:40:16,772 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:17,383 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:17,383 | INFO |     [3.13] 处理分段 37940ms - 39085ms...
+2026-03-27 17:40:18,345 | INFO |       [SenseVoice] Yeah. (情感: neutral)
+2026-03-27 17:40:18,345 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_37940_12_1774604417.wav
+2026-03-27 17:40:18,345 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:18,467 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:18,468 | INFO |     [3.14] 处理分段 44790ms - 45030ms...
+2026-03-27 17:40:18,468 | INFO |       [3.14] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-27 17:40:18,468 | INFO |     [3.15] 处理分段 47860ms - 50670ms...
+2026-03-27 17:40:19,871 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-27 17:40:19,872 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_47860_14_1774604418.wav
+2026-03-27 17:40:19,872 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:20,125 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:20,125 | INFO |     [3.16] 处理分段 54750ms - 59730ms...
+2026-03-27 17:40:20,931 | INFO |       [SenseVoice] ，宝宝。 (情感: neutral)
+2026-03-27 17:40:20,931 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_54750_15_1774604420.wav
+2026-03-27 17:40:20,931 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:21,347 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:21,347 | INFO | ✅ 完成! 音频:59.9s | 耗时:27.23s | RTF:0.455
+2026-03-27 17:40:21,347 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-27 17:40:21,347 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.904,
+  "meta": {
+    "process_time": 27.22968602180481,
+    "audio_duration": 59.904,
+    "rtf": 0.45455538898579073,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-27 17:40:21,350 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-26_21-39-26.m4a
+2026-03-27 17:40:21,350 | INFO |    文本长度: 0 字
+2026-03-27 17:40:21,350 | INFO |    分段数: 0
+2026-03-27 17:40:21,488 | INFO | 📦 已移动到: processed/2026-03-26/TermuxAudioRecording_2026-03-26_21-39-26.m4a
+2026-03-27 17:40:21,488 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-40-27.m4a
+2026-03-27 17:40:21,567 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-40-27.m4a
+2026-03-27 17:40:21,567 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-27 17:40:22,866 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-27 17:40:22,930 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-27 17:40:28,265 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-27 17:40:28,265 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-27 17:40:33,863 | INFO |    eres2net_large: [Baby=0.741, 大可=0.639, 妈妈=0.631, 爸爸=0.471, 婆婆=0.398]
+2026-03-27 17:40:34,530 | INFO |    rdino_ecapa: [妈妈=0.630, 大可=0.614, 爸爸=0.578, Baby=0.554, 婆婆=0.543]
+2026-03-27 17:40:35,205 | INFO |    camplusplus: [大可=0.606, 妈妈=0.598, Baby=0.452, 爸爸=0.425, 婆婆=0.328]
+2026-03-27 17:40:35,205 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-27 17:40:35,205 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 9 个分段。
+2026-03-27 17:40:35,205 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-27 17:40:35,205 | INFO |     [3.1] 处理分段 250ms - 480ms...
+2026-03-27 17:40:35,205 | INFO |       [3.1] 分段时长过短(230ms)，跳过声纹识别。
+2026-03-27 17:40:35,205 | INFO |     [3.2] 处理分段 1480ms - 3625ms...
+2026-03-27 17:40:36,823 | INFO |       [SenseVoice] 吃吧，你又开始考虑了。 (情感: neutral)
+2026-03-27 17:40:36,824 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1480_1_1774604435.wav
+2026-03-27 17:40:36,824 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:37,042 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:37,042 | INFO |     [3.3] 处理分段 4110ms - 35915ms...
+2026-03-27 17:40:38,645 | INFO |       [SenseVoice] 。 (情感: neutral)
+2026-03-27 17:40:38,646 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_4110_2_1774604437.wav
+2026-03-27 17:40:38,646 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:41,659 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:41,659 | INFO |     [3.4] 处理分段 38330ms - 41060ms...
+2026-03-27 17:40:42,446 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-27 17:40:42,446 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_38330_3_1774604441.wav
+2026-03-27 17:40:42,446 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:42,695 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:42,695 | INFO |     [3.5] 处理分段 43410ms - 44065ms...
+2026-03-27 17:40:42,695 | INFO |       [3.5] 分段时长过短(655ms)，跳过声纹识别。
+2026-03-27 17:40:42,695 | INFO |     [3.6] 处理分段 48690ms - 49290ms...
+2026-03-27 17:40:42,695 | INFO |       [3.6] 分段时长过短(600ms)，跳过声纹识别。
+2026-03-27 17:40:42,695 | INFO |     [3.7] 处理分段 54680ms - 56300ms...
+2026-03-27 17:40:43,421 | INFO |       [SenseVoice] 。 (情感: neutral)
+2026-03-27 17:40:43,421 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_54680_6_1774604442.wav
+2026-03-27 17:40:43,421 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:40:43,572 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:40:43,572 | INFO |     [3.8] 处理分段 56300ms - 56850ms...
+2026-03-27 17:40:43,572 | INFO |       [3.8] 分段时长过短(550ms)，跳过声纹识别。
+2026-03-27 17:40:43,572 | INFO |     [3.9] 处理分段 58870ms - 59565ms...
+2026-03-27 17:40:43,572 | INFO |       [3.9] 分段时长过短(695ms)，跳过声纹识别。
+2026-03-27 17:40:43,572 | INFO | ✅ 完成! 音频:59.7s | 耗时:22.01s | RTF:0.369
+2026-03-27 17:40:43,572 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-27 17:40:43,572 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.712,
+  "meta": {
+    "process_time": 22.00617003440857,
+    "audio_duration": 59.712,
+    "rtf": 0.3685384853029302,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-27 17:40:43,575 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-26_21-40-27.m4a
+2026-03-27 17:40:43,575 | INFO |    文本长度: 0 字
+2026-03-27 17:40:43,575 | INFO |    分段数: 0
+2026-03-27 17:40:43,643 | INFO | 📦 已移动到: processed/2026-03-26/TermuxAudioRecording_2026-03-26_21-40-27.m4a
+2026-03-27 17:40:43,643 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-41-28.m4a
+2026-03-27 17:40:43,706 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-41-28.m4a
+2026-03-27 17:40:43,707 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-27 17:40:44,950 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-27 17:40:45,003 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-27 17:40:54,344 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-27 17:40:54,344 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-27 17:40:59,832 | INFO |    eres2net_large: [妈妈=0.753, Baby=0.724, 大可=0.680, 婆婆=0.544, 爸爸=0.527]
+2026-03-27 17:41:00,519 | INFO |    rdino_ecapa: [妈妈=0.780, 大可=0.740, 婆婆=0.729, Baby=0.684, 爸爸=0.683]
+2026-03-27 17:41:01,213 | INFO |    camplusplus: [妈妈=0.786, 大可=0.633, Baby=0.548, 婆婆=0.478, 爸爸=0.403]
+2026-03-27 17:41:01,213 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-27 17:41:01,213 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 24 个分段。
+2026-03-27 17:41:01,214 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-27 17:41:01,214 | INFO |     [3.1] 处理分段 210ms - 450ms...
+2026-03-27 17:41:01,214 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-27 17:41:01,214 | INFO |     [3.2] 处理分段 2690ms - 8710ms...
+2026-03-27 17:41:02,623 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-27 17:41:02,624 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_2690_1_1774604461.wav
+2026-03-27 17:41:02,624 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:03,129 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:03,129 | INFO |     [3.3] 处理分段 10680ms - 10920ms...
+2026-03-27 17:41:03,129 | INFO |       [3.3] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-27 17:41:03,129 | INFO |     [3.4] 处理分段 11430ms - 12455ms...
+2026-03-27 17:41:04,053 | INFO |       [SenseVoice] 不好意思嘞。 (情感: neutral)
+2026-03-27 17:41:04,053 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_11430_3_1774604463.wav
+2026-03-27 17:41:04,053 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:04,172 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:04,172 | INFO |     [3.5] 处理分段 13150ms - 14985ms...
+2026-03-27 17:41:04,783 | INFO |       [SenseVoice] 不好意思哦。 (情感: neutral)
+2026-03-27 17:41:04,783 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_13150_4_1774604464.wav
+2026-03-27 17:41:04,784 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:04,952 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:04,952 | INFO |     [3.6] 处理分段 16030ms - 17260ms...
+2026-03-27 17:41:05,441 | INFO |       [SenseVoice] 我不说。 (情感: neutral)
+2026-03-27 17:41:05,441 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_16030_5_1774604464.wav
+2026-03-27 17:41:05,441 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:05,572 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:05,572 | INFO |     [3.7] 处理分段 21100ms - 21340ms...
+2026-03-27 17:41:05,572 | INFO |       [3.7] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-27 17:41:05,572 | INFO |     [3.8] 处理分段 21360ms - 21630ms...
+2026-03-27 17:41:05,572 | INFO |       [3.8] 分段时长过短(270ms)，跳过声纹识别。
+2026-03-27 17:41:05,572 | INFO |     [3.9] 处理分段 21930ms - 31340ms...
+2026-03-27 17:41:06,124 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-27 17:41:06,125 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_21930_8_1774604465.wav
+2026-03-27 17:41:06,125 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:06,986 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:06,986 | INFO |     [3.10] 处理分段 32850ms - 33090ms...
+2026-03-27 17:41:06,986 | INFO |       [3.10] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-27 17:41:06,986 | INFO |     [3.11] 处理分段 34350ms - 34940ms...
+2026-03-27 17:41:06,986 | INFO |       [3.11] 分段时长过短(590ms)，跳过声纹识别。
+2026-03-27 17:41:06,986 | INFO |     [3.12] 处理分段 35200ms - 36980ms...
+2026-03-27 17:41:07,527 | INFO |       [SenseVoice] 你们你们要去繁花的话。 (情感: neutral)
+2026-03-27 17:41:07,527 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_35200_11_1774604467.wav
+2026-03-27 17:41:07,527 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:07,745 | INFO |       [性能] 已识别说话人 妈妈
+2026-03-27 17:41:07,746 | INFO |     [3.13] 处理分段 36980ms - 38800ms...
+2026-03-27 17:41:08,113 | INFO |       [SenseVoice] 给我带几个封蜜小面包。 (情感: neutral)
+2026-03-27 17:41:08,113 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_36980_12_1774604467.wav
+2026-03-27 17:41:08,113 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:08,389 | INFO |       [性能] 已识别说话人 妈妈
+2026-03-27 17:41:08,389 | INFO |     [3.14] 处理分段 39260ms - 40360ms...
+2026-03-27 17:41:09,000 | INFO |       [SenseVoice] 那早就不想说。 (情感: neutral)
+2026-03-27 17:41:09,000 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_39260_13_1774604468.wav
+2026-03-27 17:41:09,000 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:09,125 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:09,125 | INFO |     [3.15] 处理分段 40560ms - 42080ms...
+2026-03-27 17:41:09,541 | INFO |       [SenseVoice] 我刚在外卖上看见了。 (情感: neutral)
+2026-03-27 17:41:09,541 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_40560_14_1774604469.wav
+2026-03-27 17:41:09,541 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:09,686 | INFO |       [性能] 已识别说话人 妈妈
+2026-03-27 17:41:09,686 | INFO |     [3.16] 处理分段 42080ms - 42880ms...
+2026-03-27 17:41:09,686 | INFO |       [3.16] 分段时长过短(800ms)，跳过声纹识别。
+2026-03-27 17:41:09,686 | INFO |     [3.17] 处理分段 42880ms - 44935ms...
+2026-03-27 17:41:10,253 | INFO |       [SenseVoice] 但是他在外卖上卖的比较贵。 (情感: neutral)
+2026-03-27 17:41:10,253 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_42880_16_1774604469.wav
+2026-03-27 17:41:10,253 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:10,587 | INFO |       [性能] 已识别说话人 妈妈
+2026-03-27 17:41:10,587 | INFO |     [3.18] 处理分段 45950ms - 47110ms...
+2026-03-27 17:41:11,234 | INFO |       [SenseVoice] 次にくいて。 (情感: neutral)
+2026-03-27 17:41:11,234 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_45950_17_1774604470.wav
+2026-03-27 17:41:11,234 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:11,361 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:11,361 | INFO |     [3.19] 处理分段 47110ms - 49750ms...
+2026-03-27 17:41:11,882 | INFO |       [SenseVoice] 我就不高兴见什么样子啊？ (情感: neutral)
+2026-03-27 17:41:11,883 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_47110_18_1774604471.wav
+2026-03-27 17:41:11,883 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:12,106 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:12,106 | INFO |     [3.20] 处理分段 49750ms - 51030ms...
+2026-03-27 17:41:12,602 | INFO |       [SenseVoice] 我要吃饭。 (情感: neutral)
+2026-03-27 17:41:12,602 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_49750_19_1774604472.wav
+2026-03-27 17:41:12,602 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:12,737 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:12,737 | INFO |     [3.21] 处理分段 51050ms - 52505ms...
+2026-03-27 17:41:13,281 | INFO |       [SenseVoice] 小孩是。 (情感: neutral)
+2026-03-27 17:41:13,281 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_51050_20_1774604472.wav
+2026-03-27 17:41:13,281 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:13,421 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:13,421 | INFO |     [3.22] 处理分段 54220ms - 55240ms...
+2026-03-27 17:41:13,831 | INFO |       [SenseVoice] 一人分一个呗。 (情感: neutral)
+2026-03-27 17:41:13,831 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_54220_21_1774604473.wav
+2026-03-27 17:41:13,831 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:13,952 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:13,952 | INFO |     [3.23] 处理分段 56000ms - 57045ms...
+2026-03-27 17:41:14,380 | INFO |       [SenseVoice] 一个个啊。 (情感: neutral)
+2026-03-27 17:41:14,380 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_56000_22_1774604474.wav
+2026-03-27 17:41:14,380 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:14,502 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:14,502 | INFO |     [3.24] 处理分段 58610ms - 59645ms...
+2026-03-27 17:41:14,881 | INFO |       [SenseVoice] 这答案有。 (情感: neutral)
+2026-03-27 17:41:14,882 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_58610_23_1774604474.wav
+2026-03-27 17:41:14,882 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-27 17:41:14,994 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-27 17:41:14,994 | INFO | ✅ 完成! 音频:59.7s | 耗时:31.29s | RTF:0.524
+2026-03-27 17:41:14,994 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-27 17:41:14,995 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "你们你们要去杂花的话，给我带几个蜂蜜小面包。我刚在外卖上看见了，但是他在外卖上卖的比较贵，",
+  "segments": [
+    {
+      "text": "你们你们要去杂花的话，",
+      "start": 35200,
+      "end": 36980,
+      "spk": "妈妈",
+      "emotion": "neutral",
+      "whisper_text": null,
+      "sensevoice_text": "你们你们要去繁花的话。",
+      "confidence": 0.688,
+      "recognition_details": [
+        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.756352)",
+        "模型 rdino_ecapa: Unknown",
+        "模型 camplusplus: 识别为 妈妈 (相似度: 0.619363)",
+        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.688)"
+      ],
+      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_11.wav",
+      "speech_metrics": {
+        "duration_seconds": 1.78,
+        "word_count": 11,
+        "speech_rate": 6.18
+      },
+      "text_quality": {
+        "is_noise": false,
+        "noise_score": 0.109,
+        "repeat_ratio": 0.182,
+        "filler_ratio": 0.0
+      },
+      "emotion_info": {
+        "emotion": "neutral",
+        "source": "sensevoice",
+        "original_tag": "<|neutral|>",
+        "detected_by_sensevoice": true
+      }
+    },
+    {
+      "text": "给我带几个蜂蜜小面包。",
+      "start": 36980,
+      "end": 38800,
+      "spk": "妈妈",
+      "emotion": "neutral",
+      "whisper_text": null,
+      "sensevoice_text": "给我带几个封蜜小面包。",
+      "confidence": 0.67,
+      "recognition_details": [
+        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.671339)",
+        "模型 rdino_ecapa: Unknown",
+        "模型 camplusplus: 识别为 妈妈 (相似度: 0.668624)",
+        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.670)"
+      ],
+      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_12.wav",
+      "speech_metrics": {
+        "duration_seconds": 1.82,
+        "word_count": 11,
+        "speech_rate": 6.04
+      },
+      "text_quality": {
+        "is_noise": false,
+        "noise_score": 0.055,
+        "repeat_ratio": 0.091,
+        "filler_ratio": 0.0
+      },
+      "emotion_info": {
+        "emotion": "neutral",
+        "source": "sensevoice",
+        "original_tag": "<|neutral|>",
+        "detected_by_sensevoice": true
+      }
+    },
+    {
+      "text": "我刚在外卖上看见了，",
+      "start": 40560,
+      "end": 42080,
+      "spk": "妈妈",
+      "emotion": "neutral",
+      "whisper_text": null,
+      "sensevoice_text": "我刚在外卖上看见了。",
+      "confidence": 0.632,
+      "recognition_details": [
+        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.660884)",
+        "模型 rdino_ecapa: Unknown",
+        "模型 camplusplus: 识别为 妈妈 (相似度: 0.602335)",
+        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.632)"
+      ],
+      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_14.wav",
+      "speech_metrics": {
+        "duration_seconds": 1.52,
+        "word_count": 10,
+        "speech_rate": 6.58
+      },
+      "text_quality": {
+        "is_noise": false,
+        "noise_score": 0.06,
+        "repeat_ratio": 0.1,
+        "filler_ratio": 0.0
+      },
+      "emotion_info": {
+        "emotion": "neutral",
+        "source": "sensevoice",
+        "original_tag": "<|neutral|>",
+        "detected_by_sensevoice": true
+      }
+    },
+    {
+      "text": "但是他在外卖上卖的比较贵，",
+      "start": 42880,
+      "end": 44935,
+      "spk": "妈妈",
+      "emotion": "neutral",
+      "whisper_text": null,
+      "sensevoice_text": "但是他在外卖上卖的比较贵。",
+      "confidence": 0.712,
+      "recognition_details": [
+        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.701547)",
+        "模型 rdino_ecapa: Unknown",
+        "模型 camplusplus: 识别为 妈妈 (相似度: 0.722855)",
+        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.712)"
+      ],
+      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_16.wav",
+      "speech_metrics": {
+        "duration_seconds": 2.06,
+        "word_count": 13,
+        "speech_rate": 6.33
+      },
+      "text_quality": {
+        "is_noise": false,
+        "noise_score": 0.092,
+        "repeat_ratio": 0.154,
+        "filler_ratio": 0.0
+      },
+      "emotion_info": {
+        "emotion": "neutral",
+        "source": "sensevoice",
+        "original_tag": "<|neutral|>",
+        "detected_by_sensevoice": true
+      }
+    }
+  ],
+  "duration": 59.712,
+  "meta": {
+    "process_time": 31.289158821105957,
+    "audio_duration": 59.712,
+    "rtf": 0.5240011860447809,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-27 17:41:16,452 | INFO | ✅ 数据库保存成功 (recording_time: 2026-03-26 21:41:28)
+2026-03-27 17:41:16,453 | INFO |   智能摘要: 1位说话人, 4个分段
+2026-03-27 17:41:16,463 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-26_21-41-28.m4a
+2026-03-27 17:41:16,463 | INFO |    文本长度: 45 字
+2026-03-27 17:41:16,463 | INFO |    分段数: 4
+2026-03-27 17:41:16,530 | INFO | 📦 已移动到: processed/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28.m4a
+2026-03-27 17:41:16,530 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-42-28.m4a
+2026-03-27 17:41:16,563 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-42-28.m4a
+2026-03-27 17:41:16,563 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-27 17:41:17,837 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-27 17:41:17,897 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-27 17:48:23,959 | INFO | 📚 声纹库已挂载: 5 人
+2026-03-27 17:48:23,959 | INFO | download models from model hub: ms
+2026-03-27 17:48:24,383 | WARNING | trust_remote_code: False
+2026-03-27 17:48:25,570 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-27 17:48:25,572 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-27 17:48:26,175 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:48:26,175 | INFO | excludes: None
+2026-03-27 17:48:26,251 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-27 17:48:26,774 | INFO | Building VAD model.
+2026-03-27 17:48:26,774 | INFO | download models from model hub: ms
+2026-03-27 17:48:27,234 | WARNING | trust_remote_code: False
+2026-03-27 17:48:27,238 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-27 17:48:27,238 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-27 17:48:27,242 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:48:27,242 | INFO | excludes: None
+2026-03-27 17:48:27,243 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-27 17:48:27,250 | INFO | Building punc model.
+2026-03-27 17:48:27,251 | INFO | download models from model hub: ms
+2026-03-27 17:48:27,714 | WARNING | trust_remote_code: False
+2026-03-27 17:48:41,295 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-27 17:48:41,298 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-27 17:48:41,774 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:48:41,774 | INFO | excludes: None
+2026-03-27 17:48:41,854 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
+2026-03-27 17:48:42,095 | INFO | Building SPK model.
+2026-03-27 17:48:42,095 | INFO | download models from model hub: ms
+2026-03-27 17:48:43,162 | WARNING | trust_remote_code: False
+2026-03-27 17:48:43,273 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-27 17:48:43,275 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-27 17:48:43,343 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:48:43,344 | INFO | excludes: None
+2026-03-27 17:48:43,354 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
+2026-03-27 17:48:58,842 | WARNING | ⚠️ Whisper 在 macOS MPS 环境下检测到张量不兼容，已自动回退到 SenseVoice 引擎进行高精度识别。
+2026-03-27 17:48:59,411 | INFO | download models from model hub: ms
+2026-03-27 17:48:59,799 | WARNING | trust_remote_code: False
+2026-03-27 17:49:00,712 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-27 17:49:00,715 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-27 17:49:02,190 | INFO | scope_map: ['module.', 'None']
+2026-03-27 17:49:02,190 | INFO | excludes: None
+2026-03-27 17:49:02,443 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
+2026-03-27 17:49:03,825 | INFO | 临时文件清理定时任务已启动
+2026-03-27 17:49:03,825 | INFO | 📂 文件监控线程已启动
+2026-03-27 17:49:03,826 | INFO |    监控目录: /Volumes/download/records/Sony-2
+2026-03-27 17:49:11,698 | INFO | 🔍 发现 1195 个待处理文件
+2026-03-27 17:49:11,698 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-42-28.m4a
+2026-03-27 17:49:11,732 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-42-28.m4a
+2026-03-27 17:49:11,732 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-27 17:49:13,179 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-27 17:49:13,242 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-27 17:49:27,336 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-27 17:49:27,337 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2

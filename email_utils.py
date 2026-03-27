@@ -45,15 +45,17 @@ def send_email_async(subject, content):
     """
     threading.Thread(target=send_email_sync, args=(subject, content), daemon=True).start()
 
-def send_cry_alert_email(filename, time_str):
+def send_cry_alert_email(filename, confidence, details=None):
     """
-    专门发送哭声警报
+    专门发送哭声警报（增强版）
     """
     subject = "🚨 宝宝哭声警报！"
+    details_str = "\n".join(details) if details else "无详细模型得分"
     content = (
-        f"时间: {time_str}\n"
-        f"文件: {filename}\n\n"
-        "系统已检测到宝宝哭声，正在开始 5 分钟的观察期以搜集完整分析上下文。\n"
-        "分析报告将在 5 分钟后生成并存入系统。"
+        f"检测文件: {filename}\n"
+        f"置信度: {confidence:.3f}\n"
+        f"模型详情:\n{details_str}\n\n"
+        "系统已检测到宝宝哭声，并记录到数据库。\n"
+        "针对该事件的 Gemini 深度分析通常在事件发生的 5 分钟后（收集完整上下文后）生成。"
     )
     send_email_async(subject, content)

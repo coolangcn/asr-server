@@ -2435,6 +2435,10 @@
                 const response = await fetch('/api/cry_events');
                 const data = await response.json();
                 renderBabyCry(data.events || []);
+                // 自动滚动到顶部
+                const container = document.getElementById('babycry-content');
+                if (container) container.scrollTop = 0;
+                
                 setTimeout(initBabyCryTimeline, 100);
             } catch (e) {
                 console.error("Failed to fetch baby cry events", e);

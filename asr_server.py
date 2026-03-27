@@ -20,6 +20,7 @@ import requests
 import hashlib
 from datetime import datetime
 from email_utils import send_cry_alert_email   # 增加邮件通知支持
+import audio_processor
 
 # =================【 配置 】=================
 import platform
@@ -110,17 +111,8 @@ class Config:
     SENSEVOICE_MODEL = "iic/SenseVoiceSmall"
     ENABLE_SENSEVOICE = True  # 是否启用SenseVoice(情感检测+第三转录)
 
-# 文件监控配置
-class FileMonitorConfig:
-    # 跨平台路径处理: Windows 使用盘符路径, macOS 使用 /Volumes 挂载路径
-    ENABLED = True
-    SOURCE_DIR = "/Volumes/download/records/Sony-2"  # macOS SMB挂载路径
-
-    PROCESSED_DIR = "processed"
-    FAILED_DIR = "failed"
-    TRANSCRIPTS_DIR = "transcripts"
-    SCAN_INTERVAL = 3  # 秒
-    SUPPORTED_FORMATS = ['.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc']
+# 文件监控配置 (已迁移至 audio_processor)
+FileMonitorConfig = audio_processor.FileMonitorConfig
 
 # LLM 配置
 class LLMConfig:
@@ -321,7 +313,12 @@ def load_models():
             print(f"✅ Whisper {Config.WHISPER_MODEL} 模型加载完成")
 
         except Exception as e:
-            logger.warning(f"⚠️ Whisper模型加载失败: {e}，将禁用Whisper对比功能")
+            # 针对 macOS MPS 环境下的特殊报错进行友好提示
+            error_msg = str(e)
+            if "aten::_sparse_coo_tensor_with_dims_and_tensors" in error_msg:
+                logger.warning("⚠️ Whisper 在 macOS MPS 环境下检测到张量不兼容，已自动回退到 SenseVoice 引擎进行高精度识别。")
+            else:
+                logger.warning(f"⚠️ Whisper模型加载受限: {error_msg}，将使用主引擎进行音频转录。")
             whisper_model = None
 
     # 5. 加载 SenseVoice 模型 (情感检测)
@@ -2276,192 +2273,6 @@ def stream_logs():
     
     return Response(generate_logs(), mimetype='text/event-stream')
 
-# =================== 文件监控 ===================
-def monitor_files():
-    """监控源目录中的新音频文件并自动转录"""
-    if not FileMonitorConfig.ENABLED:
-        logger.info("📂 文件监控功能已禁用")
-        return
-    logger.info("📂 文件监控线程已启动")
-    logger.info(f"   监控目录: {FileMonitorConfig.SOURCE_DIR}")
-    logger.info(f"   扫描间隔: {FileMonitorConfig.SCAN_INTERVAL}秒")
-    logger.info(f"   支持格式: {', '.join(FileMonitorConfig.SUPPORTED_FORMATS)}")
-    
-    # 确保必要的目录存在 (跳过已存在的挂载点)
-    if not os.path.exists(FileMonitorConfig.SOURCE_DIR):
-        os.makedirs(FileMonitorConfig.SOURCE_DIR, exist_ok=True)
-    processed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR)
-    os.makedirs(processed_dir, exist_ok=True)
-    failed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.FAILED_DIR)
-    os.makedirs(failed_dir, exist_ok=True)
-    
-    processed_files = set()  # 记录已处理的文件，避免重复处理
-    
-    while True:
-        try:
-            # 扫描源目录
-            logger.info(f"🔍 正在扫描: {FileMonitorConfig.SOURCE_DIR}")
-            if not os.path.exists(FileMonitorConfig.SOURCE_DIR):
-                logger.warning(f"⚠️ 源目录不存在: {FileMonitorConfig.SOURCE_DIR}")
-                time.sleep(FileMonitorConfig.SCAN_INTERVAL)
-                continue
-            
-            files = []
-            for item in os.listdir(FileMonitorConfig.SOURCE_DIR):
-                item_path = os.path.join(FileMonitorConfig.SOURCE_DIR, item)
-                
-                # 跳过特殊目录
-                if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR, "audio_segments", "logs"] or item.startswith('.'):
-                    continue
-                
-                # 收集文件列表 (支持根目录和一级子目录)
-                items_to_check = []
-                if os.path.isfile(item_path):
-                    items_to_check.append(item_path)
-                elif os.path.isdir(item_path):
-                    try:
-                        for subitem in os.listdir(item_path):
-                            if not subitem.startswith('.'):
-                                subitem_path = os.path.join(item_path, subitem)
-                                if os.path.isfile(subitem_path):
-                                    items_to_check.append(subitem_path)
-                    except Exception as e:
-                        logger.error(f"读取子目录 {item_path} 失败: {e}")
-                                
-                for filepath in items_to_check:
-                    filename = os.path.basename(filepath)
-                    
-                    # 检查文件扩展名
-                    ext = os.path.splitext(filename)[1].lower()
-                    if ext not in FileMonitorConfig.SUPPORTED_FORMATS:
-                        continue
-                    
-                    # 跳过包含TEMP的文件
-                    if 'TEMP' in filename or '_TEMP' in filename:
-                        continue
-                    
-                    # 跳过已处理的文件
-                    if filename in processed_files:
-                        continue
-                    
-                    files.append((filename, filepath))
-            
-            # 按文件名排序，确保时间戳早的文件先处理
-            # 文件名格式如: TermuxAudioRecording_2025-11-18_00-34-27.m4a
-            # 或: recording-20251115-131250.m4a
-            files.sort(key=lambda x: x[0])  # 按文件名字母顺序排序，时间戳早的在前
-            
-            # 处理找到的文件
-            if files:
-                logger.info(f"🔍 发现 {len(files)} 个待处理文件")
-                logger.info(f"   处理顺序: {files[0][0]} → ... → {files[-1][0]}")
-                
-                for filename, filepath in files:
-                    try:
-                        # 检查录音时间,跳过凌晨1点到早上6点之间的录音
-                        recording_time = parse_recording_time(filename)
-                        if recording_time:
-                            hour = recording_time.hour
-                            if 1 <= hour < 6:
-                                logger.info(f"⏭️ 跳过凌晨录音: {filename} (录音时间: {recording_time.strftime('%Y-%m-%d %H:%M:%S')})")
-                                # 直接移动到已处理目录,不进行转录 (按日期分类)
-                                date_subdir = recording_time.strftime("%Y-%m-%d")
-                                processed_date_dir = os.path.join(processed_dir, date_subdir)
-                                os.makedirs(processed_date_dir, exist_ok=True)
-                                processed_path = os.path.join(processed_date_dir, filename)
-                                try:
-                                    shutil.move(filepath, processed_path)
-                                    logger.info(f"📦 已移动到: {FileMonitorConfig.PROCESSED_DIR}/{filename}")
-                                except Exception as move_error:
-                                    logger.warning(f"⚠️ 移动文件失败: {move_error}")
-                                # 标记为已处理
-                                processed_files.add(filename)
-                                continue
-                        
-                        logger.info(f"📤 开始处理: {filename}")
-                        
-                        # 调用本地转录API
-                        with open(filepath, 'rb') as f:
-                            files_data = {'audio_file': (filename, f, 'audio/mpeg')}
-                            response = requests.post(
-                                'http://localhost:5008/transcribes',
-                                files=files_data,
-                                timeout=7200  # 2小时超时
-                            )
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            logger.info(f"✅ 转录完成: {filename}")
-                            logger.info(f"   文本长度: {len(result.get('full_text', ''))} 字")
-                            logger.info(f"   分段数: {len(result.get('segments', []))}")
-                            
-                            # 移动到已处理目录 (按日期分类)
-                            date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
-                            processed_date_dir = os.path.join(processed_dir, date_subdir)
-                            os.makedirs(processed_date_dir, exist_ok=True)
-                            processed_path = os.path.join(processed_date_dir, filename)
-                            try:
-                                shutil.move(filepath, processed_path)
-                                logger.info(f"📦 已移动到: {FileMonitorConfig.PROCESSED_DIR}/{date_subdir}/{filename}")
-                            except Exception as move_error:
-                                logger.warning(f"⚠️ 移动文件失败: {move_error}")
-                            
-                            # 标记为已处理
-                            processed_files.add(filename)
-                            
-                        else:
-                            logger.error(f"❌ 转录失败: {filename} (HTTP {response.status_code})")
-                            logger.error(f"   响应: {response.text[:200]}")
-                            
-                            # 移动到失败目录 (按日期分类)
-                            date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
-                            failed_date_dir = os.path.join(failed_dir, date_subdir)
-                            os.makedirs(failed_date_dir, exist_ok=True)
-                            failed_path = os.path.join(failed_date_dir, filename)
-                            try:
-                                shutil.move(filepath, failed_path)
-                                logger.info(f"🚫 已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{filename}")
-                            except Exception as move_error:
-                                logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
-                            
-                    except requests.exceptions.Timeout:
-                        logger.error(f"⏱️ 转录超时: {filename}")
-                        # 超时也认为是失败，移动到失败目录 (按日期分类)
-                        date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
-                        failed_date_dir = os.path.join(failed_dir, date_subdir)
-                        os.makedirs(failed_date_dir, exist_ok=True)
-                        failed_path = os.path.join(failed_date_dir, filename)
-                        try:
-                            shutil.move(filepath, failed_path)
-                            logger.info(f"🚫 超时已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{date_subdir}/{filename}")
-                        except Exception as move_error:
-                            logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
-                            
-                    except Exception as e:
-                        logger.error(f"❌ 处理文件失败: {filename}")
-                        logger.error(f"   错误: {str(e)}")
-                        logger.error(traceback.format_exc())
-                        
-                        # 其他异常也移动到失败目录 (按日期分类)
-                        date_subdir = recording_time.strftime("%Y-%m-%d") if recording_time else datetime.now().strftime("%Y-%m-%d")
-                        failed_date_dir = os.path.join(failed_dir, date_subdir)
-                        os.makedirs(failed_date_dir, exist_ok=True)
-                        failed_path = os.path.join(failed_date_dir, filename)
-                        try:
-                            if os.path.exists(filepath):
-                                shutil.move(filepath, failed_path)
-                                logger.info(f"🚫 发生异常已移动到失败目录: {FileMonitorConfig.FAILED_DIR}/{date_subdir}/{filename}")
-                        except Exception as move_error:
-                            logger.warning(f"⚠️ 移动到失败目录失败: {move_error}")
-            
-            # 等待下一次扫描
-            time.sleep(FileMonitorConfig.SCAN_INTERVAL)
-            
-        except Exception as e:
-            logger.error(f"❌ 文件监控异常: {str(e)}")
-            logger.error(traceback.format_exc())
-            time.sleep(FileMonitorConfig.SCAN_INTERVAL)
-
 # =================== 启动 ===================
 def parse_args():
     parser = argparse.ArgumentParser(description='ASR Service')
@@ -2503,10 +2314,8 @@ if __name__ == "__main__":
     cleanup_temp_dir()
     logger.info("临时文件清理定时任务已启动")
     
-    # 启动文件监控线程
-    monitor_thread = threading.Thread(target=monitor_files, daemon=True)
-    monitor_thread.start()
-    logger.info("文件监控线程已启动")
+    # 启动文件监控模块 (已解耦)
+    audio_processor.start_monitor()
     
     print("🎉 服务启动成功！")
     print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")
