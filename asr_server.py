@@ -113,6 +113,7 @@ class Config:
 # 文件监控配置
 class FileMonitorConfig:
     # 跨平台路径处理: Windows 使用盘符路径, macOS 使用 /Volumes 挂载路径
+    ENABLED = True
     SOURCE_DIR = "/Volumes/download/records/Sony-2"  # macOS SMB挂载路径
 
     PROCESSED_DIR = "processed"
@@ -256,14 +257,14 @@ class CryDetectionConfig:
     
     # 声纹阈值 (远低于语音识别的 0.60)
     # 基于 3月20日已知哭声数据: Baby 全局得分约 0.52
-    VOICEPRINT_THRESHOLD = 0.35     # 哭声场景下的宽松声纹阈值
-    VOICEPRINT_GAP = 0.02           # 哭声场景下的极低置信度间隔
+    VOICEPRINT_THRESHOLD = 0.65     # 极致严格门槛 (用户倾向严格)
+    VOICEPRINT_GAP = 0.15           # 严格置信度间隔 (原为0.02/0.10)
     
-    # 单票放行: 只要1个模型命中即可
-    MIN_VOTES = 1
+    # 二票放行: 必须 2 个模型命中才通过 (三选二)
+    MIN_VOTES = 2
     
     # 目标声纹名 (大小写不敏感)
-    TARGET_SPEAKERS = ["baby", "宝宝", "大可"]
+    TARGET_SPEAKERS = ["baby", "宝宝"]
     
     # 冷却机制
     COOLDOWN_SEC = 600              # 10分钟冷却
@@ -1091,7 +1092,7 @@ def detect_cry_from_full_audio(audio_path):
         
         all_scores.sort(key=lambda x: x[1], reverse=True)
         
-        # 找出目标说话人 (Baby/宝宝/大可) 的最高分
+        # 找出目标说话人 (Baby/宝宝) 的最高分
         target_hits = [(n, s) for n, s in all_scores if n.lower() in target_speakers]
         non_target_scores = [(n, s) for n, s in all_scores if n.lower() not in target_speakers]
         
@@ -2235,6 +2236,9 @@ def stream_logs():
 # =================== 文件监控 ===================
 def monitor_files():
     """监控源目录中的新音频文件并自动转录"""
+    if not FileMonitorConfig.ENABLED:
+        logger.info("📂 文件监控功能已禁用")
+        return
     logger.info("📂 文件监控线程已启动")
     logger.info(f"   监控目录: {FileMonitorConfig.SOURCE_DIR}")
     logger.info(f"   扫描间隔: {FileMonitorConfig.SCAN_INTERVAL}秒")
