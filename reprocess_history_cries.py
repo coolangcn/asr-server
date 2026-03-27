@@ -83,9 +83,10 @@ def build_event_dir(base_dir, event_id, event_files):
         if os.path.exists(dest) or os.path.islink(dest):
             os.remove(dest)
         try:
-            os.symlink(fpath, dest)
-        except Exception:
-            shutil.copy2(fpath, dest)  # 软链接失败则直接复制
+            shutil.copy2(fpath, dest)
+            print(f"    [复制] {os.path.basename(fpath)}")
+        except Exception as e:
+            print(f"    [!] 复制失败: {e}")
 
     return event_dir
 

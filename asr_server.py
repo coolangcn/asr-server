@@ -247,6 +247,7 @@ llm_cache_lock = threading.Lock()
 # =================【 历史分析锁 】=================
 _history_reprocess_lock = threading.Lock()
 _history_reprocess_running = False
+_history_reprocess_proc = None # 用于存储当前运行的进程对象
 
 # =================【 轨道A: 独立哭声检测配置 】=================
 # 与语音识别参数完全隔离，仅用于原始音频的哭声声纹匹配
@@ -1262,18 +1263,19 @@ def trigger_reprocess():
         args.append(end_time if end_time else "")
             
         def run_and_cleanup():
-            global _history_reprocess_running
+            global _history_reprocess_running, _history_reprocess_proc
             try:
                 with open(log_file, "a", encoding="utf-8") as f:
-                    proc = subprocess.Popen(
+                    _history_reprocess_proc = subprocess.Popen(
                         args, 
                         stdout=f, 
                         stderr=subprocess.STDOUT,
                         cwd=os.path.dirname(os.path.abspath(__file__))
                     )
-                    proc.wait()
+                    _history_reprocess_proc.wait()
             finally:
                 _history_reprocess_running = False
+                _history_reprocess_proc = None
                 _history_reprocess_lock.release()
                 with open(log_file, "a", encoding="utf-8") as f:
                     f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ 历史音频重分析任务已结束。\n")
@@ -1287,6 +1289,28 @@ def trigger_reprocess():
         _history_reprocess_lock.release()
         logger.error(f"❌ 运行历史分析脚本失败: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/stop_reprocess", methods=["POST"])
+def stop_reprocess():
+    """停止正在运行的历史音频处理任务"""
+    global _history_reprocess_proc, _history_reprocess_running
+    
+    if not _history_reprocess_running or _history_reprocess_proc is None:
+        return jsonify({"message": "当前没有正在运行的任务", "status": "info"})
+        
+    try:
+        # 终止进程
+        if _history_reprocess_proc:
+            _history_reprocess_proc.terminate()
+            # 等待确保释放
+            time.sleep(0.5)
+            if _history_reprocess_proc.poll() is None:
+                _history_reprocess_proc.kill()
+            
+        return jsonify({"message": "后台分析任务已手动停止", "status": "success"})
+    except Exception as e:
+        logger.error(f"❌ 停止任务失败: {e}")
+        return jsonify({"error": f"停止任务失败: {str(e)}"}), 500
 
 @app.route("/api/reprocess_logs", methods=["GET"])
 def get_reprocess_logs():
@@ -2112,18 +2136,37 @@ def transcribe_audio():
                         processed_segments.append(segment_info)
 
                 segments = processed_segments
-                full_text = "".join([s["text"] for s in segments]) # Reconstruct from clean segments
+                
+                # 【强力补充】如果轨道A检出哭声但轨道B(VAD)没有任何分段，则手动补入一个全局哭声片段
+                # 这样可以确保重分析脚本(reprocess_history_cries.py)能正确感知并进入详情分析阶段
+                if cry_detected and not segments:
+                    logger.info("  🍼 [轨道A] 补偿机制启动: VAD未命中，手动添加全局哭声片段。")
+                    segments = [{
+                        "text": "[Baby Cry Detected]",
+                        "start": 0,
+                        "end": int(audio_duration * 1000),
+                        "spk": "Baby",
+                        "emotion": "sad",
+                        "is_baby_cry": True,
+                        "confidence": cry_confidence,
+                        "emotion_info": {
+                            "emotion": "sad",
+                            "source": "cry_detection_track_a",
+                            "detected_by_sensevoice": False
+                        }
+                    }]
+
+                full_text = "".join([s.get("text", "") for s in segments]) 
 
             process_time = time.time() - request_start
             rtf = process_time / audio_duration if audio_duration > 0 else 0
-            # RTF(Real-Time Factor)是实时因子，评估系统处理速度与音频时长的比率
-            # RTF < 1表示可以实时处理，RTF越低系统性能越好
-            logger.info(f"✅ 完成! 音频:{audio_duration:.1f}s | 耗时:{process_time:.2f}s | RTF:{rtf:.3f} (RTF < 1表示可实时处理，值越低性能越好)")
+            logger.info(f"✅ 完成! 音频:{audio_duration:.1f}s | 耗时:{process_time:.2f}s | RTF:{rtf:.3f}")
 
             logger.info("  [生命周期: 4. 组装响应] 开始...")
             response_data = {
                 "full_text": full_text,
                 "segments": segments,
+                "duration": audio_duration,  # 补全根节点字段供重分析脚本使用
                 "meta": {
                     "process_time": process_time,
                     "audio_duration": audio_duration,
