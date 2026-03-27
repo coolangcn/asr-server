@@ -739,10 +739,42 @@ def serve_audio_segment(filepath):
         if not os.path.abspath(full_path).startswith(os.path.abspath(segments_dir)):
             return jsonify({"error": "Invalid path"}), 403
         
-        if not os.path.exists(full_path):
-            return jsonify({"error": f"Audio segment not found: {full_path}"}), 404
-        
         return send_file(full_path, mimetype='audio/wav')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/audio/<path:filepath>')
+def serve_original_audio(filepath):
+    """提供原始或已处理的录音文件回放"""
+    try:
+        source_dir = CONFIG["SOURCE_DIR"]
+        # 先尝试在 processed 目录下找
+        processed_path = os.path.join(source_dir, "processed", filepath)
+        if os.path.exists(processed_path) and os.path.isfile(processed_path):
+            return send_file(processed_path)
+            
+        # 再尝试直接在根目录下找
+        root_path = os.path.join(source_dir, filepath)
+        if os.path.exists(root_path) and os.path.isfile(root_path):
+            return send_file(root_path)
+            
+        # 最后的兜底：如果只是文件名，尝试根据日期前缀搜索
+        if '/' not in filepath and ('_' in filepath or '-' in filepath):
+            import re
+            match = re.search(r'(\d{4}-\d{2}-\d{2})', filepath)
+            if not match:
+                match = re.search(r'(\d{8})', filepath)
+            
+            if match:
+                date_found = match.group(1)
+                if '-' not in date_found:
+                    date_found = f"{date_found[:4]}-{date_found[4:6]}-{date_found[6:8]}"
+                
+                search_path = os.path.join(source_dir, "processed", date_found, filepath)
+                if os.path.exists(search_path):
+                    return send_file(search_path)
+        
+        return jsonify({"error": f"Audio file not found: {filepath}"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

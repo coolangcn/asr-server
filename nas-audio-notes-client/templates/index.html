@@ -644,9 +644,6 @@
             </div>
         </div>
 
-        <div id="view-speaker" class="view-container flex-1 overflow-hidden p-0 hidden">
-            <iframe src="/register_page" style="width:100%; height:100%; border:none;"></iframe>
-        </div>
 
         <div id="view-babycry" class="view-container flex-1 overflow-hidden p-0 hidden">
             <div class="w-full h-full flex flex-col">
@@ -753,8 +750,10 @@
 
         // 切换视图
         function switchTab(tabName) {
+            console.log("Switching to tab:", tabName);
             document.querySelectorAll('.view-container').forEach(el => el.classList.add('hidden'));
-            document.getElementById('view-' + tabName).classList.remove('hidden');
+            const targetView = document.getElementById('view-' + tabName);
+            if (targetView) targetView.classList.remove('hidden');
 
             document.querySelectorAll('.nav-btn').forEach(el => {
                 el.classList.remove('bg-white/10', 'text-white', 'shadow-lg');
@@ -762,20 +761,39 @@
             });
 
             const activeBtn = document.getElementById('nav-' + tabName);
-            activeBtn.classList.remove('text-gray-400');
-            activeBtn.classList.add('bg-white/10', 'text-white', 'shadow-lg');
-
-            // Initialize timeline when switching to chat view
-            if (tabName === 'chat') {
-                setTimeout(initTimeline, 100);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-gray-400');
+                activeBtn.classList.add('bg-white/10', 'text-white', 'shadow-lg');
             }
 
-            // Fix ECharts resize
-            if (tabName === 'analysis') {
+            // --- 统一合并后的扩展逻辑 ---
+            
+            // 1. 自动关闭移动端菜单
+            if (window.innerWidth <= 768) {
+                const aside = document.querySelector('aside');
+                const overlay = document.querySelector('.mobile-overlay');
+                if (aside && aside.classList.contains('mobile-open')) {
+                    aside.classList.remove('mobile-open');
+                    overlay.classList.remove('active');
+                }
+            }
+
+            // 2. 初始化各页面特定组件
+            if (tabName === 'chat') {
+                setTimeout(initTimeline, 100);
+            } else if (tabName === 'analysis') {
                 setTimeout(() => {
-                    if (emotionChartInst) emotionChartInst.resize();
-                    if (heatmapChartInst) heatmapChartInst.resize();
+                    if (window.emotionChartInst) window.emotionChartInst.resize();
+                    if (window.heatmapChartInst) window.heatmapChartInst.resize();
                 }, 50);
+            } else if (tabName === 'speaker') {
+                if (typeof loadSpeakers === "function") loadSpeakers();
+            } else if (tabName === 'babycry') {
+                setTimeout(initBabyCryTimeline, 100);
+                if (!window.babyCryLoaded) {
+                    if (typeof fetchBabyCryEvents === "function") fetchBabyCryEvents();
+                    window.babyCryLoaded = true;
+                }
             }
         }
 
@@ -792,17 +810,37 @@
 
         function formatTime(isoString) {
             if (!isoString) return '';
-            // 将 ISO 字符串解析为日期对象
             const date = new Date(isoString);
-            // 如果日期无效，返回空字符串
             if (isNaN(date.getTime())) return '';
-            // 使用东八区 (UTC+8) 格式化时间
             return date.toLocaleString('zh-CN', {
                 timeZone: 'Asia/Shanghai',
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        let currentAudio = null;
+        function playAudio(path) {
+            if (!path) return;
+            // 如果路径不以 / 或 http 开点，尝试拼接 ASR 服务地址
+            let fullUrl = path;
+            if (!path.startsWith('/') && !path.startsWith('http')) {
+                fullUrl = '/api/audio/' + path;
+            }
+            
+            console.log("Playing audio:", fullUrl);
+            
+            if (currentAudio) {
+                currentAudio.pause();
+            }
+            
+            currentAudio = new Audio(fullUrl);
+            currentAudio.play().catch(e => {
+                console.error("Playback failed:", e);
+                alert("播放失败，请检查文件是否存在: " + fullUrl);
             });
         }
 
@@ -1486,9 +1524,9 @@
             });
         }
 
-        // ECharts 实例变量
-        let emotionChartInst = null;
-        let heatmapChartInst = null;
+        // ECharts 实例变量 (挂载到 window 以便全局 resize)
+        window.emotionChartInst = null;
+        window.heatmapChartInst = null;
 
         // ECharts 初始化函数
         function initEmotionChart(items) {
@@ -1497,8 +1535,8 @@
             if (emotionChartInst) {
                 emotionChartInst.dispose();
             }
-            emotionChartInst = echarts.init(chartDom, 'dark');
-            const myChart = emotionChartInst;
+            window.emotionChartInst = echarts.init(chartDom, 'dark');
+            const myChart = window.emotionChartInst;
 
             // 数据处理：按日期计算情感分数
             const dailyScores = {};
@@ -1546,8 +1584,8 @@
             if (heatmapChartInst) {
                 heatmapChartInst.dispose();
             }
-            heatmapChartInst = echarts.init(chartDom, 'dark');
-            const myChart = heatmapChartInst;
+            window.heatmapChartInst = echarts.init(chartDom, 'dark');
+            const myChart = window.heatmapChartInst;
 
             // 数据处理：统计每小时各说话人的发言数
             // X轴: 小时 (0-23), Y轴: 说话人
@@ -1893,15 +1931,6 @@
         }
 
         // 点击导航按钮后自动关闭移动端菜单
-        const originalSwitchTab = switchTab;
-        switchTab = function (tabName) {
-            originalSwitchTab(tabName);
-
-            // 如果是移动端,关闭菜单
-            if (window.innerWidth <= 768) {
-                toggleMobileMenu();
-            }
-        };
 
 
         // 声纹管理相关函数
@@ -2024,31 +2053,23 @@
         }
 
         // 切换到声纹管理时加载列表
-        const originalSwitchTab2 = switchTab;
-        switchTab = function (tabName) {
-            originalSwitchTab2(tabName);
-            if (tabName === 'speaker') {
-                loadSpeakers();
-            }
-            if (tabName === 'babycry') {
-                setTimeout(initBabyCryTimeline, 100);
-                if (!window.babyCryLoaded) {
-                    fetchBabyCryEvents();
-                    window.babyCryLoaded = true;
-                }
-            }
-        };
         function jumpToChat(time) {
             if (!time) return;
             switchTab('chat');
             
+            // 确保数据已加载
+            if (allItems.length === 0) {
+                loadMore();
+            }
+
             // 给 UI 切换留出一点缓冲时间
             setTimeout(() => {
                 const targetDate = new Date(time);
                 const allChatItems = Array.from(document.querySelectorAll('[data-file-time]'));
                 
                 if (allChatItems.length === 0) {
-                    console.warn("No chat items loaded yet");
+                    // 如果页面还没有元素，尝试再次等待
+                    setTimeout(() => jumpToChat(time), 1000);
                     return;
                 }
                 
@@ -2056,8 +2077,9 @@
                 let minDiff = Infinity;
                 
                 allChatItems.forEach(el => {
-                    const elTime = new Date(el.getAttribute('data-file-time'));
-                    const diff = Math.abs(elTime - targetDate);
+                    const elTimeStr = el.getAttribute('data-file-time');
+                    const elTime = new Date(elTimeStr);
+                    const diff = Math.abs(elTime.getTime() - targetDate.getTime());
                     if (diff < minDiff) {
                         minDiff = diff;
                         closestEl = el;
@@ -2066,13 +2088,15 @@
                 
                 if (closestEl) {
                     closestEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // 高亮效果
-                    closestEl.classList.add('ring-2', 'ring-accent-500', 'bg-accent-500/10', 'rounded-2xl', 'scale-[1.02]', 'transition-all', 'duration-500');
+                    // 强力高亮效果
+                    closestEl.style.transition = 'all 0.5s ease-in-out';
+                    closestEl.classList.add('ring-4', 'ring-accent-500', 'bg-accent-500/20', 'rounded-2xl', 'scale-[1.05]', 'z-50', 'relative');
+                    
                     setTimeout(() => {
-                        closestEl.classList.remove('ring-2', 'ring-accent-500', 'bg-accent-500/10', 'scale-[1.02]');
-                    }, 3000);
+                        closestEl.classList.remove('ring-4', 'ring-accent-500', 'bg-accent-500/20', 'scale-[1.05]');
+                    }, 5000);
                 }
-            }, 300);
+            }, 500);
         }
 
         // === Baby Cry Logic ===
@@ -2195,12 +2219,7 @@
                             <span class="text-xs text-gray-600 ml-auto">${formatTime(fileTime)}</span>
                         </div>
                         
-                        <div class="flex gap-4 mb-2 px-2 hover:bg-white/5 rounded-xl transition-colors p-4 -mx-2 border border-transparent hover:border-gray-800/50 group/card">
-                            <div class="w-10 flex-shrink-0 flex flex-col items-center mt-1">
-                                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-500/20 to-orange-600/20 border border-yellow-500/30 flex items-center justify-center shadow-xl shadow-yellow-900/10 group-hover/card:scale-110 transition-transform">
-                                    <span class="text-xl">👶</span>
-                                </div>
-                            </div>
+                        <div class="flex gap-4 mb-2 px-2 hover:bg-white/5 rounded-xl transition-colors p-4 border border-transparent hover:border-gray-800/50 group/card">
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2 mb-2">
                                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-800 text-gray-200 border border-gray-700 shadow-sm">
@@ -2209,9 +2228,8 @@
                                     <div class="h-px flex-1 bg-gradient-to-r from-gray-800 to-transparent"></div>
                                 </div>
                                 <div class="text-gray-300 leading-relaxed text-sm my-3">
-                                    <div class="mb-4 text-gray-200 font-medium bg-white/5 p-3 rounded-xl border border-white/5 shadow-inner">
-                                        <i class="fa-solid fa-quote-left text-yellow-600/30 text-xl absolute -mt-2 -ml-1"></i>
-                                        ${item.analysis_text || item.reason || '暂无详细分析内容'}
+                                    <div class="mb-4 text-gray-200 font-medium bg-white/5 p-4 rounded-2xl border border-white/5 shadow-inner relative" style="white-space: pre-wrap; line-height: 1.6;">
+                                        ${(item.analysis_text || item.reason || '暂无详细分析内容').replace(/\\n/g, '<br>')}
                                     </div>
                                     <div class="bg-emerald-500/5 p-4 rounded-xl text-emerald-400/90 text-xs border border-emerald-500/10 shadow-sm">
                                         <div class="flex items-start gap-3">

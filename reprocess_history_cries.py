@@ -153,7 +153,8 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"错误: 无法读取主目录: {e}", flush=True)
 
-    files_to_process.sort()
+    # 去重并排序，防止重复扫描
+    files_to_process = sorted(list(set(files_to_process)))
     print(f"[*] 极速扫描完成！耗时 {time.time()-start_scan:.2f} 秒，找到 {len(files_to_process)} 个合法文件", flush=True)
 
     if not files_to_process:

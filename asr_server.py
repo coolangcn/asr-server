@@ -242,12 +242,33 @@ llm_batch_lock = threading.Lock()
 llm_last_batch_time = time.time()
 llm_cache = {}  # 缓存 LLM 响应
 llm_cache_lock = threading.Lock()
-# =========================================================
 
-# =================【 哭声事件冷却机制 】=================
-# 同一哭闹事件窗口内（CRY_COOLDOWN_SEC 秒）只触发一次 Gemini 分析
-CRY_COOLDOWN_SEC = 600  # 10 分钟内视为同一哭闹事件，不重复分析
-_last_cry_trigger_time = 0.0   # 上次触发 Gemini 分析的时间戳
+# =================【 历史分析锁 】=================
+_history_reprocess_lock = threading.Lock()
+_history_reprocess_running = False
+
+# =================【 轨道A: 独立哭声检测配置 】=================
+# 与语音识别参数完全隔离，仅用于原始音频的哭声声纹匹配
+class CryDetectionConfig:
+    """哭声检测专用参数 - 与语音识别 (Config.SV_MODELS) 完全隔离"""
+    ENABLED = True
+    MIN_DURATION_SEC = 3            # 最短有效哭声时长 (秒)
+    
+    # 声纹阈值 (远低于语音识别的 0.60)
+    # 基于 3月20日已知哭声数据: Baby 全局得分约 0.52
+    VOICEPRINT_THRESHOLD = 0.35     # 哭声场景下的宽松声纹阈值
+    VOICEPRINT_GAP = 0.02           # 哭声场景下的极低置信度间隔
+    
+    # 单票放行: 只要1个模型命中即可
+    MIN_VOTES = 1
+    
+    # 目标声纹名 (大小写不敏感)
+    TARGET_SPEAKERS = ["baby", "宝宝", "大可"]
+    
+    # 冷却机制
+    COOLDOWN_SEC = 600              # 10分钟冷却
+
+_last_cry_trigger_time = 0.0
 _cry_cooldown_lock = threading.Lock()
 # =========================================================
 
@@ -474,7 +495,7 @@ def call_gemini_audio_api(audio_paths, prompt):
         logger.error(f"  [BabyCry LLM] 发送请求异常: {e}")
         return None
 
-def process_baby_cry_async(filename, audio_path, start_time, end_time):
+def process_baby_cry_async(filename, audio_path, start_time, end_time, placeholder_id=None):
     """异步处理宝宝哭声分析，支持加载前后5分钟录音作为上下文"""
     import time, re, json
     time.sleep(1) # 等待文件落盘
@@ -531,8 +552,16 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time):
             reason = result.get("reason", "未知")
             advice = result.get("advice", "无")
             from db_manager import save_cry_analysis
-            save_cry_analysis(filename, start_time/1000.0, end_time/1000.0, reason, advice, reason_category=category, event_files=audio_paths_to_send)
-            logger.info(f"👶 [宝宝哭声深度分析] 分类: {category}, 原因: {reason[:50]}...")
+            
+            # 转换 absolute path 为相对于 SOURCE_DIR 的路径，以便前端使用
+            rel_audio_path = audio_path
+            if audio_path.startswith(FileMonitorConfig.SOURCE_DIR):
+                rel_audio_path = "/" + os.path.relpath(audio_path, FileMonitorConfig.SOURCE_DIR)
+            
+            save_cry_analysis(filename, start_time/1000.0, end_time/1000.0, reason, advice, 
+                              reason_category=category, event_files=audio_paths_to_send, 
+                              audio_path=rel_audio_path)
+            logger.info(f"👶 [宝宝哭声深度分析] 分类: {category}, 原因: {reason[:50]}..., 路径: {rel_audio_path}")
             return reason, advice
     except Exception as e:
         logger.error(f"  [BabyCry 解析错误] {e}")
@@ -917,7 +946,8 @@ def extract_embedding_from_file(sv_pipe, wav_path):
         return None
 
 # =================== 多模型交叉验证 ===================
-def identify_speaker_fusion(segment_path, is_cry=False):
+def identify_speaker_fusion(segment_path):
+    """【轨道B: 语音识别专用】声纹融合识别 - 标准参数，不受哭声检测影响"""
     if not speaker_db: 
         logger.info("🤷‍♂️ 声纹数据库为空，无法进行识别")
         return None, 0.0, []
@@ -929,8 +959,6 @@ def identify_speaker_fusion(segment_path, is_cry=False):
     logger.info(f"📋 声纹数据库包含 {len(speaker_db)} 个说话人")
 
     for model_name, sv_pipe in sv_pipelines.items():
-        # 模型处理（静默）
-        
         emb_a = extract_embedding_from_file(sv_pipe, segment_path)
         if emb_a is None:
             logger.error(f"❌ 模型 {model_name} 特征提取失败")
@@ -948,17 +976,11 @@ def identify_speaker_fusion(segment_path, is_cry=False):
             if "avg_embeddings" not in speaker_data or model_name not in speaker_data["avg_embeddings"]: 
                 continue
             
-            # --- 状态联动优化 (Identity-State Locking) ---
-            # 如果不是哭声，但当前对比的是专门的哭声声纹 "Baby"，则跳过，防止误报
-            if not is_cry and name == "Baby":
-                logger.debug(f"  [Jump] 非哭声状态，跳过针对 '{name}' 的声效匹配")
-                continue
-            # -------------------------------------------
+            # 【轨道B】语音识别模式：不跳过 Baby，所有说话人都参与比对
 
             emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
             score = 1 - cosine(emb_a.flatten(), emb_b)
             scores.append((name, score))
-            # DEBUG: 详细评分
             logger.debug(f"  {model_name}: {name}={score:.3f}")
 
         if not scores:
@@ -971,33 +993,15 @@ def identify_speaker_fusion(segment_path, is_cry=False):
         top2_name, top2_score = scores[1] if len(scores) > 1 else (None, 0.0)
         score_gap = top1_score - top2_score
         
-        # DEBUG: 模型识别结果
         logger.debug(f"  {model_name}: {top1_name}={top1_score:.3f} (gap={score_gap:.3f})")
 
-        # 哭声识别增强逻辑 (Cry-Aware BIAS)
-        actual_threshold = threshold
-        actual_gap = gap
-        # 针对宝宝/大可/Baby 等说话人，在有哭声标签时特许降低门槛
-        if is_cry and top1_name and top1_name.lower() in ["baby", "宝宝", "大可"]:
-            actual_threshold = threshold * 0.75  # 0.60 -> 0.45
-            actual_gap = gap * 0.3               # 0.10 -> 0.03
-            logger.info(f"🍼 [Cry-Aware BIAS] 检测到哭声标签，为 {top1_name} 开启识别补偿: 得分 {top1_score:.3f} (阈值 {actual_threshold:.3f})")
-
-        if top1_score >= actual_threshold and score_gap >= actual_gap:
+        # 【轨道B】使用标准阈值，不做任何哭声补偿
+        if top1_score >= threshold and score_gap >= gap:
             model_votes[model_name] = top1_name
             model_scores[model_name] = top1_score
-            # 验证通过（静默）
-            pass
         else:
             model_votes[model_name] = "Unknown"
             model_scores[model_name] = top1_score
-            reason = []
-            if top1_score < actual_threshold:
-                reason.append(f"得分 {top1_score:.6f} < 阈值 {actual_threshold}")
-            if score_gap < actual_gap:
-                reason.append(f"差距 {score_gap:.6f} < 置信度间隔 {actual_gap}")
-            # 验证失败（静默）
-            pass
 
     # DEBUG: 投票结果
     logger.debug(f"  投票: {model_votes}")
@@ -1013,7 +1017,7 @@ def identify_speaker_fusion(segment_path, is_cry=False):
     most_common_vote = vote_counts.most_common(1)[0]
     winner, count = most_common_vote
     
-    # 至少需要2票
+    # 【轨道B】标准 2/3 投票，不做任何哭声特许
     if count >= 2:
         # 计算获胜者的平均置信度
         winning_scores = [model_scores[model] for model, vote in model_votes.items() if vote == winner]
@@ -1042,6 +1046,87 @@ def identify_speaker_fusion(segment_path, is_cry=False):
         # 识别失败（由上层记录）
         logger.debug(f"  未识别: 票数不足 ({winner}={count}<2)")
         return None, 0.0, []
+
+def detect_cry_from_full_audio(audio_path):
+    """
+    【轨道A: 独立哭声检测】
+    直接对 60s 原始音频进行声纹匹配，使用 CryDetectionConfig 参数。
+    与 identify_speaker_fusion (轨道B) 完全独立，互不影响。
+    
+    Returns:
+        (is_cry: bool, confidence: float, details: list[str])
+    """
+    if not CryDetectionConfig.ENABLED or not speaker_db:
+        return False, 0.0, []
+    
+    logger.info(f"🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...")
+    logger.info(f"   参数: threshold={CryDetectionConfig.VOICEPRINT_THRESHOLD}, gap={CryDetectionConfig.VOICEPRINT_GAP}, min_votes={CryDetectionConfig.MIN_VOTES}")
+    
+    target_speakers = CryDetectionConfig.TARGET_SPEAKERS
+    cry_threshold = CryDetectionConfig.VOICEPRINT_THRESHOLD
+    cry_gap = CryDetectionConfig.VOICEPRINT_GAP
+    min_votes = CryDetectionConfig.MIN_VOTES
+    
+    model_results = {}  # {model_name: (top_target_name, top_target_score, gap_to_others)}
+    all_details = []
+    
+    for model_name, sv_pipe in sv_pipelines.items():
+        emb_a = extract_embedding_from_file(sv_pipe, audio_path)
+        if emb_a is None:
+            all_details.append(f"  {model_name}: 特征提取失败")
+            continue
+        
+        # 对所有已注册说话人打分
+        all_scores = []
+        for name, speaker_data in speaker_db.items():
+            if "avg_embeddings" not in speaker_data or model_name not in speaker_data["avg_embeddings"]:
+                continue
+            emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
+            score = 1 - cosine(emb_a.flatten(), emb_b)
+            all_scores.append((name, score))
+        
+        if not all_scores:
+            all_details.append(f"  {model_name}: 无可比对数据")
+            continue
+        
+        all_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        # 找出目标说话人 (Baby/宝宝/大可) 的最高分
+        target_hits = [(n, s) for n, s in all_scores if n.lower() in target_speakers]
+        non_target_scores = [(n, s) for n, s in all_scores if n.lower() not in target_speakers]
+        
+        # 日志：输出所有说话人得分供调试
+        scores_str = ", ".join([f"{n}={s:.3f}" for n, s in all_scores])
+        logger.info(f"   {model_name}: [{scores_str}]")
+        
+        if target_hits:
+            best_target_name, best_target_score = target_hits[0]
+            best_other_score = non_target_scores[0][1] if non_target_scores else 0.0
+            gap = best_target_score - best_other_score
+            
+            passed = best_target_score >= cry_threshold and gap >= cry_gap
+            status = "✅ PASS" if passed else "❌ FAIL"
+            all_details.append(f"  {model_name}: {best_target_name}={best_target_score:.3f} (gap={gap:.3f}) {status}")
+            
+            if passed:
+                model_results[model_name] = (best_target_name, best_target_score, gap)
+        else:
+            all_details.append(f"  {model_name}: 未找到目标说话人")
+    
+    # 投票判定
+    vote_count = len(model_results)
+    is_cry = vote_count >= min_votes
+    
+    if is_cry:
+        avg_conf = np.mean([v[1] for v in model_results.values()])
+        winner_name = list(model_results.values())[0][0]
+        logger.info(f"   🍼 [轨道A 结论] 检出哭声! 说话人={winner_name}, 票数={vote_count}/{len(sv_pipelines)}, 平均置信度={avg_conf:.3f}")
+        all_details.append(f"结论: 哭声检出 ({winner_name}, {vote_count}票, conf={avg_conf:.3f})")
+        return True, avg_conf, all_details
+    else:
+        logger.info(f"   ℹ️ [轨道A 结论] 未检出哭声 (命中模型数={vote_count} < 所需={min_votes})")
+        all_details.append(f"结论: 未检出哭声 (票数不足: {vote_count}<{min_votes})")
+        return False, 0.0, all_details
 
 # =================== Flask 接口 ===================
 @app.route("/")
@@ -1145,8 +1230,19 @@ def api_analyze_cry():
 @app.route("/api/trigger_reprocess", methods=["POST"])
 def trigger_reprocess():
     """触发重新处理历史音频任务"""
+    global _history_reprocess_running
     import subprocess
+    
+    # 尝试加锁
+    if not _history_reprocess_lock.acquire(blocking=False):
+        return jsonify({"error": "另一个分析任务正在运行中，请等待其完成。"}), 409
+    
+    if _history_reprocess_running:
+        _history_reprocess_lock.release()
+        return jsonify({"error": "分析任务已在执行中。"}), 409
+
     try:
+        _history_reprocess_running = True
         date_param = request.args.get('date', '')
         start_time = request.args.get('start_time', '')
         end_time = request.args.get('end_time', '')
@@ -1164,18 +1260,30 @@ def trigger_reprocess():
         args.append(start_time if start_time else "")
         args.append(end_time if end_time else "")
             
-        with open(log_file, "a", encoding="utf-8") as f:
-            # -u 让 python 进程无缓冲输出
-            subprocess.Popen(
-                args, 
-                stdout=f, 
-                stderr=subprocess.STDOUT,
-                cwd=os.path.dirname(os.path.abspath(__file__))
-            )
-            
-        logger.info(f"✅ 历史音频重分析进程已独立启动，输出重定向至: {log_file}")
-        return jsonify({"message": "任务已在独立进程中启动，请查看下方实时日志。"})
+        def run_and_cleanup():
+            global _history_reprocess_running
+            try:
+                with open(log_file, "a", encoding="utf-8") as f:
+                    proc = subprocess.Popen(
+                        args, 
+                        stdout=f, 
+                        stderr=subprocess.STDOUT,
+                        cwd=os.path.dirname(os.path.abspath(__file__))
+                    )
+                    proc.wait()
+            finally:
+                _history_reprocess_running = False
+                _history_reprocess_lock.release()
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ 历史音频重分析任务已结束。\n")
+
+        threading.Thread(target=run_and_cleanup, daemon=True).start()
+        
+        logger.info(f"✅ 历史音频重分析线程已启动，输出重定向至: {log_file}")
+        return jsonify({"message": "任务已在后台启动，请查看下方实时日志。"})
     except Exception as e:
+        _history_reprocess_running = False
+        _history_reprocess_lock.release()
         logger.error(f"❌ 运行历史分析脚本失败: {e}")
         return jsonify({"error": str(e)}), 500
 
@@ -1694,7 +1802,60 @@ def transcribe_audio():
 
             logger.info("  [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...")
             res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True, use_punc=True)
-            # logger.info(f"  [VAD 调试] FunASR generate() 原始返回: {json.dumps(res, ensure_ascii=False, indent=2)}")
+            
+            # 【轨道A: 独立哭声检测】直接对完整 60s 原始音频做声纹匹配
+            # 使用 CryDetectionConfig 独立参数，与轨道B (VAD+语音识别) 完全隔离
+            cry_detected = False
+            skip_cry_flag = request.form.get('skip_cry', 'false').lower() == 'true'
+            try:
+                cry_detected, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp)
+                
+                if cry_detected:
+                    logger.info(f"  🍼 [轨道A] 哭声确认! 置信度={cry_confidence:.3f}, 启动报警流程...")
+                    
+                    if skip_cry_flag:
+                        logger.info(f"      [skip_cry] 哭声已标记，历史模式不发送即时邮件")
+                    else:
+                        # 冷却机制
+                        global _last_cry_trigger_time
+                        now = time.time()
+                        with _cry_cooldown_lock:
+                            in_cooldown = (now - _last_cry_trigger_time) < CryDetectionConfig.COOLDOWN_SEC
+                            if not in_cooldown:
+                                _last_cry_trigger_time = now
+                        
+                        if in_cooldown:
+                            elapsed = int(now - _last_cry_trigger_time)
+                            logger.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
+                        else:
+                            # ── 正式报警 ──
+                            time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            send_cry_alert_email(file.filename, time_str)
+                            
+                            # [即时占位] 立即写入数据库
+                            from db_manager import save_cry_analysis
+                            placeholder_id = save_cry_analysis(
+                                file.filename, 0, audio_duration, 
+                                "深度分析中 (5分钟观察期)...", "请稍候内容更新", 
+                                reason_category="analyzing", event_files=[], 
+                                audio_path=proc_temp
+                            )
+
+                            # 启动后台延迟分析任务
+                            def start_delayed_analysis(fname, a_path, dur, p_id):
+                                logger.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
+                                time.sleep(300)
+                                process_baby_cry_async(fname, a_path, 0, dur * 1000, placeholder_id=p_id)
+                            
+                            threading.Thread(
+                                target=start_delayed_analysis, 
+                                args=(file.filename, proc_temp, audio_duration, placeholder_id), 
+                                daemon=True
+                            ).start()
+            except Exception as ex:
+                logger.warning(f"    ⚠️ 哭声检测异常: {ex}")
+            
+            # 【轨道B: 语音识别】VAD 分段 + 转录 + 说话人标注 (参数不变)
             full_text = ""
             segments = []
             processed_segments = []
@@ -1722,6 +1883,7 @@ def transcribe_audio():
 
                         # Case-insensitive emotion detection
                         emotion = None  # 未识别到情感时为None,不使用neutral
+                        original_emotion_tag = None  # 初始化以防未定义引用
                         raw_text_lower = raw_text.lower()
                         for tag, emo_code in EMOTION_TAGS.items():
                             if tag.lower() in raw_text_lower:
@@ -1734,8 +1896,11 @@ def transcribe_audio():
 
                         # Case-insensitive, universal tag removal
                         clean_text = re.sub(r'<\|.*?\|>', '', raw_text).replace(" ", "").strip()
-                        if not clean_text: 
-                            logger.info(f"      [3.{i+1}] 分段文本在清洗后为空，已跳过。")
+                        
+                        # 核心优化：如果包含哭声标签，即使没有识别出文字，也不应跳过！
+                        has_cry_tag = "<|cry|>" in raw_text_lower
+                        if not clean_text and not has_cry_tag: 
+                            logger.info(f"      [3.{i+1}] 分段既无文本也无哭声标签，已跳过。")
                             continue
 
                         identity, confidence = None, 0.0
@@ -1779,30 +1944,24 @@ def transcribe_audio():
                                     logger.error(f"      [音频片段] 复制失败: {copy_error}")
                                     segment_audio_path = None  # 如果复制失败,不设置路径
 
-                                # 1. 深度状态探测 (SenseVoice) - 提前进行以支持声纹偏置逻辑
+                                # 1. 深度状态探测 (SenseVoice)
                                 sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav_temp)
-                                is_cry_segment = sensevoice_text and "<|cry|>" in sensevoice_text.lower()
                                 
-                                # 2. 声纹识别 (带状态偏置)
-                                identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp, is_cry=is_cry_segment)
+                                # 2. 【轨道B】纯语音识别声纹 (标准参数，不做哭声补偿)
+                                identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp)
                                 
                                 # 3. 补全其他信息 (Whisper/Emotion)
                                 whisper_text = None
                                 emotion = sensevoice_emotion
                                 
                                 if identity is not None:
-                                    # 如果 SenseVoice 没给情感，尝试次级情感探测模型
                                     if emotion is None:
                                         emotion = detect_emotion_for_segment(seg_wav_temp)
-                                    
-                                    # Whisper 对比识别 (可选)
                                     whisper_text = transcribe_with_whisper(seg_wav_temp)
-                                    logger.info(f"      [性能] 已识别说话人 {identity}, 状态: {'Crying' if is_cry_segment else 'Normal'}")
+                                    logger.info(f"      [性能] 已识别说话人 {identity}")
                                 else:
-                                    # Unknown 说话人
                                     logger.info(f"      [性能] 未识别说话人，跳过后续处理")
                                     whisper_text = None
-                                    # 注意：即使 identity 为 None，如果 sensevoice_text 有内容，我们也保留它以便后续分析
                                 
                                 # 保存超过15个字的语句音频
                                 # 检测是否为噪音(重复字符过多)
@@ -1866,7 +2025,12 @@ def transcribe_audio():
                             whisper_text = None
 
 
-                        if Config.ONLY_REGISTERED_SPEAKERS and identity is None: continue
+                        # 核心优化：如果 SenseVoice 已经判定为 <|CRY|>，则豁免 ONLY_REGISTERED_SPEAKERS 检查
+                        # 这通过防止由于声纹稍有偏差而抛弃真实的哭闹事件
+                        has_confirmed_cry = (emotion == "sad" or "<|cry|>" in (original_emotion_tag or "").lower())
+                        
+                        if Config.ONLY_REGISTERED_SPEAKERS and identity is None and not has_confirmed_cry:
+                            continue
                         
                         # 计算语速指标
                         duration_seconds = (end - start) / 1000.0
@@ -1937,68 +2101,12 @@ def transcribe_audio():
                             }
                         }
                         
-                        # 检测宝宝哭喊声触发分析逻辑
-                        speaker_name_check = (identity or "Unknown").lower()
-                        # 用户明确：Baby声纹本身就是纯净哭名，无需判断 SenseVoice 的 Emotion
-                        if ("baby" in speaker_name_check or "宝宝" in speaker_name_check) and segment_audio_path:
-                            logger.info(f"👶 检测到宝宝哭泣，触发长句分析模块! 时间 {start}ms-{end}ms")
-                            
-                            # 强行覆盖情感标识 (SenseVoice往往对纯哭声默认给出neutral)
+                        # 【轨道A】如果全局哭声检测已确认，补充标记到每个分段
+                        if cry_detected:
+                            segment_info["is_baby_cry"] = True
                             segment_info["emotion"] = "sad"
                             segment_info["emotion_info"]["emotion"] = "sad"
-                            segment_info["emotion_info"]["source"] = "forced_baby_cry_rule"
-                            
-                            # skip_cry=true: 只标记哭声，完全跳过 Gemini 分析（供 reprocess 脚本阶段一使用）
-                            skip_cry_flag = request.form.get('skip_cry', 'false').lower() == 'true'
-                            if skip_cry_flag:
-                                segment_info["is_baby_cry"] = True
-                                logger.info(f"      [skip_cry] 哭声已标记，跳过 Gemini 分析")
-                            else:
-                                # 拼接完整的持久化音频绝对路径
-                                abs_seg_path = os.path.join(FileMonitorConfig.SOURCE_DIR, segment_audio_path.lstrip('/'))
-                                
-                                # 冷却机制：10分钟内同一哭闹事件只触发一次 Gemini 分析
-                                global _last_cry_trigger_time
-                                now = time.time()
-                                with _cry_cooldown_lock:
-                                    in_cooldown = (now - _last_cry_trigger_time) < CRY_COOLDOWN_SEC
-                                    if not in_cooldown:
-                                        _last_cry_trigger_time = now
-                                
-                                if in_cooldown:
-                                    segment_info["is_baby_cry"] = True
-                                    elapsed = int(now - _last_cry_trigger_time)
-                                    logger.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CRY_COOLDOWN_SEC}s 内跳过 Gemini 重复分析")
-                                else:
-                                    # ── 重构：瞬时邮件通知 + 延迟 5 分钟深度分析 ──
-                                    # 1. 发送即时邮件预警
-                                    time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    send_cry_alert_email(file.filename, time_str)
-                                    
-                                    # 标记当前片段为哭声，供返回响应使用
-                                    segment_info["is_baby_cry"] = True
-
-                                    # 2. 启动后台延迟分析任务
-                                    def start_delayed_analysis(fname, a_path, s_ms, e_ms):
-                                        logger.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后搜集全量上下文 (包含后果)...")
-                                        time.sleep(300)
-                                        process_baby_cry_async(fname, a_path, s_ms, e_ms)
-                                    
-                                    sync_llm_flag = request.form.get('sync_llm', 'false').lower() == 'true'
-                                    if sync_llm_flag:
-                                        # 如果是同步请求，强行等待（供特殊调试使用，日常监控通常不走此路）
-                                        time.sleep(300)
-                                        reason, advice = process_baby_cry_async(file.filename, abs_seg_path, start, end)
-                                        if reason:
-                                            segment_info["baby_cry_reason"] = reason
-                                            segment_info["baby_cry_advice"] = advice
-                                    else:
-                                        # 日常监控走此异步分支：邮件已出，5分钟后出报告
-                                        threading.Thread(
-                                            target=start_delayed_analysis, 
-                                            args=(file.filename, abs_seg_path, start, end), 
-                                            daemon=True
-                                        ).start()
+                            segment_info["emotion_info"]["source"] = "cry_detection_track_a"
 
                         processed_segments.append(segment_info)
 

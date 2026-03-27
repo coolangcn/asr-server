@@ -132,6 +132,7 @@ def init_db():
         try:
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS reason_category TEXT;")
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS event_files_json TEXT;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS audio_path TEXT;")
         except Exception as e:
             print(f"[DB] 字段升级提示: {e}")
 
@@ -301,7 +302,7 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
             
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json FROM baby_cry_events ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s",
+            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path FROM baby_cry_events ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s",
             (limit, offset)
         )
         
@@ -320,7 +321,8 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
                 'analysis_text': row[6], # 对应 reason 字段
                 'advice': row[7],
                 'reason_category': row[8],
-                'event_files': json.loads(row[9]) if row[9] else []
+                'event_files_json': json.loads(row[9]) if row[9] else [],
+                'audio_path': row[10] if len(row) > 10 else None
             })
         
         return results
@@ -332,7 +334,7 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
             return_connection(conn)
 
 def save_cry_analysis(filename: str, start_time: float, end_time: float, reason: str, advice: str, 
-                      reason_category: str = None, event_files: list = None) -> bool:
+                      reason_category: str = None, event_files: list = None, audio_path = None) -> bool:
     """保存宝宝哭声分析结果"""
     conn = None
     try:
@@ -346,16 +348,51 @@ def save_cry_analysis(filename: str, start_time: float, end_time: float, reason:
         event_files_json = json.dumps(event_files, ensure_ascii=False) if event_files else None
         
         cursor.execute(
-            "INSERT INTO baby_cry_events (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json)
+            "INSERT INTO baby_cry_events (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path)
         )
         
         conn.commit()
+        # 获取刚插入的 ID
+        cursor.execute("SELECT lastval()")
+        new_id = cursor.fetchone()[0]
         cursor.close()
-        print(f"  [DB] 已保存宝宝哭声分析 [{filename}] {start_time:.1f}s-{end_time:.1f}s: [{reason_category or '未分类'}]")
-        return True
+        print(f"  [DB] 已保存宝宝哭声分析占位 [{filename}] {start_time:.1f}s-{end_time:.1f}s: ID={new_id}")
+        return new_id
     except Exception as e:
         print(f"  [DB Error] 保存哭声分析失败: {e}")
+        if conn:
+            conn.rollback()
+        return None
+    finally:
+        if conn:
+            return_connection(conn)
+
+def update_cry_analysis(event_id: int, reason: str, advice: str, 
+                       reason_category: str = None, event_files: list = None) -> bool:
+    """更新已有的宝宝哭声分析结果 (主要用于异步回调)"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        event_files_json = json.dumps(event_files, ensure_ascii=False) if event_files else None
+        
+        cursor.execute(
+            "UPDATE baby_cry_events SET reason = %s, advice = %s, reason_category = %s, event_files_json = %s WHERE id = %s",
+            (reason, advice, reason_category, event_files_json, event_id)
+        )
+        
+        conn.commit()
+        updated = cursor.rowcount > 0
+        cursor.close()
+        if updated:
+            print(f"  [DB] 已更新宝宝哭声深度分析详情: ID={event_id}")
+        return updated
+    except Exception as e:
+        print(f"  [DB Error] 更新哭声分析失败: {e}")
         if conn:
             conn.rollback()
         return False
