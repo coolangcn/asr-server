@@ -5,6 +5,7 @@ import requests
 import time
 import sys
 import datetime
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection
 
 API_URL = "http://localhost:5008/transcribes"
 SOURCE_DIR = "/Volumes/download/records/Sony-2"
@@ -104,6 +105,7 @@ if __name__ == "__main__":
     filter_date    = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
     start_time_arg = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
     end_time_arg   = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
+    force_replace  = "--replace" in sys.argv
 
     if filter_date or start_time_arg or end_time_arg:
         print(
@@ -111,6 +113,8 @@ if __name__ == "__main__":
             f"且 时间范围包含 '{start_time_arg or '00-00'} ~ {end_time_arg or '23-59'}' 的文件进行定向分析！",
             flush=True
         )
+        if force_replace:
+            print("[*] 提示: 已启用 --replace 模式，将重新分析所有匹配的文件并覆盖旧结果。", flush=True)
 
     def is_time_in_range(filename, start_t, end_t):
         if not start_t and not end_t:
@@ -128,31 +132,46 @@ if __name__ == "__main__":
     AUDIO_EXTS = ('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc')
     files_to_process = []
     start_scan = time.time()
+    
     try:
-        for entry in os.listdir(target_dir):
-            if entry.startswith('.'):
-                continue
-            full_path = os.path.join(target_dir, entry)
-            if os.path.isfile(full_path):
-                if (not filter_date or filter_date in entry) and is_time_in_range(entry, start_time_arg, end_time_arg):
-                    if full_path.lower().endswith(AUDIO_EXTS):
-                        files_to_process.append(full_path)
-            elif os.path.isdir(full_path):
-                if filter_date and filter_date not in entry:
-                    continue
-                try:
-                    for sf in os.listdir(full_path):
-                        if sf.startswith('.'):
-                            continue
-                        if not is_time_in_range(sf, start_time_arg, end_time_arg):
-                            continue
-                        sf_path = os.path.join(full_path, sf)
-                        if sf_path.lower().endswith(AUDIO_EXTS):
-                            files_to_process.append(sf_path)
-                except Exception:
-                    pass
+        # === 极速优化扫描引擎 (针对 NAS 挂载优化) ===
+        print(f"[*] 正在启动受限文件树探测...", flush=True)
+        
+        for root, dirs, files in os.walk(target_dir):
+            # 性能优化 1：过滤隐藏目录
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            
+            # 性能优化 2：日期制导剪枝
+            # 如果指定了日期，且当前在搜索根目录，我们只允许进入与日期匹配的子目录
+            if filter_date and root == target_dir:
+                if filter_date in dirs:
+                    # 找到了精准日期目录，剪掉其他所有目录
+                    print(f"[*] 发现精准日期目录 '{filter_date}'，已自动剪枝其他分支以提升速度。", flush=True)
+                    dirs[:] = [filter_date]
+                else:
+                    # 没找到对应日期的目录，但根目录下可能还有文件，所以不进入任何子目录
+                    print(f"[*] 未发现日期目录 '{filter_date}'，将仅扫描根目录文件。", flush=True)
+                    dirs[:] = []
+            
+            # 进度实时反馈
+            print(f"    - 正在扫描容器: {os.path.basename(root) or 'root'} (已发现 {len(files_to_process)} 个待处理项)", end='\r', flush=True)
+            
+            for file in files:
+                if file.startswith('.'): continue
+                if not file.lower().endswith(AUDIO_EXTS): continue
+                
+                # 严格校验：
+                # 1. 日期校验
+                if filter_date and filter_date not in file: continue
+                # 2. 时间段校验
+                if not is_time_in_range(file, start_time_arg, end_time_arg): continue
+                
+                files_to_process.append(os.path.join(root, file))
+                
+        print(f"\n[*] 扫描逻辑执行完毕。", flush=True)
+                
     except Exception as e:
-        print(f"错误: 无法读取主目录: {e}", flush=True)
+        print(f"\n错误: 扫描目录时遇到问题: {e}", flush=True)
 
     # 去重并排序，防止重复扫描
     files_to_process = sorted(list(set(files_to_process)))
@@ -161,6 +180,9 @@ if __name__ == "__main__":
     if not files_to_process:
         print(f"在 {target_dir} 中未找到任何支持的音频文件。", flush=True)
         sys.exit(0)
+
+    # 初始化数据库连接池
+    init_pool()
 
     print(f"找到 {len(files_to_process)} 个支持的音频文件，准备重新转录并分析 (按 Ctrl+C 中止)...", flush=True)
 
@@ -174,6 +196,14 @@ if __name__ == "__main__":
     cry_file_paths = []   # 有哭声的文件路径列表（有序）
 
     for filepath in files_to_process:
+        filename = os.path.basename(filepath)
+        
+        # 【断电续传/跳过逻辑】
+        if not force_replace:
+            if is_file_processed_a(filename):
+                print(f"[skip] 文件已识别过，跳过: {filename}", flush=True)
+                continue
+
         print(f"\n[+] 正在发起云端分析请求: {filepath}", flush=True)
         try:
             with open(filepath, 'rb') as f:
@@ -197,8 +227,11 @@ if __name__ == "__main__":
                     f"| 耗时: {result.get('process_time', 0):.1f}s",
                     flush=True
                 )
+                # 标记为已处理
+                mark_file_processed_a(filename, status="cry" if cry_segs else "no_cry")
             else:
                 print(f"    ❌ 失败 (Status {response.status_code}): {response.text}", flush=True)
+                mark_file_processed_a(filename, status="error")
         except Exception as e:
             print(f"    ❌ 遇到了错误: {e}", flush=True)
         time.sleep(1)

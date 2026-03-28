@@ -63,14 +63,14 @@ def update_config(args):
     if args.source_path:
         base_path = args.source_path
         CONFIG["SOURCE_DIR"] = base_path
-        print(f"[配置] 使用自定义源路径: {base_path}")
+        logger_web.info(f"[配置] 使用自定义源路径: {base_path}")
     
     if args.port:
         CONFIG["WEB_PORT"] = args.port
     
     if args.asr_url:
         CONFIG["ASR_API_URL"] = args.asr_url
-        print(f"[配置] 使用自定义ASR服务地址: {args.asr_url}")
+        logger_web.info(f"[配置] 使用自定义ASR服务地址: {args.asr_url}")
 
 # -----------------
 
@@ -90,6 +90,9 @@ g_status_cache = {
     "asr_server": "unknown",
     "pending_files": 0,
     "last_log": "等待初始化...",
+    "logs_a": "",
+    "logs_b": "",
+    "logs_web": "",
     "updated_at": 0
 }
 g_status_lock = threading.Lock()
@@ -100,7 +103,7 @@ def read_last_lines(filepath, line_count=20, encoding='utf-8', errors='ignore'):
         with open(filepath, 'rb') as f:
             # 移动到文件末尾
             try:
-                f.seek(-2048, os.SEEK_END) # 假设最后20行大约2KB,可根据实际情况调整
+                f.seek(-8192, os.SEEK_END) # 增加缓冲区以获取更多日志内容
             except IOError:
                 # 文件太小
                 f.seek(0)
@@ -110,6 +113,37 @@ def read_last_lines(filepath, line_count=20, encoding='utf-8', errors='ignore'):
             return decoded_lines[-line_count:]
     except Exception:
         return []
+
+# 配置 Web Viewer 自身的日志记录器
+def setup_web_logger():
+    # 确保日志目录存在
+    log_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "log")
+    os.makedirs(log_dir, exist_ok=True)
+    
+    l = logging.getLogger("web_viewer")
+    l.setLevel(logging.INFO)
+    l.handlers = []
+    
+    formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+    
+    # 写入与 asr_server 相同的系统日志文件
+    log_path = os.path.join(log_dir, "asr-web.log")
+    handler = TimedRotatingFileHandler(
+        log_path, when='M', interval=10, backupCount=144, encoding='utf-8'
+    )
+    handler.setFormatter(formatter)
+    l.addHandler(handler)
+    
+    # 控制台输出
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    l.addHandler(console)
+    
+    return l
+
+import logging
+from logging.handlers import TimedRotatingFileHandler
+logger_web = setup_web_logger()
 
 def update_system_status():
     """后台更新系统状态"""
@@ -131,7 +165,6 @@ def update_system_status():
         source_dir = CONFIG["SOURCE_DIR"]
         if os.path.exists(source_dir) and os.path.isdir(source_dir):
             count = 0
-            # 扫描根目录及一级子目录（日期文件夹）
             for entry in os.listdir(source_dir):
                 if entry in SKIP_DIRS:
                     continue
@@ -140,7 +173,6 @@ def update_system_status():
                     if entry.lower().endswith(AUDIO_EXTS) and 'TEMP' not in entry:
                         count += 1
                 elif os.path.isdir(entry_path):
-                    # 日期子目录（如 2026-03-25/）
                     try:
                         for f in os.listdir(entry_path):
                             if f.lower().endswith(AUDIO_EXTS) and 'TEMP' not in f:
@@ -149,58 +181,63 @@ def update_system_status():
                         pass
             pending_count = count
         else:
-            # 目录不存在时显示0而不是-1
             pending_count = 0
     except Exception as e:
-        print(f"[StatusMonitor] 检查待处理文件失败: {e}")
+        logger_web.error(f"[StatusMonitor] 检查待处理文件失败: {e}")
         pending_count = -1
 
-    # 3. 读取日志
-    last_log = "读取日志失败"
-    try:
-        log_path = CONFIG["LOG_FILE_PATH"]
-        if not os.path.exists(log_path):
-            # macOS 备用路径
-            log_path = os.path.expanduser("~/asr-server/log/asr-server.log")
-
-        if os.path.exists(log_path):
-            lines = read_last_lines(log_path, 20)
-            # 去掉每行的时间戳和日志级别，只保留消息内容
-            # 格式: "2025-12-22 09:26:34,414 | INFO | 消息内容"
-            cleaned_lines = []
-            for line in lines:
-                # 尝试分割日志行，提取消息部分
-                parts = line.split(' | ', 2)  # 最多分割2次
-                if len(parts) >= 3:
-                    # 第三部分是消息内容
-                    cleaned_lines.append(parts[2])
-                else:
-                    # 如果格式不匹配，保留原始行
-                    cleaned_lines.append(line)
-            last_log = "\n".join(cleaned_lines)
-        else:
-            last_log = f"找不到日志文件: {log_path}"
-    except Exception as e:
-        last_log = f"读取日志异常: {str(e)}"
+    # 3. 直接从多个物理日志文件读取 (不再进行正则过滤)
+    logs_a = []
+    logs_b = []
+    logs_web = []
+    last_log_raw = ""
+    
+    log_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "log")
+    
+    # A 轨日志
+    path_a = os.path.join(log_dir, "asr-a.log")
+    if os.path.exists(path_a):
+        lines = read_last_lines(path_a, 50)
+        logs_a = [line.split(' | ', 2)[2] if ' | ' in line else line for line in lines]
+    
+    # B 轨日志
+    path_b = os.path.join(log_dir, "asr-b.log")
+    if os.path.exists(path_b):
+        lines = read_last_lines(path_b, 50)
+        logs_b = [line.split(' | ', 2)[2] if ' | ' in line else line for line in lines]
+    
+    # Web/系统日志
+    path_web = os.path.join(log_dir, "asr-web.log")
+    if os.path.exists(path_web):
+        lines = read_last_lines(path_web, 50)
+        logs_web = [line.split(' | ', 2)[2] if ' | ' in line else line for line in lines]
+        # 保持兼容性的 last_log
+        last_log_raw = "\n".join(logs_web[-20:])
+    
+    if not logs_web and not os.path.exists(path_web):
+        last_log_raw = "等待日志生成..."
 
     # 更新缓存
     with g_status_lock:
         g_status_cache = {
             "asr_server": asr_status,
             "pending_files": pending_count,
-            "last_log": last_log,
+            "last_log": last_log_raw,
+            "logs_a": "\n".join(logs_a),
+            "logs_b": "\n".join(logs_b),
+            "logs_web": "\n".join(logs_web),
             "updated_at": time.time()
         }
 
 def status_monitor_loop():
-    """状态监控循环"""
-    print("[StatusMonitor] 启动后台状态监控线程...")
+    """状态监控循环主函数"""
+    logger_web.info("[StatusMonitor] 启动后台状态监控线程...")
     while True:
         try:
             update_system_status()
         except Exception as e:
-            print(f"[StatusMonitor] 更新失败: {e}")
-        time.sleep(3) # 每3秒更新一次
+            logger_web.error(f"[StatusMonitor] 更新失败: {e}")
+        time.sleep(3) # 每3秒由独立线程从 3 个物理日志文件提取增量状态
 
 def start_status_monitor():
     thread = threading.Thread(target=status_monitor_loop, daemon=True)
@@ -214,61 +251,9 @@ def get_system_status():
 def get_transcripts(offset=0, limit=20):
     """获取转录记录（使用PostgreSQL，支持分页）"""
     try:
-        items = db_get_transcripts(offset=offset, limit=limit)
-        
-        results = []
-        for data in items:
-            # 格式化时间戳
-            for seg in data.get('segments', []):
-                seg['start_fmt'] = format_timestamp(seg.get('start', 0))
-                seg['spk_id'] = seg.get('spk', 0)
-            
-            # 解析时间
-            filename = data['filename']
-            dt = None
-            time_patterns = [
-                r'^\s*(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\s*',
-                r'^\s*recording-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\s*'
-            ]
-            
-            for pattern in time_patterns:
-                match = re.match(pattern, os.path.splitext(filename)[0])
-                if match:
-                    try:
-                        if pattern == time_patterns[0]:
-                            date_part = match.group(1)
-                            time_part = match.group(2)
-                            dt_str = f"{date_part} {time_part.replace('-', ':')}"
-                            dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        else:
-                            year, month, day, hour, minute, second = match.groups()
-                            dt_str = f"{year}-{month}-{day} {hour}:{minute}:{second}"
-                            dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        break
-                    except ValueError:
-                        continue
-                        
-            if dt is None:
-                try:
-                    dt = datetime.datetime.fromisoformat(data['created_at'])
-                except:
-                    pass
-
-            if dt is not None:
-                now = datetime.datetime.now()
-                data['is_new'] = (now - dt).total_seconds() < 300
-                data['date_group'] = dt.strftime('%Y-%m-%d')
-                data['time_simple'] = dt.strftime('%H:%M')
-                data['time_full'] = dt.strftime('%Y-%m-%d %H:%M:%S')
-            else:
-                data['is_new'] = False
-                data['date_group'] = "Unknown"
-                data['time_simple'] = ""
-                data['time_full'] = ""
-            results.append(data)
-        return results
+        return db_get_transcripts(offset, limit, CONFIG["DATABASE_URL"])
     except Exception as e:
-        print(f"[Error] 获取转录记录失败: {e}")
+        logger_web.error(f"[Error] 获取转录记录失败: {e}")
         return []
 
 # --- HTML 模板 ---
@@ -363,7 +348,8 @@ def proxy_trigger_reprocess():
         date_param = request.args.get('date', '')
         start_time = request.args.get('start_time', '')
         end_time = request.args.get('end_time', '')
-        url = f"{ASR_SERVER_URL}/api/trigger_reprocess?date={date_param}&start_time={start_time}&end_time={end_time}"
+        replace_param = request.args.get('replace', 'false')
+        url = f"{ASR_SERVER_URL}/api/trigger_reprocess?date={date_param}&start_time={start_time}&end_time={end_time}&replace={replace_param}"
         response = requests.post(url, timeout=10)
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
@@ -730,10 +716,10 @@ def serve_audio_segment(filepath):
         full_path = os.path.join(segments_dir, filepath)
         
         # 调试日志
-        print(f"[Audio] 请求: {filepath}")
-        print(f"[Audio] SOURCE_DIR: {CONFIG['SOURCE_DIR']}")
-        print(f"[Audio] 完整路径: {full_path}")
-        print(f"[Audio] 文件存在: {os.path.exists(full_path)}")
+        logger_web.info(f"[Audio] 请求: {filepath}")
+        logger_web.info(f"[Audio] SOURCE_DIR: {CONFIG['SOURCE_DIR']}")
+        logger_web.info(f"[Audio] 完整路径: {full_path}")
+        logger_web.info(f"[Audio] 文件存在: {os.path.exists(full_path)}")
         
         # 安全检查：确保路径在segments目录内
         if not os.path.abspath(full_path).startswith(os.path.abspath(segments_dir)):
@@ -818,21 +804,21 @@ def index():
 
 if __name__ == "__main__":
     try:
-        # 先初始化数据库连接池
-        print("初始化数据库连接池...", flush=True)
-        if not init_pool():
-            print("数据库连接池初始化失败，程序退出", flush=True)
-            exit(1)
-
+        # 初始化数据库连接池
+        logger_web.info("初始化数据库连接池...")
+        if not init_pool(CONFIG["DATABASE_URL"]):
+            logger_web.error("数据库连接池初始化失败，程序退出")
+            sys.exit(1)
+        
         args = parse_args()
         update_config(args)
         
         # 启动后台状态监控
         start_status_monitor()
 
-        print(f"[Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}", flush=True)
+        logger_web.info(f"🌐 [Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}")
         app.run(host='0.0.0.0', port=CONFIG["WEB_PORT"], debug=False)
     except BaseException as e:
-        print(f"启动失败 (BaseException): {e}", flush=True)
+        logger_web.error(f"启动失败 (BaseException): {e}")
         import traceback
         traceback.print_exc()

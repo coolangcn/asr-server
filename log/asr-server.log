@@ -1,661 +1,994 @@
-2026-03-27 17:37:04,836 | INFO | 📚 声纹库已挂载: 5 人
-2026-03-27 17:37:04,841 | INFO | download models from model hub: ms
-2026-03-27 17:37:05,262 | WARNING | trust_remote_code: False
-2026-03-27 17:37:06,314 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 17:37:06,316 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 17:37:06,814 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:37:06,815 | INFO | excludes: None
-2026-03-27 17:37:06,881 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 17:37:07,341 | INFO | Building VAD model.
-2026-03-27 17:37:07,341 | INFO | download models from model hub: ms
-2026-03-27 17:37:07,749 | WARNING | trust_remote_code: False
-2026-03-27 17:37:07,756 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 17:37:07,756 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 17:37:07,762 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:37:07,762 | INFO | excludes: None
-2026-03-27 17:37:07,763 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 17:37:07,779 | INFO | Building punc model.
-2026-03-27 17:37:07,779 | INFO | download models from model hub: ms
-2026-03-27 17:37:08,141 | WARNING | trust_remote_code: False
-2026-03-27 17:37:20,422 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 17:37:20,423 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 17:37:21,064 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:37:21,064 | INFO | excludes: None
-2026-03-27 17:37:21,178 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 17:37:21,426 | INFO | Building SPK model.
-2026-03-27 17:37:21,426 | INFO | download models from model hub: ms
-2026-03-27 17:37:22,995 | WARNING | trust_remote_code: False
-2026-03-27 17:37:23,258 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 17:37:23,259 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 17:37:23,325 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:37:23,325 | INFO | excludes: None
-2026-03-27 17:37:23,335 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 17:37:37,332 | WARNING | ⚠️ Whisper模型加载失败: Could not run 'aten::_sparse_coo_tensor_with_dims_and_tensors' with arguments from the 'SparseMPS' backend. This could be because the operator doesn't exist for this backend, or was omitted during the selective/custom build process (if using custom build). If you are a Facebook employee using PyTorch on mobile, please visit https://fburl.com/ptmfixes for possible resolutions. 'aten::_sparse_coo_tensor_with_dims_and_tensors' is only available for these backends: [MPS, Meta, SparseCPU, SparseMeta, BackendSelect, Python, FuncTorchDynamicLayerBackMode, Functionalize, Named, Conjugate, Negative, ZeroTensor, ADInplaceOrView, AutogradOther, AutogradCPU, AutogradCUDA, AutogradHIP, AutogradXLA, AutogradMPS, AutogradIPU, AutogradXPU, AutogradHPU, AutogradVE, AutogradLazy, AutogradMTIA, AutogradPrivateUse1, AutogradPrivateUse2, AutogradPrivateUse3, AutogradMeta, AutogradNestedTensor, Tracer, AutocastCPU, AutocastXPU, AutocastMPS, AutocastCUDA, FuncTorchBatched, BatchedNestedTensor, FuncTorchVmapMode, Batched, VmapMode, FuncTorchGradWrapper, PythonTLSSnapshot, FuncTorchDynamicLayerFrontMode, PreDispatch, PythonDispatcher].
-
-MPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/mps/MPSFallback.mm:75 [backend fallback]
-Meta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterMeta.cpp:26996 [kernel]
-SparseCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseCPU.cpp:1406 [kernel]
-SparseMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseMeta.cpp:290 [kernel]
-BackendSelect: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterBackendSelect.cpp:792 [kernel]
-Python: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:153 [backend fallback]
-FuncTorchDynamicLayerBackMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:497 [backend fallback]
-Functionalize: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/FunctionalizeFallbackKernel.cpp:349 [backend fallback]
-Named: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/NamedRegistrations.cpp:7 [backend fallback]
-Conjugate: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ConjugateFallback.cpp:17 [backend fallback]
-Negative: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/native/NegateFallback.cpp:18 [backend fallback]
-ZeroTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ZeroTensorFallback.cpp:86 [backend fallback]
-ADInplaceOrView: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/VariableFallbackKernel.cpp:96 [backend fallback]
-AutogradOther: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradCUDA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradHIP: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradXLA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradMPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradIPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradXPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradHPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradVE: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradLazy: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradMTIA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradPrivateUse1: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradPrivateUse2: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradPrivateUse3: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-Tracer: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/TraceType_2.cpp:17715 [kernel]
-AutocastCPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:321 [backend fallback]
-AutocastXPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:463 [backend fallback]
-AutocastMPS: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:209 [backend fallback]
-AutocastCUDA: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:165 [backend fallback]
-FuncTorchBatched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:731 [backend fallback]
-BatchedNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:758 [backend fallback]
-FuncTorchVmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/VmapModeRegistrations.cpp:27 [backend fallback]
-Batched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/LegacyBatchingRegistrations.cpp:1075 [backend fallback]
-VmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/VmapModeRegistrations.cpp:33 [backend fallback]
-FuncTorchGradWrapper: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/TensorWrapper.cpp:207 [backend fallback]
-PythonTLSSnapshot: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:161 [backend fallback]
-FuncTorchDynamicLayerFrontMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:493 [backend fallback]
-PreDispatch: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:165 [backend fallback]
-PythonDispatcher: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:157 [backend fallback]
-，将禁用Whisper对比功能
-2026-03-27 17:37:37,799 | INFO | download models from model hub: ms
-2026-03-27 17:37:38,211 | WARNING | trust_remote_code: False
-2026-03-27 17:37:38,936 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 17:37:38,938 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 17:37:40,735 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:37:40,736 | INFO | excludes: None
-2026-03-27 17:37:41,071 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 17:37:42,314 | INFO | 📂 文件监控启动
-2026-03-27 17:37:42,314 | INFO | 🎉 服务就绪: http://0.0.0.0:5008
-2026-03-27 17:39:17,200 | INFO | 📚 声纹库已挂载: 5 人
-2026-03-27 17:39:17,201 | INFO | download models from model hub: ms
-2026-03-27 17:39:17,780 | WARNING | trust_remote_code: False
-2026-03-27 17:39:18,916 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 17:39:18,918 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 17:39:19,411 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:39:19,411 | INFO | excludes: None
-2026-03-27 17:39:19,478 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 17:39:19,979 | INFO | Building VAD model.
-2026-03-27 17:39:19,979 | INFO | download models from model hub: ms
-2026-03-27 17:39:20,339 | WARNING | trust_remote_code: False
-2026-03-27 17:39:20,345 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 17:39:20,346 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 17:39:20,351 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:39:20,351 | INFO | excludes: None
-2026-03-27 17:39:20,352 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 17:39:20,365 | INFO | Building punc model.
-2026-03-27 17:39:20,365 | INFO | download models from model hub: ms
-2026-03-27 17:39:20,727 | WARNING | trust_remote_code: False
-2026-03-27 17:39:32,896 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 17:39:32,899 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 17:39:33,331 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:39:33,332 | INFO | excludes: None
-2026-03-27 17:39:33,395 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 17:39:33,602 | INFO | Building SPK model.
-2026-03-27 17:39:33,602 | INFO | download models from model hub: ms
-2026-03-27 17:39:34,640 | WARNING | trust_remote_code: False
-2026-03-27 17:39:34,770 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 17:39:34,772 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 17:39:34,837 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:39:34,838 | INFO | excludes: None
-2026-03-27 17:39:34,847 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 17:39:49,320 | WARNING | ⚠️ Whisper模型加载失败: Could not run 'aten::_sparse_coo_tensor_with_dims_and_tensors' with arguments from the 'SparseMPS' backend. This could be because the operator doesn't exist for this backend, or was omitted during the selective/custom build process (if using custom build). If you are a Facebook employee using PyTorch on mobile, please visit https://fburl.com/ptmfixes for possible resolutions. 'aten::_sparse_coo_tensor_with_dims_and_tensors' is only available for these backends: [MPS, Meta, SparseCPU, SparseMeta, BackendSelect, Python, FuncTorchDynamicLayerBackMode, Functionalize, Named, Conjugate, Negative, ZeroTensor, ADInplaceOrView, AutogradOther, AutogradCPU, AutogradCUDA, AutogradHIP, AutogradXLA, AutogradMPS, AutogradIPU, AutogradXPU, AutogradHPU, AutogradVE, AutogradLazy, AutogradMTIA, AutogradPrivateUse1, AutogradPrivateUse2, AutogradPrivateUse3, AutogradMeta, AutogradNestedTensor, Tracer, AutocastCPU, AutocastXPU, AutocastMPS, AutocastCUDA, FuncTorchBatched, BatchedNestedTensor, FuncTorchVmapMode, Batched, VmapMode, FuncTorchGradWrapper, PythonTLSSnapshot, FuncTorchDynamicLayerFrontMode, PreDispatch, PythonDispatcher].
-
-MPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/mps/MPSFallback.mm:75 [backend fallback]
-Meta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterMeta.cpp:26996 [kernel]
-SparseCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseCPU.cpp:1406 [kernel]
-SparseMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterSparseMeta.cpp:290 [kernel]
-BackendSelect: registered at /Users/runner/work/pytorch/pytorch/pytorch/build/aten/src/ATen/RegisterBackendSelect.cpp:792 [kernel]
-Python: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:153 [backend fallback]
-FuncTorchDynamicLayerBackMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:497 [backend fallback]
-Functionalize: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/FunctionalizeFallbackKernel.cpp:349 [backend fallback]
-Named: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/NamedRegistrations.cpp:7 [backend fallback]
-Conjugate: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ConjugateFallback.cpp:17 [backend fallback]
-Negative: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/native/NegateFallback.cpp:18 [backend fallback]
-ZeroTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/ZeroTensorFallback.cpp:86 [backend fallback]
-ADInplaceOrView: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/VariableFallbackKernel.cpp:96 [backend fallback]
-AutogradOther: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradCPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradCUDA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradHIP: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradXLA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradMPS: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradIPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradXPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradHPU: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradVE: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradLazy: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradMTIA: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradPrivateUse1: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradPrivateUse2: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradPrivateUse3: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradMeta: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-AutogradNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/VariableType_2.cpp:19981 [autograd kernel]
-Tracer: registered at /Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/generated/TraceType_2.cpp:17715 [kernel]
-AutocastCPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:321 [backend fallback]
-AutocastXPU: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:463 [backend fallback]
-AutocastMPS: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:209 [backend fallback]
-AutocastCUDA: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/autocast_mode.cpp:165 [backend fallback]
-FuncTorchBatched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:731 [backend fallback]
-BatchedNestedTensor: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:758 [backend fallback]
-FuncTorchVmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/VmapModeRegistrations.cpp:27 [backend fallback]
-Batched: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/LegacyBatchingRegistrations.cpp:1075 [backend fallback]
-VmapMode: fallthrough registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/VmapModeRegistrations.cpp:33 [backend fallback]
-FuncTorchGradWrapper: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/TensorWrapper.cpp:207 [backend fallback]
-PythonTLSSnapshot: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:161 [backend fallback]
-FuncTorchDynamicLayerFrontMode: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:493 [backend fallback]
-PreDispatch: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:165 [backend fallback]
-PythonDispatcher: registered at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:157 [backend fallback]
-，将禁用Whisper对比功能
-2026-03-27 17:39:49,776 | INFO | download models from model hub: ms
-2026-03-27 17:39:50,208 | WARNING | trust_remote_code: False
-2026-03-27 17:39:50,933 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 17:39:50,935 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 17:39:52,370 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:39:52,371 | INFO | excludes: None
-2026-03-27 17:39:52,539 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 17:39:53,799 | INFO | 临时文件清理定时任务已启动
-2026-03-27 17:39:53,799 | INFO | 📂 文件监控线程已启动
-2026-03-27 17:39:53,799 | INFO | 文件监控线程已启动
-2026-03-27 17:39:53,799 | INFO |    监控目录: /Volumes/download/records/Sony-2
-2026-03-27 17:39:53,799 | INFO |    扫描间隔: 3秒
-2026-03-27 17:39:53,801 | INFO |    支持格式: .m4a, .mp3, .wav, .aac, .flac, .ogg, .acc
-2026-03-27 17:39:53,804 | INFO | 🔍 正在扫描: /Volumes/download/records/Sony-2
-2026-03-27 17:39:54,082 | INFO | 🔍 发现 1189 个待处理文件
-2026-03-27 17:39:54,082 | INFO |    处理顺序: TermuxAudioRecording_2026-03-26_21-39-26.m4a → ... → TermuxAudioRecording_2026-03-27_17-38-19.m4a
-2026-03-27 17:39:54,082 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-39-26.m4a
-2026-03-27 17:39:54,119 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-39-26.m4a
-2026-03-27 17:39:54,119 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
-2026-03-27 17:39:55,463 | INFO |   [生命周期: 1. 音频预处理] 完成。
-2026-03-27 17:39:55,555 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
-2026-03-27 17:40:04,723 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
-2026-03-27 17:40:04,723 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
-2026-03-27 17:40:08,691 | INFO |    eres2net_large: [Baby=0.827, 大可=0.722, 妈妈=0.663, 爸爸=0.421, 婆婆=0.410]
-2026-03-27 17:40:09,405 | INFO |    rdino_ecapa: [大可=0.732, 妈妈=0.712, Baby=0.704, 婆婆=0.673, 爸爸=0.655]
-2026-03-27 17:40:09,991 | INFO |    camplusplus: [大可=0.745, 妈妈=0.666, Baby=0.661, 婆婆=0.422, 爸爸=0.416]
-2026-03-27 17:40:09,991 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
-2026-03-27 17:40:09,991 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 16 个分段。
-2026-03-27 17:40:09,991 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
-2026-03-27 17:40:09,991 | INFO |     [3.1] 处理分段 190ms - 430ms...
-2026-03-27 17:40:09,991 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
-2026-03-27 17:40:09,991 | INFO |     [3.2] 处理分段 1430ms - 2720ms...
-2026-03-27 17:40:10,688 | INFO |       [SenseVoice] あ。 (情感: neutral)
-2026-03-27 17:40:10,688 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1430_1_1774604410.wav
-2026-03-27 17:40:10,688 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:10,872 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:10,872 | INFO |     [3.3] 处理分段 4460ms - 7060ms...
-2026-03-27 17:40:11,500 | INFO |       [SenseVoice] 我第一个。 (情感: neutral)
-2026-03-27 17:40:11,501 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_4460_2_1774604410.wav
-2026-03-27 17:40:11,501 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:11,757 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:11,758 | INFO |     [3.4] 处理分段 8380ms - 8720ms...
-2026-03-27 17:40:11,758 | INFO |       [3.4] 分段时长过短(340ms)，跳过声纹识别。
-2026-03-27 17:40:11,758 | INFO |     [3.5] 处理分段 8720ms - 8960ms...
-2026-03-27 17:40:11,758 | INFO |       [3.5] 分段时长过短(240ms)，跳过声纹识别。
-2026-03-27 17:40:11,758 | INFO |     [3.6] 处理分段 11010ms - 11690ms...
-2026-03-27 17:40:11,758 | INFO |       [3.6] 分段时长过短(680ms)，跳过声纹识别。
-2026-03-27 17:40:11,758 | INFO |     [3.7] 处理分段 13170ms - 13620ms...
-2026-03-27 17:40:11,758 | INFO |       [3.7] 分段时长过短(450ms)，跳过声纹识别。
-2026-03-27 17:40:11,758 | INFO |     [3.8] 处理分段 15050ms - 16750ms...
-2026-03-27 17:40:12,272 | INFO |       [SenseVoice] 。 (情感: neutral)
-2026-03-27 17:40:12,272 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_15050_7_1774604411.wav
-2026-03-27 17:40:12,272 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:12,442 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:12,442 | INFO |     [3.9] 处理分段 16750ms - 20620ms...
-2026-03-27 17:40:12,999 | INFO |       [SenseVoice] 没有拖鞋，妈妈。 (情感: happy)
-2026-03-27 17:40:13,000 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_16750_8_1774604412.wav
-2026-03-27 17:40:13,000 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:13,435 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:13,435 | INFO |     [3.10] 处理分段 21460ms - 23245ms...
-2026-03-27 17:40:14,007 | INFO |       [SenseVoice] こ好天那个看飯。 (情感: neutral)
-2026-03-27 17:40:14,007 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_21460_9_1774604413.wav
-2026-03-27 17:40:14,007 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:14,245 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:14,245 | INFO |     [3.11] 处理分段 25020ms - 26495ms...
-2026-03-27 17:40:14,798 | INFO |       [SenseVoice] 我说很甜的。 (情感: happy)
-2026-03-27 17:40:14,798 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_25020_10_1774604414.wav
-2026-03-27 17:40:14,798 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:14,974 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:14,974 | INFO |     [3.12] 处理分段 27380ms - 34310ms...
-2026-03-27 17:40:16,772 | INFO |       [SenseVoice] 你问你啥？ (情感: neutral)
-2026-03-27 17:40:16,772 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_27380_11_1774604414.wav
-2026-03-27 17:40:16,772 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:17,383 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:17,383 | INFO |     [3.13] 处理分段 37940ms - 39085ms...
-2026-03-27 17:40:18,345 | INFO |       [SenseVoice] Yeah. (情感: neutral)
-2026-03-27 17:40:18,345 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_37940_12_1774604417.wav
-2026-03-27 17:40:18,345 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:18,467 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:18,468 | INFO |     [3.14] 处理分段 44790ms - 45030ms...
-2026-03-27 17:40:18,468 | INFO |       [3.14] 分段时长过短(240ms)，跳过声纹识别。
-2026-03-27 17:40:18,468 | INFO |     [3.15] 处理分段 47860ms - 50670ms...
-2026-03-27 17:40:19,871 | INFO |       [SenseVoice] . (情感: neutral)
-2026-03-27 17:40:19,872 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_47860_14_1774604418.wav
-2026-03-27 17:40:19,872 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:20,125 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:20,125 | INFO |     [3.16] 处理分段 54750ms - 59730ms...
-2026-03-27 17:40:20,931 | INFO |       [SenseVoice] ，宝宝。 (情感: neutral)
-2026-03-27 17:40:20,931 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_54750_15_1774604420.wav
-2026-03-27 17:40:20,931 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:21,347 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:21,347 | INFO | ✅ 完成! 音频:59.9s | 耗时:27.23s | RTF:0.455
-2026-03-27 17:40:21,347 | INFO |   [生命周期: 4. 组装响应] 开始...
-2026-03-27 17:40:21,347 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+2026-03-28 11:22:14,505 | INFO | 📚 声纹库已挂载: 5 人
+2026-03-28 11:22:14,530 | INFO | download models from model hub: ms
+2026-03-28 11:22:14,977 | WARNING | trust_remote_code: False
+2026-03-28 11:22:16,142 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-28 11:22:16,144 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2026-03-28 11:22:16,739 | INFO | scope_map: ['module.', 'None']
+2026-03-28 11:22:16,739 | INFO | excludes: None
+2026-03-28 11:22:16,832 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-28 11:22:17,366 | INFO | Building VAD model.
+2026-03-28 11:22:17,366 | INFO | download models from model hub: ms
+2026-03-28 11:22:17,831 | WARNING | trust_remote_code: False
+2026-03-28 11:22:17,836 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-28 11:22:17,836 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2026-03-28 11:22:17,841 | INFO | scope_map: ['module.', 'None']
+2026-03-28 11:22:17,841 | INFO | excludes: None
+2026-03-28 11:22:17,842 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
+2026-03-28 11:22:17,849 | INFO | Building punc model.
+2026-03-28 11:22:17,849 | INFO | download models from model hub: ms
+2026-03-28 11:22:18,194 | WARNING | trust_remote_code: False
+2026-03-28 11:22:30,488 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-28 11:22:30,491 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2026-03-28 11:22:31,503 | INFO | scope_map: ['module.', 'None']
+2026-03-28 11:22:31,503 | INFO | excludes: None
+2026-03-28 11:22:31,674 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
+2026-03-28 11:22:32,011 | INFO | Building SPK model.
+2026-03-28 11:22:32,011 | INFO | download models from model hub: ms
+2026-03-28 11:22:33,207 | WARNING | trust_remote_code: False
+2026-03-28 11:22:33,338 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-28 11:22:33,340 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2026-03-28 11:22:33,407 | INFO | scope_map: ['module.', 'None']
+2026-03-28 11:22:33,407 | INFO | excludes: None
+2026-03-28 11:22:33,417 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
+2026-03-28 11:22:46,426 | WARNING | ⚠️ Whisper 在 macOS MPS 环境下检测到张量不兼容，已自动回退到 SenseVoice 引擎进行高精度识别。
+2026-03-28 11:22:46,868 | INFO | download models from model hub: ms
+2026-03-28 11:22:47,285 | WARNING | trust_remote_code: False
+2026-03-28 11:22:48,077 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-28 11:22:48,079 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
+2026-03-28 11:22:49,836 | INFO | scope_map: ['module.', 'None']
+2026-03-28 11:22:49,836 | INFO | excludes: None
+2026-03-28 11:22:50,158 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
+2026-03-28 11:22:51,388 | INFO | 临时文件清理定时任务已启动
+2026-03-28 11:22:51,388 | INFO | 📂 文件监控线程已启动
+2026-03-28 11:22:51,388 | INFO |    监控目录: /Volumes/download/records/Sony-2
+2026-03-28 11:23:00,387 | INFO | 🔍 发现 1666 个待处理文件
+2026-03-28 11:23:00,388 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-19-42.m4a
+2026-03-28 11:23:00,435 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-19-42.m4a
+2026-03-28 11:23:00,435 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:23:01,842 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:23:01,912 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:23:07,602 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:23:07,602 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:23:12,201 | INFO |    eres2net_large: [Baby=0.584, 大可=0.409, 妈妈=0.402, 爸爸=0.370, 婆婆=0.281]
+2026-03-28 11:23:12,902 | INFO |    rdino_ecapa: [爸爸=0.359, 大可=0.339, 妈妈=0.327, Baby=0.309, 婆婆=0.279]
+2026-03-28 11:23:13,500 | INFO |    camplusplus: [大可=0.440, 爸爸=0.394, 妈妈=0.381, Baby=0.311, 婆婆=0.285]
+2026-03-28 11:23:13,500 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:23:13,500 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 7 个分段。
+2026-03-28 11:23:13,500 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:23:13,500 | INFO |     [3.1] 处理分段 170ms - 3400ms...
+2026-03-28 11:23:14,893 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:14,893 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_170_0_1774668193.wav
+2026-03-28 11:23:14,893 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:15,215 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:15,216 | INFO |     [3.2] 处理分段 5690ms - 16180ms...
+2026-03-28 11:23:15,990 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:15,990 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_5690_1_1774668195.wav
+2026-03-28 11:23:15,990 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:16,874 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:16,874 | INFO |     [3.3] 处理分段 19770ms - 25690ms...
+2026-03-28 11:23:17,412 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:17,412 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_19770_2_1774668196.wav
+2026-03-28 11:23:17,412 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:17,945 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:17,945 | INFO |     [3.4] 处理分段 30020ms - 40790ms...
+2026-03-28 11:23:18,486 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:18,486 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_30020_3_1774668197.wav
+2026-03-28 11:23:18,486 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:19,441 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:19,441 | INFO |     [3.5] 处理分段 46080ms - 46650ms...
+2026-03-28 11:23:19,441 | INFO |       [3.5] 分段时长过短(570ms)，跳过声纹识别。
+2026-03-28 11:23:19,441 | INFO |     [3.6] 处理分段 51840ms - 52000ms...
+2026-03-28 11:23:19,441 | INFO |       [3.6] 分段时长过短(160ms)，跳过声纹识别。
+2026-03-28 11:23:19,441 | INFO |     [3.7] 处理分段 52000ms - 56870ms...
+2026-03-28 11:23:19,991 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:19,991 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_52000_6_1774668199.wav
+2026-03-28 11:23:19,991 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:20,451 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:20,451 | INFO | ✅ 完成! 音频:59.8s | 耗时:20.02s | RTF:0.335
+2026-03-28 11:23:20,451 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:23:20,452 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.776,
+  "meta": {
+    "process_time": 20.019316911697388,
+    "audio_duration": 59.776,
+    "rtf": 0.33490559608701465,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:23:20,454 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-19-42.m4a (0 字)
+2026-03-28 11:23:20,499 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-19-42.m4a
+2026-03-28 11:23:20,499 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-20-43.m4a
+2026-03-28 11:23:20,547 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-20-43.m4a
+2026-03-28 11:23:20,547 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:23:21,801 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:23:21,863 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:23:25,617 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:23:25,617 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:23:29,288 | INFO |    eres2net_large: [Baby=0.590, 妈妈=0.410, 大可=0.408, 爸爸=0.366, 婆婆=0.289]
+2026-03-28 11:23:29,957 | INFO |    rdino_ecapa: [爸爸=0.369, 大可=0.340, 妈妈=0.319, Baby=0.313, 婆婆=0.280]
+2026-03-28 11:23:30,591 | INFO |    camplusplus: [大可=0.443, 爸爸=0.404, 妈妈=0.382, Baby=0.330, 婆婆=0.282]
+2026-03-28 11:23:30,591 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:23:30,591 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 8 个分段。
+2026-03-28 11:23:30,591 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:23:30,591 | INFO |     [3.1] 处理分段 150ms - 585ms...
+2026-03-28 11:23:30,591 | INFO |       [3.1] 分段时长过短(435ms)，跳过声纹识别。
+2026-03-28 11:23:30,591 | INFO |     [3.2] 处理分段 1100ms - 1320ms...
+2026-03-28 11:23:30,592 | INFO |       [3.2] 分段时长过短(220ms)，跳过声纹识别。
+2026-03-28 11:23:30,592 | INFO |     [3.3] 处理分段 1320ms - 11300ms...
+2026-03-28 11:23:31,281 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:31,281 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1320_2_1774668210.wav
+2026-03-28 11:23:31,282 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:32,182 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:32,182 | INFO |     [3.4] 处理分段 16280ms - 21900ms...
+2026-03-28 11:23:32,686 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:32,686 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_16280_3_1774668212.wav
+2026-03-28 11:23:32,686 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:33,150 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:33,150 | INFO |     [3.5] 处理分段 22290ms - 25000ms...
+2026-03-28 11:23:33,619 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:23:33,619 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_22290_4_1774668213.wav
+2026-03-28 11:23:33,619 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:33,872 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:33,872 | INFO |     [3.6] 处理分段 29030ms - 29270ms...
+2026-03-28 11:23:33,872 | INFO |       [3.6] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:23:33,872 | INFO |     [3.7] 处理分段 38300ms - 38990ms...
+2026-03-28 11:23:33,872 | INFO |       [3.7] 分段时长过短(690ms)，跳过声纹识别。
+2026-03-28 11:23:33,872 | INFO |     [3.8] 处理分段 54020ms - 59810ms...
+2026-03-28 11:23:34,357 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:34,357 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_54020_7_1774668213.wav
+2026-03-28 11:23:34,357 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:34,855 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:34,856 | INFO | ✅ 完成! 音频:59.8s | 耗时:14.31s | RTF:0.239
+2026-03-28 11:23:34,856 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:23:34,856 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 14.311448812484741,
+    "audio_duration": 59.84,
+    "rtf": 0.23916191197334125,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:23:34,858 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-20-43.m4a (0 字)
+2026-03-28 11:23:34,922 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-20-43.m4a
+2026-03-28 11:23:34,922 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-21-43.m4a
+2026-03-28 11:23:34,953 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-21-43.m4a
+2026-03-28 11:23:34,953 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:23:36,184 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:23:36,237 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:23:39,162 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:23:39,162 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:23:42,696 | INFO |    eres2net_large: [Baby=0.593, 大可=0.418, 妈妈=0.409, 爸爸=0.373, 婆婆=0.271]
+2026-03-28 11:23:43,432 | INFO |    rdino_ecapa: [爸爸=0.385, 大可=0.364, 妈妈=0.350, Baby=0.318, 婆婆=0.310]
+2026-03-28 11:23:44,006 | INFO |    camplusplus: [大可=0.434, 妈妈=0.376, 爸爸=0.374, Baby=0.286, 婆婆=0.261]
+2026-03-28 11:23:44,007 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:23:44,007 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 6 个分段。
+2026-03-28 11:23:44,007 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:23:44,007 | INFO |     [3.1] 处理分段 210ms - 545ms...
+2026-03-28 11:23:44,007 | INFO |       [3.1] 分段时长过短(335ms)，跳过声纹识别。
+2026-03-28 11:23:44,007 | INFO |     [3.2] 处理分段 5790ms - 17850ms...
+2026-03-28 11:23:44,621 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:44,621 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_5790_1_1774668224.wav
+2026-03-28 11:23:44,621 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:45,602 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:45,602 | INFO |     [3.3] 处理分段 22500ms - 22980ms...
+2026-03-28 11:23:45,602 | INFO |       [3.3] 分段时长过短(480ms)，跳过声纹识别。
+2026-03-28 11:23:45,602 | INFO |     [3.4] 处理分段 23000ms - 23230ms...
+2026-03-28 11:23:45,602 | INFO |       [3.4] 分段时长过短(230ms)，跳过声纹识别。
+2026-03-28 11:23:45,602 | INFO |     [3.5] 处理分段 26260ms - 26970ms...
+2026-03-28 11:23:45,602 | INFO |       [3.5] 分段时长过短(710ms)，跳过声纹识别。
+2026-03-28 11:23:45,602 | INFO |     [3.6] 处理分段 30400ms - 58310ms...
+2026-03-28 11:23:46,431 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:23:46,432 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_30400_5_1774668225.wav
+2026-03-28 11:23:46,432 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:23:48,918 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:23:48,918 | INFO | ✅ 完成! 音频:59.8s | 耗时:13.97s | RTF:0.234
+2026-03-28 11:23:48,918 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:23:48,918 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.776,
+  "meta": {
+    "process_time": 13.966108083724976,
+    "audio_duration": 59.776,
+    "rtf": 0.23364072677537764,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:23:48,920 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-21-43.m4a (0 字)
+2026-03-28 11:23:48,955 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-21-43.m4a
+2026-03-28 11:23:48,956 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-22-44.m4a
+2026-03-28 11:23:49,017 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-22-44.m4a
+2026-03-28 11:23:49,017 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:23:50,267 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:23:50,317 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:23:54,050 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:23:54,050 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:23:58,099 | INFO |    eres2net_large: [Baby=0.592, 大可=0.416, 妈妈=0.408, 爸爸=0.383, 婆婆=0.280]
+2026-03-28 11:23:58,761 | INFO |    rdino_ecapa: [爸爸=0.372, 大可=0.358, 妈妈=0.338, Baby=0.323, 婆婆=0.290]
+2026-03-28 11:23:59,371 | INFO |    camplusplus: [大可=0.445, 妈妈=0.408, 爸爸=0.374, Baby=0.295, 婆婆=0.279]
+2026-03-28 11:23:59,371 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:23:59,371 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 8 个分段。
+2026-03-28 11:23:59,371 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:23:59,371 | INFO |     [3.1] 处理分段 190ms - 1920ms...
+2026-03-28 11:24:00,379 | INFO |       [SenseVoice] Yeah. (情感: neutral)
+2026-03-28 11:24:00,379 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_190_0_1774668239.wav
+2026-03-28 11:24:00,379 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:00,560 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:00,560 | INFO |     [3.2] 处理分段 7150ms - 23270ms...
+2026-03-28 11:24:01,434 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:24:01,434 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_7150_1_1774668240.wav
+2026-03-28 11:24:01,434 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:02,830 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:02,830 | INFO |     [3.3] 处理分段 30450ms - 30950ms...
+2026-03-28 11:24:02,830 | INFO |       [3.3] 分段时长过短(500ms)，跳过声纹识别。
+2026-03-28 11:24:02,830 | INFO |     [3.4] 处理分段 39950ms - 40620ms...
+2026-03-28 11:24:02,830 | INFO |       [3.4] 分段时长过短(670ms)，跳过声纹识别。
+2026-03-28 11:24:02,830 | INFO |     [3.5] 处理分段 41620ms - 41870ms...
+2026-03-28 11:24:02,830 | INFO |       [3.5] 分段时长过短(250ms)，跳过声纹识别。
+2026-03-28 11:24:02,830 | INFO |     [3.6] 处理分段 44440ms - 45080ms...
+2026-03-28 11:24:02,830 | INFO |       [3.6] 分段时长过短(640ms)，跳过声纹识别。
+2026-03-28 11:24:02,830 | INFO |     [3.7] 处理分段 46270ms - 50090ms...
+2026-03-28 11:24:03,383 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:24:03,383 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_46270_6_1774668242.wav
+2026-03-28 11:24:03,383 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:03,716 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:03,717 | INFO |     [3.8] 处理分段 51720ms - 52940ms...
+2026-03-28 11:24:04,201 | INFO |       [SenseVoice] Yeah. (情感: neutral)
+2026-03-28 11:24:04,201 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_51720_7_1774668243.wav
+2026-03-28 11:24:04,201 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:04,337 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:04,337 | INFO | ✅ 完成! 音频:59.8s | 耗时:15.32s | RTF:0.256
+2026-03-28 11:24:04,337 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:24:04,337 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 15.321783065795898,
+    "audio_duration": 59.84,
+    "rtf": 0.2560458400032737,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:24:04,339 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-22-44.m4a (0 字)
+2026-03-28 11:24:04,387 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-22-44.m4a
+2026-03-28 11:24:04,388 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-23-44.m4a
+2026-03-28 11:24:04,419 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-23-44.m4a
+2026-03-28 11:24:04,419 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:24:05,655 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:24:05,711 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:24:08,229 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:24:08,229 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:24:13,064 | INFO |    eres2net_large: [Baby=0.587, 大可=0.414, 妈妈=0.401, 爸爸=0.370, 婆婆=0.311]
+2026-03-28 11:24:13,806 | INFO |    rdino_ecapa: [爸爸=0.360, 大可=0.333, Baby=0.315, 妈妈=0.310, 婆婆=0.270]
+2026-03-28 11:24:14,426 | INFO |    camplusplus: [大可=0.425, 爸爸=0.403, 妈妈=0.372, Baby=0.317, 婆婆=0.276]
+2026-03-28 11:24:14,426 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:24:14,426 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 3 个分段。
+2026-03-28 11:24:14,426 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:24:14,426 | INFO |     [3.1] 处理分段 170ms - 525ms...
+2026-03-28 11:24:14,426 | INFO |       [3.1] 分段时长过短(355ms)，跳过声纹识别。
+2026-03-28 11:24:14,426 | INFO |     [3.2] 处理分段 1530ms - 28250ms...
+2026-03-28 11:24:16,231 | INFO |       [SenseVoice] 。 (情感: neutral)
+2026-03-28 11:24:16,231 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1530_1_1774668254.wav
+2026-03-28 11:24:16,231 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:18,616 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:18,616 | INFO |     [3.3] 处理分段 59420ms - 59890ms...
+2026-03-28 11:24:18,616 | INFO |       [3.3] 分段时长过短(470ms)，跳过声纹识别。
+2026-03-28 11:24:18,616 | INFO | ✅ 完成! 音频:59.9s | 耗时:14.20s | RTF:0.237
+2026-03-28 11:24:18,616 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:24:18,616 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
   "full_text": "",
   "segments": [],
   "duration": 59.904,
   "meta": {
-    "process_time": 27.22968602180481,
+    "process_time": 14.198485851287842,
     "audio_duration": 59.904,
-    "rtf": 0.45455538898579073,
+    "rtf": 0.23702066391706467,
     "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
   }
 }
-2026-03-27 17:40:21,350 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-26_21-39-26.m4a
-2026-03-27 17:40:21,350 | INFO |    文本长度: 0 字
-2026-03-27 17:40:21,350 | INFO |    分段数: 0
-2026-03-27 17:40:21,488 | INFO | 📦 已移动到: processed/2026-03-26/TermuxAudioRecording_2026-03-26_21-39-26.m4a
-2026-03-27 17:40:21,488 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-40-27.m4a
-2026-03-27 17:40:21,567 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-40-27.m4a
-2026-03-27 17:40:21,567 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
-2026-03-27 17:40:22,866 | INFO |   [生命周期: 1. 音频预处理] 完成。
-2026-03-27 17:40:22,930 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
-2026-03-27 17:40:28,265 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
-2026-03-27 17:40:28,265 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
-2026-03-27 17:40:33,863 | INFO |    eres2net_large: [Baby=0.741, 大可=0.639, 妈妈=0.631, 爸爸=0.471, 婆婆=0.398]
-2026-03-27 17:40:34,530 | INFO |    rdino_ecapa: [妈妈=0.630, 大可=0.614, 爸爸=0.578, Baby=0.554, 婆婆=0.543]
-2026-03-27 17:40:35,205 | INFO |    camplusplus: [大可=0.606, 妈妈=0.598, Baby=0.452, 爸爸=0.425, 婆婆=0.328]
-2026-03-27 17:40:35,205 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
-2026-03-27 17:40:35,205 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 9 个分段。
-2026-03-27 17:40:35,205 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
-2026-03-27 17:40:35,205 | INFO |     [3.1] 处理分段 250ms - 480ms...
-2026-03-27 17:40:35,205 | INFO |       [3.1] 分段时长过短(230ms)，跳过声纹识别。
-2026-03-27 17:40:35,205 | INFO |     [3.2] 处理分段 1480ms - 3625ms...
-2026-03-27 17:40:36,823 | INFO |       [SenseVoice] 吃吧，你又开始考虑了。 (情感: neutral)
-2026-03-27 17:40:36,824 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1480_1_1774604435.wav
-2026-03-27 17:40:36,824 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:37,042 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:37,042 | INFO |     [3.3] 处理分段 4110ms - 35915ms...
-2026-03-27 17:40:38,645 | INFO |       [SenseVoice] 。 (情感: neutral)
-2026-03-27 17:40:38,646 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_4110_2_1774604437.wav
-2026-03-27 17:40:38,646 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:41,659 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:41,659 | INFO |     [3.4] 处理分段 38330ms - 41060ms...
-2026-03-27 17:40:42,446 | INFO |       [SenseVoice] . (情感: neutral)
-2026-03-27 17:40:42,446 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_38330_3_1774604441.wav
-2026-03-27 17:40:42,446 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:42,695 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:42,695 | INFO |     [3.5] 处理分段 43410ms - 44065ms...
-2026-03-27 17:40:42,695 | INFO |       [3.5] 分段时长过短(655ms)，跳过声纹识别。
-2026-03-27 17:40:42,695 | INFO |     [3.6] 处理分段 48690ms - 49290ms...
-2026-03-27 17:40:42,695 | INFO |       [3.6] 分段时长过短(600ms)，跳过声纹识别。
-2026-03-27 17:40:42,695 | INFO |     [3.7] 处理分段 54680ms - 56300ms...
-2026-03-27 17:40:43,421 | INFO |       [SenseVoice] 。 (情感: neutral)
-2026-03-27 17:40:43,421 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_54680_6_1774604442.wav
-2026-03-27 17:40:43,421 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:40:43,572 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:40:43,572 | INFO |     [3.8] 处理分段 56300ms - 56850ms...
-2026-03-27 17:40:43,572 | INFO |       [3.8] 分段时长过短(550ms)，跳过声纹识别。
-2026-03-27 17:40:43,572 | INFO |     [3.9] 处理分段 58870ms - 59565ms...
-2026-03-27 17:40:43,572 | INFO |       [3.9] 分段时长过短(695ms)，跳过声纹识别。
-2026-03-27 17:40:43,572 | INFO | ✅ 完成! 音频:59.7s | 耗时:22.01s | RTF:0.369
-2026-03-27 17:40:43,572 | INFO |   [生命周期: 4. 组装响应] 开始...
-2026-03-27 17:40:43,572 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+2026-03-28 11:24:18,618 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-23-44.m4a (0 字)
+2026-03-28 11:24:18,685 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-23-44.m4a
+2026-03-28 11:24:18,685 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-24-45.m4a
+2026-03-28 11:24:18,715 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-24-45.m4a
+2026-03-28 11:24:18,715 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:24:19,040 | INFO | 📚 声纹库已挂载: 5 人
+2026-03-28 11:24:19,953 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:24:20,004 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:24:23,098 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:24:23,098 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:24:28,037 | INFO |    eres2net_large: [Baby=0.600, 大可=0.427, 妈妈=0.424, 爸爸=0.389, 婆婆=0.288]
+2026-03-28 11:24:28,754 | INFO |    rdino_ecapa: [爸爸=0.351, 大可=0.330, 妈妈=0.307, Baby=0.299, 婆婆=0.263]
+2026-03-28 11:24:29,377 | INFO |    camplusplus: [大可=0.443, 妈妈=0.393, 爸爸=0.384, Baby=0.321, 婆婆=0.280]
+2026-03-28 11:24:29,377 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:24:29,377 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 4 个分段。
+2026-03-28 11:24:29,377 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:24:29,377 | INFO |     [3.1] 处理分段 170ms - 495ms...
+2026-03-28 11:24:29,377 | INFO |       [3.1] 分段时长过短(325ms)，跳过声纹识别。
+2026-03-28 11:24:29,378 | INFO |     [3.2] 处理分段 24440ms - 27230ms...
+2026-03-28 11:24:30,769 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:24:30,769 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_24440_1_1774668269.wav
+2026-03-28 11:24:30,769 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:31,080 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:31,080 | INFO |     [3.3] 处理分段 27350ms - 57490ms...
+2026-03-28 11:24:32,276 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:24:32,276 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_27350_2_1774668271.wav
+2026-03-28 11:24:32,277 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:34,997 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:34,997 | INFO |     [3.4] 处理分段 57490ms - 58370ms...
+2026-03-28 11:24:35,487 | INFO |       [SenseVoice] 嗯。 (情感: neutral)
+2026-03-28 11:24:35,488 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_57490_3_1774668275.wav
+2026-03-28 11:24:35,488 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:35,599 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:35,599 | INFO | ✅ 完成! 音频:59.8s | 耗时:16.88s | RTF:0.282
+2026-03-28 11:24:35,599 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:24:35,599 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
   "full_text": "",
   "segments": [],
-  "duration": 59.712,
+  "duration": 59.84,
   "meta": {
-    "process_time": 22.00617003440857,
-    "audio_duration": 59.712,
-    "rtf": 0.3685384853029302,
+    "process_time": 16.884995222091675,
+    "audio_duration": 59.84,
+    "rtf": 0.2821690378023341,
     "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
   }
 }
-2026-03-27 17:40:43,575 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-26_21-40-27.m4a
-2026-03-27 17:40:43,575 | INFO |    文本长度: 0 字
-2026-03-27 17:40:43,575 | INFO |    分段数: 0
-2026-03-27 17:40:43,643 | INFO | 📦 已移动到: processed/2026-03-26/TermuxAudioRecording_2026-03-26_21-40-27.m4a
-2026-03-27 17:40:43,643 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-41-28.m4a
-2026-03-27 17:40:43,706 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-41-28.m4a
-2026-03-27 17:40:43,707 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
-2026-03-27 17:40:44,950 | INFO |   [生命周期: 1. 音频预处理] 完成。
-2026-03-27 17:40:45,003 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
-2026-03-27 17:40:54,344 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
-2026-03-27 17:40:54,344 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
-2026-03-27 17:40:59,832 | INFO |    eres2net_large: [妈妈=0.753, Baby=0.724, 大可=0.680, 婆婆=0.544, 爸爸=0.527]
-2026-03-27 17:41:00,519 | INFO |    rdino_ecapa: [妈妈=0.780, 大可=0.740, 婆婆=0.729, Baby=0.684, 爸爸=0.683]
-2026-03-27 17:41:01,213 | INFO |    camplusplus: [妈妈=0.786, 大可=0.633, Baby=0.548, 婆婆=0.478, 爸爸=0.403]
-2026-03-27 17:41:01,213 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
-2026-03-27 17:41:01,213 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 24 个分段。
-2026-03-27 17:41:01,214 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
-2026-03-27 17:41:01,214 | INFO |     [3.1] 处理分段 210ms - 450ms...
-2026-03-27 17:41:01,214 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
-2026-03-27 17:41:01,214 | INFO |     [3.2] 处理分段 2690ms - 8710ms...
-2026-03-27 17:41:02,623 | INFO |       [SenseVoice] . (情感: neutral)
-2026-03-27 17:41:02,624 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_2690_1_1774604461.wav
-2026-03-27 17:41:02,624 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:03,129 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:03,129 | INFO |     [3.3] 处理分段 10680ms - 10920ms...
-2026-03-27 17:41:03,129 | INFO |       [3.3] 分段时长过短(240ms)，跳过声纹识别。
-2026-03-27 17:41:03,129 | INFO |     [3.4] 处理分段 11430ms - 12455ms...
-2026-03-27 17:41:04,053 | INFO |       [SenseVoice] 不好意思嘞。 (情感: neutral)
-2026-03-27 17:41:04,053 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_11430_3_1774604463.wav
-2026-03-27 17:41:04,053 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:04,172 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:04,172 | INFO |     [3.5] 处理分段 13150ms - 14985ms...
-2026-03-27 17:41:04,783 | INFO |       [SenseVoice] 不好意思哦。 (情感: neutral)
-2026-03-27 17:41:04,783 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_13150_4_1774604464.wav
-2026-03-27 17:41:04,784 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:04,952 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:04,952 | INFO |     [3.6] 处理分段 16030ms - 17260ms...
-2026-03-27 17:41:05,441 | INFO |       [SenseVoice] 我不说。 (情感: neutral)
-2026-03-27 17:41:05,441 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_16030_5_1774604464.wav
-2026-03-27 17:41:05,441 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:05,572 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:05,572 | INFO |     [3.7] 处理分段 21100ms - 21340ms...
-2026-03-27 17:41:05,572 | INFO |       [3.7] 分段时长过短(240ms)，跳过声纹识别。
-2026-03-27 17:41:05,572 | INFO |     [3.8] 处理分段 21360ms - 21630ms...
-2026-03-27 17:41:05,572 | INFO |       [3.8] 分段时长过短(270ms)，跳过声纹识别。
-2026-03-27 17:41:05,572 | INFO |     [3.9] 处理分段 21930ms - 31340ms...
-2026-03-27 17:41:06,124 | INFO |       [SenseVoice] . (情感: neutral)
-2026-03-27 17:41:06,125 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_21930_8_1774604465.wav
-2026-03-27 17:41:06,125 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:06,986 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:06,986 | INFO |     [3.10] 处理分段 32850ms - 33090ms...
-2026-03-27 17:41:06,986 | INFO |       [3.10] 分段时长过短(240ms)，跳过声纹识别。
-2026-03-27 17:41:06,986 | INFO |     [3.11] 处理分段 34350ms - 34940ms...
-2026-03-27 17:41:06,986 | INFO |       [3.11] 分段时长过短(590ms)，跳过声纹识别。
-2026-03-27 17:41:06,986 | INFO |     [3.12] 处理分段 35200ms - 36980ms...
-2026-03-27 17:41:07,527 | INFO |       [SenseVoice] 你们你们要去繁花的话。 (情感: neutral)
-2026-03-27 17:41:07,527 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_35200_11_1774604467.wav
-2026-03-27 17:41:07,527 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:07,745 | INFO |       [性能] 已识别说话人 妈妈
-2026-03-27 17:41:07,746 | INFO |     [3.13] 处理分段 36980ms - 38800ms...
-2026-03-27 17:41:08,113 | INFO |       [SenseVoice] 给我带几个封蜜小面包。 (情感: neutral)
-2026-03-27 17:41:08,113 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_36980_12_1774604467.wav
-2026-03-27 17:41:08,113 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:08,389 | INFO |       [性能] 已识别说话人 妈妈
-2026-03-27 17:41:08,389 | INFO |     [3.14] 处理分段 39260ms - 40360ms...
-2026-03-27 17:41:09,000 | INFO |       [SenseVoice] 那早就不想说。 (情感: neutral)
-2026-03-27 17:41:09,000 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_39260_13_1774604468.wav
-2026-03-27 17:41:09,000 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:09,125 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:09,125 | INFO |     [3.15] 处理分段 40560ms - 42080ms...
-2026-03-27 17:41:09,541 | INFO |       [SenseVoice] 我刚在外卖上看见了。 (情感: neutral)
-2026-03-27 17:41:09,541 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_40560_14_1774604469.wav
-2026-03-27 17:41:09,541 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:09,686 | INFO |       [性能] 已识别说话人 妈妈
-2026-03-27 17:41:09,686 | INFO |     [3.16] 处理分段 42080ms - 42880ms...
-2026-03-27 17:41:09,686 | INFO |       [3.16] 分段时长过短(800ms)，跳过声纹识别。
-2026-03-27 17:41:09,686 | INFO |     [3.17] 处理分段 42880ms - 44935ms...
-2026-03-27 17:41:10,253 | INFO |       [SenseVoice] 但是他在外卖上卖的比较贵。 (情感: neutral)
-2026-03-27 17:41:10,253 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_42880_16_1774604469.wav
-2026-03-27 17:41:10,253 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:10,587 | INFO |       [性能] 已识别说话人 妈妈
-2026-03-27 17:41:10,587 | INFO |     [3.18] 处理分段 45950ms - 47110ms...
-2026-03-27 17:41:11,234 | INFO |       [SenseVoice] 次にくいて。 (情感: neutral)
-2026-03-27 17:41:11,234 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_45950_17_1774604470.wav
-2026-03-27 17:41:11,234 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:11,361 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:11,361 | INFO |     [3.19] 处理分段 47110ms - 49750ms...
-2026-03-27 17:41:11,882 | INFO |       [SenseVoice] 我就不高兴见什么样子啊？ (情感: neutral)
-2026-03-27 17:41:11,883 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_47110_18_1774604471.wav
-2026-03-27 17:41:11,883 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:12,106 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:12,106 | INFO |     [3.20] 处理分段 49750ms - 51030ms...
-2026-03-27 17:41:12,602 | INFO |       [SenseVoice] 我要吃饭。 (情感: neutral)
-2026-03-27 17:41:12,602 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_49750_19_1774604472.wav
-2026-03-27 17:41:12,602 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:12,737 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:12,737 | INFO |     [3.21] 处理分段 51050ms - 52505ms...
-2026-03-27 17:41:13,281 | INFO |       [SenseVoice] 小孩是。 (情感: neutral)
-2026-03-27 17:41:13,281 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_51050_20_1774604472.wav
-2026-03-27 17:41:13,281 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:13,421 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:13,421 | INFO |     [3.22] 处理分段 54220ms - 55240ms...
-2026-03-27 17:41:13,831 | INFO |       [SenseVoice] 一人分一个呗。 (情感: neutral)
-2026-03-27 17:41:13,831 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_54220_21_1774604473.wav
-2026-03-27 17:41:13,831 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:13,952 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:13,952 | INFO |     [3.23] 处理分段 56000ms - 57045ms...
-2026-03-27 17:41:14,380 | INFO |       [SenseVoice] 一个个啊。 (情感: neutral)
-2026-03-27 17:41:14,380 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_56000_22_1774604474.wav
-2026-03-27 17:41:14,380 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:14,502 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:14,502 | INFO |     [3.24] 处理分段 58610ms - 59645ms...
-2026-03-27 17:41:14,881 | INFO |       [SenseVoice] 这答案有。 (情感: neutral)
-2026-03-27 17:41:14,882 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_58610_23_1774604474.wav
-2026-03-27 17:41:14,882 | INFO | 📋 声纹数据库包含 5 个说话人
-2026-03-27 17:41:14,994 | INFO |       [性能] 未识别说话人，跳过后续处理
-2026-03-27 17:41:14,994 | INFO | ✅ 完成! 音频:59.7s | 耗时:31.29s | RTF:0.524
-2026-03-27 17:41:14,994 | INFO |   [生命周期: 4. 组装响应] 开始...
-2026-03-27 17:41:14,995 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
-  "full_text": "你们你们要去杂花的话，给我带几个蜂蜜小面包。我刚在外卖上看见了，但是他在外卖上卖的比较贵，",
-  "segments": [
-    {
-      "text": "你们你们要去杂花的话，",
-      "start": 35200,
-      "end": 36980,
-      "spk": "妈妈",
-      "emotion": "neutral",
-      "whisper_text": null,
-      "sensevoice_text": "你们你们要去繁花的话。",
-      "confidence": 0.688,
-      "recognition_details": [
-        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.756352)",
-        "模型 rdino_ecapa: Unknown",
-        "模型 camplusplus: 识别为 妈妈 (相似度: 0.619363)",
-        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.688)"
-      ],
-      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_11.wav",
-      "speech_metrics": {
-        "duration_seconds": 1.78,
-        "word_count": 11,
-        "speech_rate": 6.18
-      },
-      "text_quality": {
-        "is_noise": false,
-        "noise_score": 0.109,
-        "repeat_ratio": 0.182,
-        "filler_ratio": 0.0
-      },
-      "emotion_info": {
-        "emotion": "neutral",
-        "source": "sensevoice",
-        "original_tag": "<|neutral|>",
-        "detected_by_sensevoice": true
-      }
-    },
-    {
-      "text": "给我带几个蜂蜜小面包。",
-      "start": 36980,
-      "end": 38800,
-      "spk": "妈妈",
-      "emotion": "neutral",
-      "whisper_text": null,
-      "sensevoice_text": "给我带几个封蜜小面包。",
-      "confidence": 0.67,
-      "recognition_details": [
-        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.671339)",
-        "模型 rdino_ecapa: Unknown",
-        "模型 camplusplus: 识别为 妈妈 (相似度: 0.668624)",
-        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.670)"
-      ],
-      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_12.wav",
-      "speech_metrics": {
-        "duration_seconds": 1.82,
-        "word_count": 11,
-        "speech_rate": 6.04
-      },
-      "text_quality": {
-        "is_noise": false,
-        "noise_score": 0.055,
-        "repeat_ratio": 0.091,
-        "filler_ratio": 0.0
-      },
-      "emotion_info": {
-        "emotion": "neutral",
-        "source": "sensevoice",
-        "original_tag": "<|neutral|>",
-        "detected_by_sensevoice": true
-      }
-    },
-    {
-      "text": "我刚在外卖上看见了，",
-      "start": 40560,
-      "end": 42080,
-      "spk": "妈妈",
-      "emotion": "neutral",
-      "whisper_text": null,
-      "sensevoice_text": "我刚在外卖上看见了。",
-      "confidence": 0.632,
-      "recognition_details": [
-        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.660884)",
-        "模型 rdino_ecapa: Unknown",
-        "模型 camplusplus: 识别为 妈妈 (相似度: 0.602335)",
-        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.632)"
-      ],
-      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_14.wav",
-      "speech_metrics": {
-        "duration_seconds": 1.52,
-        "word_count": 10,
-        "speech_rate": 6.58
-      },
-      "text_quality": {
-        "is_noise": false,
-        "noise_score": 0.06,
-        "repeat_ratio": 0.1,
-        "filler_ratio": 0.0
-      },
-      "emotion_info": {
-        "emotion": "neutral",
-        "source": "sensevoice",
-        "original_tag": "<|neutral|>",
-        "detected_by_sensevoice": true
-      }
-    },
-    {
-      "text": "但是他在外卖上卖的比较贵，",
-      "start": 42880,
-      "end": 44935,
-      "spk": "妈妈",
-      "emotion": "neutral",
-      "whisper_text": null,
-      "sensevoice_text": "但是他在外卖上卖的比较贵。",
-      "confidence": 0.712,
-      "recognition_details": [
-        "模型 eres2net_large: 识别为 妈妈 (相似度: 0.701547)",
-        "模型 rdino_ecapa: Unknown",
-        "模型 camplusplus: 识别为 妈妈 (相似度: 0.722855)",
-        "最终识别结果: 妈妈 (多数票: 2 票, 平均置信度: 0.712)"
-      ],
-      "segment_audio_path": "/audio_segments/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28/seg_16.wav",
-      "speech_metrics": {
-        "duration_seconds": 2.06,
-        "word_count": 13,
-        "speech_rate": 6.33
-      },
-      "text_quality": {
-        "is_noise": false,
-        "noise_score": 0.092,
-        "repeat_ratio": 0.154,
-        "filler_ratio": 0.0
-      },
-      "emotion_info": {
-        "emotion": "neutral",
-        "source": "sensevoice",
-        "original_tag": "<|neutral|>",
-        "detected_by_sensevoice": true
-      }
-    }
-  ],
-  "duration": 59.712,
+2026-03-28 11:24:35,601 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-24-45.m4a (0 字)
+2026-03-28 11:24:35,640 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-24-45.m4a
+2026-03-28 11:24:35,641 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-25-45.m4a
+2026-03-28 11:24:35,687 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-25-45.m4a
+2026-03-28 11:24:35,687 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:24:36,942 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:24:36,993 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:24:41,117 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:24:41,117 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:24:45,582 | INFO |    eres2net_large: [Baby=0.578, 大可=0.412, 妈妈=0.401, 爸爸=0.381, 婆婆=0.285]
+2026-03-28 11:24:46,443 | INFO |    rdino_ecapa: [爸爸=0.378, 大可=0.349, 妈妈=0.333, Baby=0.313, 婆婆=0.288]
+2026-03-28 11:24:47,137 | INFO |    camplusplus: [大可=0.436, 妈妈=0.378, 爸爸=0.365, Baby=0.279, 婆婆=0.263]
+2026-03-28 11:24:47,137 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:24:47,137 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 13 个分段。
+2026-03-28 11:24:47,137 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:24:47,137 | INFO |     [3.1] 处理分段 170ms - 410ms...
+2026-03-28 11:24:47,137 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:24:47,137 | INFO |     [3.2] 处理分段 1220ms - 1750ms...
+2026-03-28 11:24:47,138 | INFO |       [3.2] 分段时长过短(530ms)，跳过声纹识别。
+2026-03-28 11:24:47,138 | INFO |     [3.3] 处理分段 3460ms - 4010ms...
+2026-03-28 11:24:47,138 | INFO |       [3.3] 分段时长过短(550ms)，跳过声纹识别。
+2026-03-28 11:24:47,138 | INFO |     [3.4] 处理分段 5940ms - 6180ms...
+2026-03-28 11:24:47,138 | INFO |       [3.4] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:24:47,138 | INFO |     [3.5] 处理分段 6570ms - 18720ms...
+2026-03-28 11:24:48,698 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:24:48,698 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_6570_4_1774668287.wav
+2026-03-28 11:24:48,698 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:49,869 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:49,869 | INFO |     [3.6] 处理分段 23490ms - 23730ms...
+2026-03-28 11:24:49,869 | INFO |       [3.6] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:24:49,869 | INFO |     [3.7] 处理分段 23810ms - 25090ms...
+2026-03-28 11:24:50,441 | INFO |       [SenseVoice] Yeah。 (情感: neutral)
+2026-03-28 11:24:50,441 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_23810_6_1774668289.wav
+2026-03-28 11:24:50,441 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:50,581 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:50,581 | INFO |     [3.8] 处理分段 25110ms - 32600ms...
+2026-03-28 11:24:51,101 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:24:51,102 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_25110_7_1774668290.wav
+2026-03-28 11:24:51,102 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:51,770 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:51,770 | INFO |     [3.9] 处理分段 32600ms - 43890ms...
+2026-03-28 11:24:52,341 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:24:52,341 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_32600_8_1774668291.wav
+2026-03-28 11:24:52,341 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:53,372 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:53,372 | INFO |     [3.10] 处理分段 43890ms - 44320ms...
+2026-03-28 11:24:53,372 | INFO |       [3.10] 分段时长过短(430ms)，跳过声纹识别。
+2026-03-28 11:24:53,372 | INFO |     [3.11] 处理分段 49070ms - 51780ms...
+2026-03-28 11:24:53,847 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:24:53,847 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_49070_10_1774668293.wav
+2026-03-28 11:24:53,847 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:54,109 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:54,109 | INFO |     [3.12] 处理分段 52120ms - 59140ms...
+2026-03-28 11:24:54,635 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:24:54,635 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_52120_11_1774668294.wav
+2026-03-28 11:24:54,635 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:24:55,344 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:24:55,344 | INFO |     [3.13] 处理分段 59140ms - 59380ms...
+2026-03-28 11:24:55,344 | INFO |       [3.13] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:24:55,344 | INFO | ✅ 完成! 音频:59.8s | 耗时:19.66s | RTF:0.329
+2026-03-28 11:24:55,344 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:24:55,344 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
   "meta": {
-    "process_time": 31.289158821105957,
-    "audio_duration": 59.712,
-    "rtf": 0.5240011860447809,
+    "process_time": 19.658029079437256,
+    "audio_duration": 59.84,
+    "rtf": 0.32850984424193275,
     "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
   }
 }
-2026-03-27 17:41:16,452 | INFO | ✅ 数据库保存成功 (recording_time: 2026-03-26 21:41:28)
-2026-03-27 17:41:16,453 | INFO |   智能摘要: 1位说话人, 4个分段
-2026-03-27 17:41:16,463 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-26_21-41-28.m4a
-2026-03-27 17:41:16,463 | INFO |    文本长度: 45 字
-2026-03-27 17:41:16,463 | INFO |    分段数: 4
-2026-03-27 17:41:16,530 | INFO | 📦 已移动到: processed/2026-03-26/TermuxAudioRecording_2026-03-26_21-41-28.m4a
-2026-03-27 17:41:16,530 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-42-28.m4a
-2026-03-27 17:41:16,563 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-42-28.m4a
-2026-03-27 17:41:16,563 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
-2026-03-27 17:41:17,837 | INFO |   [生命周期: 1. 音频预处理] 完成。
-2026-03-27 17:41:17,897 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
-2026-03-27 17:48:23,959 | INFO | 📚 声纹库已挂载: 5 人
-2026-03-27 17:48:23,959 | INFO | download models from model hub: ms
-2026-03-27 17:48:24,383 | WARNING | trust_remote_code: False
-2026-03-27 17:48:25,570 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 17:48:25,572 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
-2026-03-27 17:48:26,175 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:48:26,175 | INFO | excludes: None
-2026-03-27 17:48:26,251 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 17:48:26,774 | INFO | Building VAD model.
-2026-03-27 17:48:26,774 | INFO | download models from model hub: ms
-2026-03-27 17:48:27,234 | WARNING | trust_remote_code: False
-2026-03-27 17:48:27,238 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 17:48:27,238 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
-2026-03-27 17:48:27,242 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:48:27,242 | INFO | excludes: None
-2026-03-27 17:48:27,243 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
-2026-03-27 17:48:27,250 | INFO | Building punc model.
-2026-03-27 17:48:27,251 | INFO | download models from model hub: ms
-2026-03-27 17:48:27,714 | WARNING | trust_remote_code: False
-2026-03-27 17:48:41,295 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 17:48:41,298 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
-2026-03-27 17:48:41,774 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:48:41,774 | INFO | excludes: None
-2026-03-27 17:48:41,854 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
-2026-03-27 17:48:42,095 | INFO | Building SPK model.
-2026-03-27 17:48:42,095 | INFO | download models from model hub: ms
-2026-03-27 17:48:43,162 | WARNING | trust_remote_code: False
-2026-03-27 17:48:43,273 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 17:48:43,275 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
-2026-03-27 17:48:43,343 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:48:43,344 | INFO | excludes: None
-2026-03-27 17:48:43,354 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
-2026-03-27 17:48:58,842 | WARNING | ⚠️ Whisper 在 macOS MPS 环境下检测到张量不兼容，已自动回退到 SenseVoice 引擎进行高精度识别。
-2026-03-27 17:48:59,411 | INFO | download models from model hub: ms
-2026-03-27 17:48:59,799 | WARNING | trust_remote_code: False
-2026-03-27 17:49:00,712 | INFO | Loading pretrained params from /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 17:49:00,715 | INFO | ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt
-2026-03-27 17:49:02,190 | INFO | scope_map: ['module.', 'None']
-2026-03-27 17:49:02,190 | INFO | excludes: None
-2026-03-27 17:49:02,443 | INFO | Loading ckpt: /Users/mac/.cache/modelscope/hub/iic/SenseVoiceSmall/model.pt, status: <All keys matched successfully>
-2026-03-27 17:49:03,825 | INFO | 临时文件清理定时任务已启动
-2026-03-27 17:49:03,825 | INFO | 📂 文件监控线程已启动
-2026-03-27 17:49:03,826 | INFO |    监控目录: /Volumes/download/records/Sony-2
-2026-03-27 17:49:11,698 | INFO | 🔍 发现 1195 个待处理文件
-2026-03-27 17:49:11,698 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-26_21-42-28.m4a
-2026-03-27 17:49:11,732 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-26_21-42-28.m4a
-2026-03-27 17:49:11,732 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
-2026-03-27 17:49:13,179 | INFO |   [生命周期: 1. 音频预处理] 完成。
-2026-03-27 17:49:13,242 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
-2026-03-27 17:49:27,336 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
-2026-03-27 17:49:27,337 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:24:55,346 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-25-45.m4a (0 字)
+2026-03-28 11:24:55,407 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-25-45.m4a
+2026-03-28 11:24:55,407 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-26-46.m4a
+2026-03-28 11:24:55,471 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-26-46.m4a
+2026-03-28 11:24:55,471 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:24:56,724 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:24:56,773 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:25:02,618 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:25:02,618 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:25:08,128 | INFO |    eres2net_large: [Baby=0.597, 大可=0.433, 妈妈=0.413, 爸爸=0.379, 婆婆=0.301]
+2026-03-28 11:25:08,874 | INFO |    rdino_ecapa: [爸爸=0.391, 大可=0.372, 妈妈=0.359, Baby=0.333, 婆婆=0.307]
+2026-03-28 11:25:09,500 | INFO |    camplusplus: [大可=0.442, 妈妈=0.382, 爸爸=0.358, Baby=0.315, 婆婆=0.282]
+2026-03-28 11:25:09,500 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:25:09,500 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 13 个分段。
+2026-03-28 11:25:09,500 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:25:09,500 | INFO |     [3.1] 处理分段 170ms - 525ms...
+2026-03-28 11:25:09,500 | INFO |       [3.1] 分段时长过短(355ms)，跳过声纹识别。
+2026-03-28 11:25:09,500 | INFO |     [3.2] 处理分段 1790ms - 4900ms...
+2026-03-28 11:25:10,925 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:10,925 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1790_1_1774668309.wav
+2026-03-28 11:25:10,925 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:11,223 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:11,224 | INFO |     [3.3] 处理分段 4900ms - 6330ms...
+2026-03-28 11:25:12,050 | INFO |       [SenseVoice] Yeah. (情感: neutral)
+2026-03-28 11:25:12,050 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_4900_2_1774668311.wav
+2026-03-28 11:25:12,050 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:12,201 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:12,201 | INFO |     [3.4] 处理分段 6330ms - 7700ms...
+2026-03-28 11:25:12,672 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:25:12,672 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_6330_3_1774668312.wav
+2026-03-28 11:25:12,672 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:12,819 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:12,819 | INFO |     [3.5] 处理分段 7760ms - 9470ms...
+2026-03-28 11:25:13,237 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:25:13,237 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_7760_4_1774668312.wav
+2026-03-28 11:25:13,237 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:13,466 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:13,466 | INFO |     [3.6] 处理分段 9820ms - 10640ms...
+2026-03-28 11:25:14,029 | INFO |       [SenseVoice] Yeah。 (情感: neutral)
+2026-03-28 11:25:14,029 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_9820_5_1774668313.wav
+2026-03-28 11:25:14,029 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:14,137 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:14,137 | INFO |     [3.7] 处理分段 11040ms - 11330ms...
+2026-03-28 11:25:14,137 | INFO |       [3.7] 分段时长过短(290ms)，跳过声纹识别。
+2026-03-28 11:25:14,137 | INFO |     [3.8] 处理分段 16480ms - 17090ms...
+2026-03-28 11:25:14,137 | INFO |       [3.8] 分段时长过短(610ms)，跳过声纹识别。
+2026-03-28 11:25:14,137 | INFO |     [3.9] 处理分段 19990ms - 28290ms...
+2026-03-28 11:25:14,967 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:14,967 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_19990_8_1774668314.wav
+2026-03-28 11:25:14,967 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:15,920 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:15,920 | INFO |     [3.10] 处理分段 28750ms - 32960ms...
+2026-03-28 11:25:16,527 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:16,527 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_28750_9_1774668315.wav
+2026-03-28 11:25:16,527 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:16,932 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:16,933 | INFO |     [3.11] 处理分段 32960ms - 42050ms...
+2026-03-28 11:25:17,476 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:17,476 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_32960_10_1774668316.wav
+2026-03-28 11:25:17,476 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:18,405 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:18,405 | INFO |     [3.12] 处理分段 42050ms - 59460ms...
+2026-03-28 11:25:19,133 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:19,133 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_42050_11_1774668318.wav
+2026-03-28 11:25:19,133 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:21,256 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:21,256 | INFO |     [3.13] 处理分段 59460ms - 59730ms...
+2026-03-28 11:25:21,256 | INFO |       [3.13] 分段时长过短(270ms)，跳过声纹识别。
+2026-03-28 11:25:21,256 | INFO | ✅ 完成! 音频:59.9s | 耗时:25.79s | RTF:0.430
+2026-03-28 11:25:21,256 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:25:21,256 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.904,
+  "meta": {
+    "process_time": 25.78575301170349,
+    "audio_duration": 59.904,
+    "rtf": 0.4304512722306272,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:25:21,258 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-26-46.m4a (0 字)
+2026-03-28 11:25:21,297 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-26-46.m4a
+2026-03-28 11:25:21,298 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-27-46.m4a
+2026-03-28 11:25:21,332 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-27-46.m4a
+2026-03-28 11:25:21,332 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:25:22,612 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:25:22,663 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:25:26,807 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:25:26,808 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:25:32,001 | INFO |    eres2net_large: [Baby=0.607, 大可=0.424, 妈妈=0.409, 爸爸=0.386, 婆婆=0.272]
+2026-03-28 11:25:32,773 | INFO |    rdino_ecapa: [爸爸=0.378, 大可=0.355, 妈妈=0.344, Baby=0.320, 婆婆=0.296]
+2026-03-28 11:25:33,373 | INFO |    camplusplus: [大可=0.442, 妈妈=0.407, 爸爸=0.380, Baby=0.306, 婆婆=0.273]
+2026-03-28 11:25:33,373 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:25:33,373 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 8 个分段。
+2026-03-28 11:25:33,373 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:25:33,373 | INFO |     [3.1] 处理分段 150ms - 390ms...
+2026-03-28 11:25:33,373 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:25:33,373 | INFO |     [3.2] 处理分段 1440ms - 2960ms...
+2026-03-28 11:25:35,177 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:35,177 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1440_1_1774668333.wav
+2026-03-28 11:25:35,177 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:35,328 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:35,328 | INFO |     [3.3] 处理分段 14450ms - 14690ms...
+2026-03-28 11:25:35,328 | INFO |       [3.3] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:25:35,328 | INFO |     [3.4] 处理分段 18230ms - 33490ms...
+2026-03-28 11:25:35,929 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:35,930 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_18230_3_1774668335.wav
+2026-03-28 11:25:35,930 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:37,711 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:37,711 | INFO |     [3.5] 处理分段 33530ms - 39570ms...
+2026-03-28 11:25:38,342 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:38,342 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_33530_4_1774668337.wav
+2026-03-28 11:25:38,342 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:38,960 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:38,960 | INFO |     [3.6] 处理分段 39730ms - 41820ms...
+2026-03-28 11:25:39,456 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:25:39,456 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_39730_5_1774668338.wav
+2026-03-28 11:25:39,456 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:39,671 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:39,671 | INFO |     [3.7] 处理分段 44750ms - 49520ms...
+2026-03-28 11:25:40,235 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:40,235 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_44750_6_1774668339.wav
+2026-03-28 11:25:40,235 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:40,697 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:40,698 | INFO |     [3.8] 处理分段 57660ms - 58340ms...
+2026-03-28 11:25:40,698 | INFO |       [3.8] 分段时长过短(680ms)，跳过声纹识别。
+2026-03-28 11:25:40,698 | INFO | ✅ 完成! 音频:59.8s | 耗时:19.37s | RTF:0.324
+2026-03-28 11:25:40,698 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:25:40,698 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.776,
+  "meta": {
+    "process_time": 19.366883754730225,
+    "audio_duration": 59.776,
+    "rtf": 0.3239909621709419,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:25:40,700 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-27-46.m4a (0 字)
+2026-03-28 11:25:40,758 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-27-46.m4a
+2026-03-28 11:25:40,759 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-28-47.m4a
+2026-03-28 11:25:40,792 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-28-47.m4a
+2026-03-28 11:25:40,792 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:25:42,064 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:25:42,118 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:25:46,119 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:25:46,119 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:25:51,708 | INFO |    eres2net_large: [Baby=0.600, 大可=0.420, 妈妈=0.412, 爸爸=0.385, 婆婆=0.305]
+2026-03-28 11:25:52,474 | INFO |    rdino_ecapa: [爸爸=0.369, 大可=0.337, 妈妈=0.321, Baby=0.309, 婆婆=0.280]
+2026-03-28 11:25:53,180 | INFO |    camplusplus: [大可=0.447, 妈妈=0.398, 爸爸=0.395, Baby=0.324, 婆婆=0.286]
+2026-03-28 11:25:53,180 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:25:53,180 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 7 个分段。
+2026-03-28 11:25:53,180 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:25:53,180 | INFO |     [3.1] 处理分段 190ms - 5070ms...
+2026-03-28 11:25:54,515 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:54,515 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_190_0_1774668353.wav
+2026-03-28 11:25:54,515 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:55,005 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:55,005 | INFO |     [3.2] 处理分段 5070ms - 8790ms...
+2026-03-28 11:25:55,835 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:55,835 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_5070_1_1774668355.wav
+2026-03-28 11:25:55,835 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:56,195 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:56,196 | INFO |     [3.3] 处理分段 9980ms - 11980ms...
+2026-03-28 11:25:56,748 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:25:56,748 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_9980_2_1774668356.wav
+2026-03-28 11:25:56,748 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:56,934 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:56,934 | INFO |     [3.4] 处理分段 21570ms - 24155ms...
+2026-03-28 11:25:57,534 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:25:57,535 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_21570_3_1774668356.wav
+2026-03-28 11:25:57,535 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:25:57,847 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:25:57,847 | INFO |     [3.5] 处理分段 54790ms - 55200ms...
+2026-03-28 11:25:57,847 | INFO |       [3.5] 分段时长过短(410ms)，跳过声纹识别。
+2026-03-28 11:25:57,847 | INFO |     [3.6] 处理分段 58290ms - 58490ms...
+2026-03-28 11:25:57,847 | INFO |       [3.6] 分段时长过短(200ms)，跳过声纹识别。
+2026-03-28 11:25:57,847 | INFO |     [3.7] 处理分段 58490ms - 58900ms...
+2026-03-28 11:25:57,847 | INFO |       [3.7] 分段时长过短(410ms)，跳过声纹识别。
+2026-03-28 11:25:57,847 | INFO | ✅ 完成! 音频:59.8s | 耗时:17.06s | RTF:0.285
+2026-03-28 11:25:57,848 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:25:57,848 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 17.05897617340088,
+    "audio_duration": 59.84,
+    "rtf": 0.28507647348597726,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:25:57,850 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-28-47.m4a (0 字)
+2026-03-28 11:25:57,890 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-28-47.m4a
+2026-03-28 11:25:57,891 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-29-47.m4a
+2026-03-28 11:25:57,948 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-29-47.m4a
+2026-03-28 11:25:57,948 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:25:59,454 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:25:59,516 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:26:02,894 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:26:02,894 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:26:08,633 | INFO |    eres2net_large: [Baby=0.592, 大可=0.414, 妈妈=0.403, 爸爸=0.366, 婆婆=0.253]
+2026-03-28 11:26:09,389 | INFO |    rdino_ecapa: [爸爸=0.381, 大可=0.348, 妈妈=0.334, Baby=0.309, 婆婆=0.283]
+2026-03-28 11:26:10,042 | INFO |    camplusplus: [大可=0.445, 妈妈=0.414, 爸爸=0.389, Baby=0.307, 婆婆=0.277]
+2026-03-28 11:26:10,042 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:26:10,042 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 4 个分段。
+2026-03-28 11:26:10,042 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:26:10,043 | INFO |     [3.1] 处理分段 170ms - 495ms...
+2026-03-28 11:26:10,043 | INFO |       [3.1] 分段时长过短(325ms)，跳过声纹识别。
+2026-03-28 11:26:10,043 | INFO |     [3.2] 处理分段 10190ms - 29900ms...
+2026-03-28 11:26:12,112 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:12,112 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_10190_1_1774668370.wav
+2026-03-28 11:26:12,112 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:14,108 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:14,108 | INFO |     [3.3] 处理分段 31590ms - 51050ms...
+2026-03-28 11:26:14,810 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:14,810 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_31590_2_1774668374.wav
+2026-03-28 11:26:14,810 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:16,795 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:16,795 | INFO |     [3.4] 处理分段 51050ms - 58910ms...
+2026-03-28 11:26:17,383 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:17,383 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_51050_3_1774668376.wav
+2026-03-28 11:26:17,383 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:18,081 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:18,081 | INFO | ✅ 完成! 音频:59.8s | 耗时:20.14s | RTF:0.336
+2026-03-28 11:26:18,082 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:26:18,082 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 20.135008573532104,
+    "audio_duration": 59.84,
+    "rtf": 0.3364807582475285,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:26:18,084 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-29-47.m4a (0 字)
+2026-03-28 11:26:18,139 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-29-47.m4a
+2026-03-28 11:26:18,140 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-30-48.m4a
+2026-03-28 11:26:18,168 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-30-48.m4a
+2026-03-28 11:26:18,168 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:26:19,447 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:26:19,498 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:26:23,119 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:26:23,119 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:26:28,656 | INFO |    eres2net_large: [Baby=0.594, 大可=0.409, 妈妈=0.396, 爸爸=0.368, 婆婆=0.257]
+2026-03-28 11:26:29,467 | INFO |    rdino_ecapa: [爸爸=0.368, 大可=0.335, 妈妈=0.322, Baby=0.308, 婆婆=0.276]
+2026-03-28 11:26:30,288 | INFO |    camplusplus: [大可=0.448, 妈妈=0.408, 爸爸=0.367, Baby=0.309, 婆婆=0.285]
+2026-03-28 11:26:30,288 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:26:30,288 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 1 个分段。
+2026-03-28 11:26:30,288 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:26:30,288 | INFO |     [3.1] 处理分段 210ms - 56830ms...
+2026-03-28 11:26:33,066 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:33,066 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_210_0_1774668390.wav
+2026-03-28 11:26:33,066 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:39,274 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:39,274 | INFO | ✅ 完成! 音频:59.8s | 耗时:21.11s | RTF:0.353
+2026-03-28 11:26:39,274 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:26:39,275 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 21.107094049453735,
+    "audio_duration": 59.84,
+    "rtf": 0.3527255021633311,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:26:39,277 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-30-48.m4a (0 字)
+2026-03-28 11:26:39,330 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-30-48.m4a
+2026-03-28 11:26:39,331 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-31-49.m4a
+2026-03-28 11:26:39,361 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-31-49.m4a
+2026-03-28 11:26:39,361 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:26:40,620 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:26:40,664 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:26:45,375 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:26:45,375 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:26:50,039 | INFO |    eres2net_large: [Baby=0.602, 妈妈=0.409, 大可=0.407, 爸爸=0.378, 婆婆=0.297]
+2026-03-28 11:26:51,258 | INFO |    rdino_ecapa: [爸爸=0.362, 大可=0.328, 妈妈=0.317, Baby=0.312, 婆婆=0.275]
+2026-03-28 11:26:51,982 | INFO |    camplusplus: [大可=0.452, 爸爸=0.420, 妈妈=0.399, Baby=0.343, 婆婆=0.290]
+2026-03-28 11:26:51,982 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:26:51,982 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 8 个分段。
+2026-03-28 11:26:51,982 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:26:51,982 | INFO |     [3.1] 处理分段 170ms - 475ms...
+2026-03-28 11:26:51,982 | INFO |       [3.1] 分段时长过短(305ms)，跳过声纹识别。
+2026-03-28 11:26:51,982 | INFO |     [3.2] 处理分段 1400ms - 1990ms...
+2026-03-28 11:26:51,982 | INFO |       [3.2] 分段时长过短(590ms)，跳过声纹识别。
+2026-03-28 11:26:51,982 | INFO |     [3.3] 处理分段 8580ms - 8820ms...
+2026-03-28 11:26:51,982 | INFO |       [3.3] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:26:51,982 | INFO |     [3.4] 处理分段 9590ms - 15110ms...
+2026-03-28 11:26:53,360 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:53,360 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_9590_3_1774668412.wav
+2026-03-28 11:26:53,360 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:54,030 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:54,030 | INFO |     [3.5] 处理分段 15110ms - 20210ms...
+2026-03-28 11:26:54,679 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:54,679 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_15110_4_1774668414.wav
+2026-03-28 11:26:54,679 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:55,206 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:55,206 | INFO |     [3.6] 处理分段 20210ms - 22670ms...
+2026-03-28 11:26:55,743 | INFO |       [SenseVoice] The. (情感: neutral)
+2026-03-28 11:26:55,743 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_20210_5_1774668415.wav
+2026-03-28 11:26:55,743 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:55,989 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:55,990 | INFO |     [3.7] 处理分段 26590ms - 31280ms...
+2026-03-28 11:26:56,874 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:56,874 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_26590_6_1774668415.wav
+2026-03-28 11:26:56,874 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:57,449 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:57,449 | INFO |     [3.8] 处理分段 32160ms - 46370ms...
+2026-03-28 11:26:58,111 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:26:58,111 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_32160_7_1774668417.wav
+2026-03-28 11:26:58,111 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:26:59,916 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:26:59,916 | INFO | ✅ 完成! 音频:59.9s | 耗时:20.56s | RTF:0.343
+2026-03-28 11:26:59,916 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:26:59,916 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.904,
+  "meta": {
+    "process_time": 20.55599093437195,
+    "audio_duration": 59.904,
+    "rtf": 0.3431488871256001,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:26:59,919 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-31-49.m4a (0 字)
+2026-03-28 11:26:59,964 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-31-49.m4a
+2026-03-28 11:26:59,965 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-32-49.m4a
+2026-03-28 11:27:00,011 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-32-49.m4a
+2026-03-28 11:27:00,012 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:27:01,569 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:27:01,628 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:27:06,928 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:27:06,928 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:27:12,533 | INFO |    eres2net_large: [Baby=0.597, 大可=0.412, 妈妈=0.409, 爸爸=0.385, 婆婆=0.272]
+2026-03-28 11:27:13,457 | INFO |    rdino_ecapa: [爸爸=0.358, 大可=0.348, 妈妈=0.331, Baby=0.312, 婆婆=0.281]
+2026-03-28 11:27:14,133 | INFO |    camplusplus: [大可=0.436, 妈妈=0.388, 爸爸=0.383, Baby=0.287, 婆婆=0.262]
+2026-03-28 11:27:14,133 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:27:14,133 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 9 个分段。
+2026-03-28 11:27:14,133 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:27:14,133 | INFO |     [3.1] 处理分段 150ms - 10580ms...
+2026-03-28 11:27:15,907 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:15,907 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_150_0_1774668434.wav
+2026-03-28 11:27:15,907 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:17,222 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:17,222 | INFO |     [3.2] 处理分段 12480ms - 12680ms...
+2026-03-28 11:27:17,222 | INFO |       [3.2] 分段时长过短(200ms)，跳过声纹识别。
+2026-03-28 11:27:17,222 | INFO |     [3.3] 处理分段 12680ms - 18460ms...
+2026-03-28 11:27:17,999 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:17,999 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_12680_2_1774668437.wav
+2026-03-28 11:27:17,999 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:18,535 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:18,535 | INFO |     [3.4] 处理分段 19930ms - 26260ms...
+2026-03-28 11:27:19,084 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:19,084 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_19930_3_1774668438.wav
+2026-03-28 11:27:19,084 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:19,683 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:19,684 | INFO |     [3.5] 处理分段 33920ms - 46570ms...
+2026-03-28 11:27:20,297 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:20,297 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_33920_4_1774668439.wav
+2026-03-28 11:27:20,297 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:21,517 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:21,517 | INFO |     [3.6] 处理分段 46570ms - 46990ms...
+2026-03-28 11:27:21,517 | INFO |       [3.6] 分段时长过短(420ms)，跳过声纹识别。
+2026-03-28 11:27:21,517 | INFO |     [3.7] 处理分段 49370ms - 49820ms...
+2026-03-28 11:27:21,517 | INFO |       [3.7] 分段时长过短(450ms)，跳过声纹识别。
+2026-03-28 11:27:21,517 | INFO |     [3.8] 处理分段 49940ms - 50410ms...
+2026-03-28 11:27:21,517 | INFO |       [3.8] 分段时长过短(470ms)，跳过声纹识别。
+2026-03-28 11:27:21,517 | INFO |     [3.9] 处理分段 57150ms - 58040ms...
+2026-03-28 11:27:21,997 | INFO |       [SenseVoice] Yeah。 (情感: neutral)
+2026-03-28 11:27:21,997 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_57150_8_1774668441.wav
+2026-03-28 11:27:21,997 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:22,127 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:22,127 | INFO | ✅ 完成! 音频:59.8s | 耗时:22.12s | RTF:0.370
+2026-03-28 11:27:22,127 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:27:22,127 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 22.119086980819702,
+    "audio_duration": 59.84,
+    "rtf": 0.36963714874364473,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:27:22,130 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-32-49.m4a (0 字)
+2026-03-28 11:27:22,176 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-32-49.m4a
+2026-03-28 11:27:22,176 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-33-50.m4a
+2026-03-28 11:27:22,217 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-33-50.m4a
+2026-03-28 11:27:22,217 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:27:23,526 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:27:23,575 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:27:29,042 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:27:29,043 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:27:35,030 | INFO |    eres2net_large: [Baby=0.601, 大可=0.417, 妈妈=0.402, 爸爸=0.373, 婆婆=0.275]
+2026-03-28 11:27:35,849 | INFO |    rdino_ecapa: [爸爸=0.372, 大可=0.347, 妈妈=0.332, Baby=0.313, 婆婆=0.284]
+2026-03-28 11:27:36,512 | INFO |    camplusplus: [大可=0.455, 妈妈=0.416, 爸爸=0.372, Baby=0.317, 婆婆=0.297]
+2026-03-28 11:27:36,512 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:27:36,512 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 10 个分段。
+2026-03-28 11:27:36,512 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:27:36,512 | INFO |     [3.1] 处理分段 210ms - 450ms...
+2026-03-28 11:27:36,512 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:27:36,512 | INFO |     [3.2] 处理分段 6460ms - 22630ms...
+2026-03-28 11:27:38,415 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:38,415 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_6460_1_1774668456.wav
+2026-03-28 11:27:38,415 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:40,054 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:40,054 | INFO |     [3.3] 处理分段 23900ms - 24140ms...
+2026-03-28 11:27:40,054 | INFO |       [3.3] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:27:40,054 | INFO |     [3.4] 处理分段 27400ms - 32300ms...
+2026-03-28 11:27:40,630 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:40,630 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_27400_3_1774668460.wav
+2026-03-28 11:27:40,630 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:41,154 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:41,154 | INFO |     [3.5] 处理分段 32300ms - 43350ms...
+2026-03-28 11:27:41,810 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:41,811 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_32300_4_1774668461.wav
+2026-03-28 11:27:41,811 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:42,976 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:42,977 | INFO |     [3.6] 处理分段 44170ms - 47730ms...
+2026-03-28 11:27:43,559 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:43,559 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_44170_5_1774668462.wav
+2026-03-28 11:27:43,559 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:43,918 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:43,918 | INFO |     [3.7] 处理分段 47730ms - 48140ms...
+2026-03-28 11:27:43,918 | INFO |       [3.7] 分段时长过短(410ms)，跳过声纹识别。
+2026-03-28 11:27:43,918 | INFO |     [3.8] 处理分段 49790ms - 50440ms...
+2026-03-28 11:27:43,919 | INFO |       [3.8] 分段时长过短(650ms)，跳过声纹识别。
+2026-03-28 11:27:43,919 | INFO |     [3.9] 处理分段 51090ms - 51570ms...
+2026-03-28 11:27:43,919 | INFO |       [3.9] 分段时长过短(480ms)，跳过声纹识别。
+2026-03-28 11:27:43,919 | INFO |     [3.10] 处理分段 55630ms - 59180ms...
+2026-03-28 11:27:44,386 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:27:44,386 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_55630_9_1774668463.wav
+2026-03-28 11:27:44,386 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:27:44,790 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:27:44,790 | INFO | ✅ 完成! 音频:59.9s | 耗时:22.58s | RTF:0.377
+2026-03-28 11:27:44,791 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:27:44,791 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.904,
+  "meta": {
+    "process_time": 22.576116800308228,
+    "audio_duration": 59.904,
+    "rtf": 0.3768716079111282,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:27:44,794 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-33-50.m4a (0 字)
+2026-03-28 11:27:44,853 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-33-50.m4a
+2026-03-28 11:27:44,854 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-34-50.m4a
+2026-03-28 11:27:44,889 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-34-50.m4a
+2026-03-28 11:27:44,889 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:27:46,236 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:27:46,292 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:27:49,219 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:27:49,220 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:27:55,128 | INFO |    eres2net_large: [Baby=0.589, 大可=0.402, 妈妈=0.386, 爸爸=0.350, 婆婆=0.279]
+2026-03-28 11:27:56,081 | INFO |    rdino_ecapa: [爸爸=0.351, 大可=0.327, 妈妈=0.310, Baby=0.302, 婆婆=0.264]
+2026-03-28 11:27:56,848 | INFO |    camplusplus: [大可=0.432, 爸爸=0.402, 妈妈=0.391, Baby=0.322, 婆婆=0.291]
+2026-03-28 11:27:56,848 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:27:56,848 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 3 个分段。
+2026-03-28 11:27:56,848 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:27:56,848 | INFO |     [3.1] 处理分段 170ms - 375ms...
+2026-03-28 11:27:56,848 | INFO |       [3.1] 分段时长过短(205ms)，跳过声纹识别。
+2026-03-28 11:27:56,848 | INFO |     [3.2] 处理分段 3250ms - 3680ms...
+2026-03-28 11:27:56,848 | INFO |       [3.2] 分段时长过短(430ms)，跳过声纹识别。
+2026-03-28 11:27:56,848 | INFO |     [3.3] 处理分段 10830ms - 11380ms...
+2026-03-28 11:27:56,848 | INFO |       [3.3] 分段时长过短(550ms)，跳过声纹识别。
+2026-03-28 11:27:56,848 | INFO | ✅ 完成! 音频:59.8s | 耗时:11.96s | RTF:0.200
+2026-03-28 11:27:56,848 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:27:56,848 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 11.961775779724121,
+    "audio_duration": 59.84,
+    "rtf": 0.19989598562373195,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:27:56,851 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-34-50.m4a (0 字)
+2026-03-28 11:27:56,906 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-34-50.m4a
+2026-03-28 11:27:56,906 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-35-51.m4a
+2026-03-28 11:27:56,956 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-35-51.m4a
+2026-03-28 11:27:56,956 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:27:58,255 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:27:58,303 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:28:03,426 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:28:03,426 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:28:08,483 | INFO |    eres2net_large: [Baby=0.590, 大可=0.410, 妈妈=0.395, 爸爸=0.370, 婆婆=0.244]
+2026-03-28 11:28:09,305 | INFO |    rdino_ecapa: [爸爸=0.375, 大可=0.339, 妈妈=0.327, Baby=0.302, 婆婆=0.279]
+2026-03-28 11:28:10,101 | INFO |    camplusplus: [大可=0.440, 爸爸=0.419, 妈妈=0.410, Baby=0.308, 婆婆=0.287]
+2026-03-28 11:28:10,102 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:28:10,102 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 6 个分段。
+2026-03-28 11:28:10,102 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:28:10,102 | INFO |     [3.1] 处理分段 210ms - 450ms...
+2026-03-28 11:28:10,102 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:28:10,102 | INFO |     [3.2] 处理分段 1140ms - 6940ms...
+2026-03-28 11:28:11,596 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:28:11,596 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_1140_1_1774668490.wav
+2026-03-28 11:28:11,596 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:28:12,193 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:28:12,193 | INFO |     [3.3] 处理分段 29070ms - 29610ms...
+2026-03-28 11:28:12,193 | INFO |       [3.3] 分段时长过短(540ms)，跳过声纹识别。
+2026-03-28 11:28:12,193 | INFO |     [3.4] 处理分段 35590ms - 47490ms...
+2026-03-28 11:28:13,049 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:28:13,049 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_35590_3_1774668492.wav
+2026-03-28 11:28:13,049 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:28:14,148 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:28:14,148 | INFO |     [3.5] 处理分段 49590ms - 57740ms...
+2026-03-28 11:28:14,735 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:28:14,736 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_49590_4_1774668494.wav
+2026-03-28 11:28:14,736 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:28:15,565 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:28:15,566 | INFO |     [3.6] 处理分段 57740ms - 57980ms...
+2026-03-28 11:28:15,566 | INFO |       [3.6] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:28:15,566 | INFO | ✅ 完成! 音频:59.8s | 耗时:18.61s | RTF:0.311
+2026-03-28 11:28:15,566 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:28:15,566 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 18.611794233322144,
+    "audio_duration": 59.84,
+    "rtf": 0.3110259731504369,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:28:15,568 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-35-51.m4a (0 字)
+2026-03-28 11:28:15,628 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-35-51.m4a
+2026-03-28 11:28:15,628 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-36-51.m4a
+2026-03-28 11:28:15,660 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-36-51.m4a
+2026-03-28 11:28:15,660 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:28:16,933 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:28:16,982 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...
+2026-03-28 11:28:19,748 | INFO | 🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...
+2026-03-28 11:28:19,748 | INFO |    参数: threshold=0.65, gap=0.15, min_votes=2
+2026-03-28 11:28:25,108 | INFO |    eres2net_large: [Baby=0.593, 大可=0.407, 妈妈=0.406, 爸爸=0.373, 婆婆=0.280]
+2026-03-28 11:28:25,871 | INFO |    rdino_ecapa: [爸爸=0.358, 大可=0.333, 妈妈=0.317, Baby=0.304, 婆婆=0.276]
+2026-03-28 11:28:26,641 | INFO |    camplusplus: [大可=0.439, 妈妈=0.407, 爸爸=0.405, Baby=0.328, 婆婆=0.303]
+2026-03-28 11:28:26,641 | INFO |    ℹ️ [轨道A 结论] 未检出哭声 (命中模型数=0 < 所需=2)
+2026-03-28 11:28:26,641 | INFO |   [生命周期: 2. VAD & ASR] 完成, VAD检出 3 个分段。
+2026-03-28 11:28:26,641 | INFO |   [生命周期: 3. 逐段声纹识别] 开始...
+2026-03-28 11:28:26,641 | INFO |     [3.1] 处理分段 190ms - 430ms...
+2026-03-28 11:28:26,641 | INFO |       [3.1] 分段时长过短(240ms)，跳过声纹识别。
+2026-03-28 11:28:26,641 | INFO |     [3.2] 处理分段 17510ms - 49740ms...
+2026-03-28 11:28:28,981 | INFO |       [SenseVoice] . (情感: neutral)
+2026-03-28 11:28:28,982 | INFO | 🎯 开始声纹识别: 音频段路径=temp/seg_17510_1_1774668506.wav
+2026-03-28 11:28:28,982 | INFO | 📋 声纹数据库包含 5 个说话人
+2026-03-28 11:28:32,895 | INFO |       [性能] 未识别说话人，跳过后续处理
+2026-03-28 11:28:32,896 | INFO |     [3.3] 处理分段 49740ms - 50220ms...
+2026-03-28 11:28:32,896 | INFO |       [3.3] 分段时长过短(480ms)，跳过声纹识别。
+2026-03-28 11:28:32,896 | INFO | ✅ 完成! 音频:59.8s | 耗时:17.24s | RTF:0.288
+2026-03-28 11:28:32,896 | INFO |   [生命周期: 4. 组装响应] 开始...
+2026-03-28 11:28:32,896 | INFO | 📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {
+  "full_text": "",
+  "segments": [],
+  "duration": 59.84,
+  "meta": {
+    "process_time": 17.239171981811523,
+    "audio_duration": 59.84,
+    "rtf": 0.2880877670757273,
+    "rtf_description": "Real-Time Factor(实时因子)，处理时间/音频时长，RTF < 1表示可实时处理，值越低性能越好"
+  }
+}
+2026-03-28 11:28:32,899 | INFO | ✅ 转录完成: TermuxAudioRecording_2026-03-27_07-36-51.m4a (0 字)
+2026-03-28 11:28:32,958 | INFO | 📦 已移动至: processed/2026-03-27/TermuxAudioRecording_2026-03-27_07-36-51.m4a
+2026-03-28 11:28:32,958 | INFO | 📤 开始处理: TermuxAudioRecording_2026-03-27_07-37-52.m4a
+2026-03-28 11:28:32,992 | INFO | 📥 收到转录任务: TermuxAudioRecording_2026-03-27_07-37-52.m4a
+2026-03-28 11:28:32,992 | INFO |   [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...
+2026-03-28 11:28:34,257 | INFO |   [生命周期: 1. 音频预处理] 完成。
+2026-03-28 11:28:34,305 | INFO |   [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...

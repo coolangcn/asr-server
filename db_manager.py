@@ -22,13 +22,14 @@ connection_pool = None
 # 东八区时区 (UTC+8)
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 
-def init_pool():
+def init_pool(db_url: str = None):
     """初始化数据库连接池"""
     global connection_pool
+    target_url = db_url or DATABASE_URL
     try:
         connection_pool = psycopg2.pool.SimpleConnectionPool(
             1, 10,  # 最小和最大连接数
-            DATABASE_URL
+            target_url
         )
         if connection_pool:
             print("[DB] PostgreSQL连接池创建成功")
@@ -133,8 +134,24 @@ def init_db():
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS reason_category TEXT;")
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS event_files_json TEXT;")
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS audio_path TEXT;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS confidence REAL;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS details_json TEXT;")
         except Exception as e:
             print(f"[DB] 字段升级提示: {e}")
+
+        # 创建已处理文件记录表 (A轨历史扫描专用)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processed_files_a (
+            id SERIAL PRIMARY KEY,
+            filename TEXT UNIQUE NOT NULL,
+            processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT
+        );
+        ''')
+        
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_processed_a_filename ON processed_files_a(filename);
+        ''')
 
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_cry_filename ON baby_cry_events(filename);
@@ -248,7 +265,7 @@ def update_topics(filename: str, topics_dict: dict) -> bool:
         if conn:
             return_connection(conn)
 
-def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
+def get_transcripts(offset: int = 0, limit: int = 100, db_url: str = None) -> List[Dict]:
     """获取最近的转录记录，支持分页"""
     conn = None
     try:
@@ -292,8 +309,11 @@ def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
         if conn:
             return_connection(conn)
 
-def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
-    """获取记录的宝宝哭声分析事件"""
+def get_baby_cry_events(offset: int = 0, limit: int = 100, 
+                        date_filter: str = None, 
+                        start_time_filter: str = None, 
+                        end_time_filter: str = None) -> List[Dict]:
+    """获取记录的宝宝哭声分析事件，支持分页和时间筛选"""
     conn = None
     try:
         conn = get_connection()
@@ -301,10 +321,37 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
             return []
             
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path FROM baby_cry_events ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s",
-            (limit, offset)
-        )
+        
+        # 构建动态 SQL
+        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json FROM baby_cry_events"
+        where_clauses = []
+        params = []
+        
+        # 1. 日期过滤 (YYYY-MM-DD)
+        if date_filter:
+            where_clauses.append("recording_time::date = %s")
+            params.append(date_filter)
+            
+        # 2. 时间段过滤 (HH-MM) - 注意文件名和数据库中通常是这个格式
+        # 这里我们假设过滤的是 recording_time 的时刻
+        if start_time_filter:
+            # 将 HH-MM 转换为 HH:MM 供 SQL 比较
+            sql_start = start_time_filter.replace('-', ':')
+            where_clauses.append("recording_time::time >= %s")
+            params.append(sql_start)
+            
+        if end_time_filter:
+            sql_end = end_time_filter.replace('-', ':')
+            where_clauses.append("recording_time::time <= %s")
+            params.append(sql_end)
+            
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+            
+        query += " ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+        
+        cursor.execute(query, tuple(params))
         
         rows = cursor.fetchall()
         cursor.close()
@@ -322,7 +369,9 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
                 'advice': row[7],
                 'reason_category': row[8],
                 'event_files_json': json.loads(row[9]) if row[9] else [],
-                'audio_path': row[10] if len(row) > 10 else None
+                'audio_path': row[10] if len(row) > 10 else None,
+                'confidence': row[11] if len(row) > 11 else 0.0,
+                'details': json.loads(row[12]) if len(row) > 12 and row[12] else []
             })
         
         return results
@@ -334,7 +383,7 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100) -> List[Dict]:
             return_connection(conn)
 
 def save_cry_analysis(filename: str, start_time: float, end_time: float, reason: str, advice: str, 
-                      reason_category: str = None, event_files: list = None, audio_path = None) -> bool:
+                      reason_category: str = None, event_files: list = None, audio_path = None, confidence: float = 0.0, details: list = None) -> bool:
     """保存宝宝哭声分析结果"""
     conn = None
     try:
@@ -346,10 +395,11 @@ def save_cry_analysis(filename: str, start_time: float, end_time: float, reason:
         recording_time = parse_recording_time(filename)
         created_at = datetime.now(UTC_PLUS_8)
         event_files_json = json.dumps(event_files, ensure_ascii=False) if event_files else None
+        details_json = json.dumps(details, ensure_ascii=False) if details else None
         
         cursor.execute(
-            "INSERT INTO baby_cry_events (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path)
+            "INSERT INTO baby_cry_events (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json)
         )
         
         conn.commit()
@@ -369,7 +419,7 @@ def save_cry_analysis(filename: str, start_time: float, end_time: float, reason:
             return_connection(conn)
 
 def update_cry_analysis(event_id: int, reason: str, advice: str, 
-                       reason_category: str = None, event_files: list = None) -> bool:
+                       reason_category: str = None, event_files: list = None, confidence: float = None, details: list = None) -> bool:
     """更新已有的宝宝哭声分析结果 (主要用于异步回调)"""
     conn = None
     try:
@@ -379,11 +429,23 @@ def update_cry_analysis(event_id: int, reason: str, advice: str,
             
         cursor = conn.cursor()
         event_files_json = json.dumps(event_files, ensure_ascii=False) if event_files else None
+        details_json = json.dumps(details, ensure_ascii=False) if details else None
         
-        cursor.execute(
-            "UPDATE baby_cry_events SET reason = %s, advice = %s, reason_category = %s, event_files_json = %s WHERE id = %s",
-            (reason, advice, reason_category, event_files_json, event_id)
-        )
+        # 构建更新动态 SQL 以支持可选参数
+        updates = ["reason = %s", "advice = %s", "reason_category = %s", "event_files_json = %s"]
+        params = [reason, advice, reason_category, event_files_json]
+        
+        if confidence is not None:
+            updates.append("confidence = %s")
+            params.append(confidence)
+        if details_json is not None:
+            updates.append("details_json = %s")
+            params.append(details_json)
+            
+        params.append(event_id)
+        query = f"UPDATE baby_cry_events SET {', '.join(updates)} WHERE id = %s"
+        
+        cursor.execute(query, tuple(params))
         
         conn.commit()
         updated = cursor.rowcount > 0
@@ -414,6 +476,80 @@ def test_connection() -> bool:
     except Exception as e:
         print(f"[DB Error] 连接测试失败: {e}")
         return False
+
+def is_file_processed_a(filename: str) -> bool:
+    """检查文件是否已由 A 轨历史扫描处理过"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return False
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM processed_files_a WHERE filename = %s", (filename,))
+        exists = cursor.fetchone() is not None
+        cursor.close()
+        return exists
+    except Exception as e:
+        print(f"  [DB Error] 检查处理进度失败: {e}")
+        return False
+    finally:
+        if conn: return_connection(conn)
+
+def mark_file_processed_a(filename: str, status: str = "success") -> bool:
+    """标记文件为 A 轨已处理"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return False
+        cursor = conn.cursor()
+        # 冲突时更新处理时间
+        cursor.execute(
+            "INSERT INTO processed_files_a (filename, processed_at, status) VALUES (%s, %s, %s) ON CONFLICT (filename) DO UPDATE SET processed_at = EXCLUDED.processed_at, status = EXCLUDED.status",
+            (filename, datetime.now(UTC_PLUS_8), status)
+        )
+        conn.commit()
+        cursor.close()
+        return True
+    except Exception as e:
+        print(f"  [DB Error] 标记处理进度失败: {e}")
+        if conn: conn.rollback()
+        return False
+    finally:
+        if conn: return_connection(conn)
+
+def delete_cry_events_by_date(date_str: str) -> int:
+    """删除指定日期（YYYY-MM-DD）的哭声分析事件和处理进度"""
+    conn = None
+    deleted_count = 0
+    try:
+        conn = get_connection()
+        if not conn: return 0
+        cursor = conn.cursor()
+        
+        # 1. 删除哭声事件
+        cursor.execute(
+            "DELETE FROM baby_cry_events WHERE recording_time::date = %s",
+            (date_str,)
+        )
+        deleted_count = cursor.rowcount
+        
+        # 2. 删除对应的处理进度 (以便重新处理)
+        # 注意：processed_files_a 中的文件名包含日期信息，如 Sony-2/2026-03-28/xxx.m4a
+        # 我们使用模糊匹配来删除
+        cursor.execute(
+            "DELETE FROM processed_files_a WHERE filename LIKE %s",
+            (f"%{date_str}%",)
+        )
+        
+        conn.commit()
+        cursor.close()
+        print(f"  [DB] 已清除日期 {date_str} 的 {deleted_count} 条哭声事件记录及相关处理进度")
+        return deleted_count
+    except Exception as e:
+        print(f"  [DB Error] 清除日期记录失败: {e}")
+        if conn: conn.rollback()
+        return 0
+    finally:
+        if conn: return_connection(conn)
 
 def close_pool():
     """关闭连接池"""

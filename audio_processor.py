@@ -117,6 +117,9 @@ def _process_one_file(filename, filepath, processed_dir, failed_dir):
             result = response.json()
             logger.info(f"✅ 转录完成: {filename} ({len(result.get('full_text', ''))} 字)")
             _move_file(filepath, filename, processed_dir, recording_time)
+        elif response.status_code == 503:
+            logger.info(f"⏳ B 轨分析当前由于 A 轨任务而暂停，文件保留在原处等待重试: {filename}")
+            return # 不移动文件，等待下一轮扫描
         else:
             logger.error(f"❌ 转录失败: {filename} (HTTP {response.status_code})")
             _move_file(filepath, filename, failed_dir, recording_time)

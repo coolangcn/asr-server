@@ -14,13 +14,14 @@ DATABASE_URL = "postgresql://cnncn:74123698cN@cncn.postgres.database.azure.com:5
 # 连接池
 connection_pool = None
 
-def init_pool():
+def init_pool(db_url: str = None):
     """初始化数据库连接池"""
     global connection_pool
+    target_url = db_url or DATABASE_URL
     try:
         connection_pool = psycopg2.pool.SimpleConnectionPool(
             1, 10,  # 最小和最大连接数
-            DATABASE_URL
+            target_url
         )
         if connection_pool:
             print("[DB] PostgreSQL连接池创建成功")
@@ -160,7 +161,7 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         if conn:
             return_connection(conn)
 
-def get_transcripts(offset: int = 0, limit: int = 100) -> List[Dict]:
+def get_transcripts(offset: int = 0, limit: int = 100, db_url: str = None) -> List[Dict]:
     """获取最近的转录记录，支持分页"""
     conn = None
     try:
