@@ -10,6 +10,17 @@ echo "======================================"
 echo "  启动 ASR 服务套件 (macOS)"
 echo "======================================"
 echo ""
+
+# 加载环境变量
+if [ -f .env ]; then
+    echo "📄 正在加载环境配置 (.env)..."
+    export $(grep -v '^#' .env | xargs)
+    echo "✅ 环境配置加载完成"
+else
+    echo "⚠️  未找到 .env 文件，使用默认配置"
+fi
+echo ""
+
 echo "清理可能残留的旧进程..."
 pkill -f "python3 asr_server.py" || true
 pkill -f "python3 web_viewer.py" || true

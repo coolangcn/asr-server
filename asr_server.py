@@ -21,6 +21,9 @@ import hashlib
 from datetime import datetime
 from email_utils import send_cry_alert_email   # 增加邮件通知支持
 import audio_processor
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # =================【 配置 】=================
 import platform
@@ -117,9 +120,9 @@ FileMonitorConfig = audio_processor.FileMonitorConfig
 # LLM 配置
 class LLMConfig:
     USE_GEMINI_LLM = True
-    GEMINI_API_KEY = "AIzaSyDxnEpT5mIEiGhwR7xeAmUBpB2o45hW_00"
-    GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com"
-    GEMINI_MODEL_NAME = "gemini-2.5-pro"
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyABpNzAb90t6EpIsJtbF1UbekDTGlLaKTE")
+    GEMINI_API_BASE_URL = os.getenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com")
+    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
     
     # 批量处理配置
     LLM_BATCH_MODE = True
@@ -1268,8 +1271,10 @@ def trigger_reprocess():
         log_file = os.path.join(log_dir, "history_process.log")
         
         # 写入一条启动信息
+        is_targeted = bool(date_param or start_time or end_time)
+        display_replace = "True (Targeted)" if is_targeted else force_replace
         with open(log_file, "w", encoding="utf-8") as f:
-            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 开始执行历史音频重分析(过滤={date_param} {start_time}~{end_time}, 替换={force_replace})...\n")
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 开始执行历史音频重分析(过滤={date_param} {start_time}~{end_time}, 替换={display_replace})...\n")
             
         args = [sys.executable, "-u", script_path]
         args.append(date_param if date_param else "")
@@ -1805,11 +1810,12 @@ def register_speaker():
 def transcribe_audio():
     # 检查 B 轨是否暂停
     if _track_b_paused:
-        return jsonify({
-            "status": "paused",
-            "error": "Service temporarily paused for historical analysis",
-            "message": "B 轨当前已暂停，请稍后自动重试"
-        }), 503
+        if request.form.get('is_history', 'false').lower() != 'true':
+            return jsonify({
+                "status": "paused",
+                "error": "Service temporarily paused for historical analysis",
+                "message": "B 轨当前已暂停，请稍后自动重试"
+            }), 503
 
     # 确保临时目录存在
     os.makedirs(Config.TEMP_DIR, exist_ok=True)

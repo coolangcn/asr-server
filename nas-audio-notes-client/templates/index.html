@@ -465,7 +465,7 @@
         </nav>
 
         <div class="p-4 mt-auto">
-            <div class="glass-card rounded-2xl p-4 space-y-3 border border-white/5 relative overflow-hidden group/sidebar-log">
+            <div class="glass-card rounded-2xl p-4 space-y-3 border border-white/5 relative overflow-hidden group/sidebar-log hover:border-white/20 hover:shadow-[0_0_30px_rgba(99,102,241,0.15)] transition-all duration-300 hover:max-h-[500px] max-h-[300px]">
                 <!-- 顶部状态栏 -->
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
@@ -494,8 +494,8 @@
                 </div>
 
                 <!-- 日志显示区 (模仿监测器样式) -->
-                <div class="relative rounded-xl bg-black/60 border border-white/5 overflow-hidden">
-                    <div class="text-[7.5px] font-mono p-2.5 h-48 overflow-y-auto leading-relaxed scroll-smooth scrollbar-hide select-all"
+                <div class="relative rounded-xl bg-black/60 border border-white/5 overflow-hidden group-hover:border-white/10 group-hover:shadow-[0_0_20px_rgba(0,0,0,0.3)] transition-all duration-300">
+                    <div class="text-[7.5px] font-mono p-2.5 h-48 group-hover/sidebar-log:h-96 overflow-y-auto leading-relaxed scroll-smooth scrollbar-hide select-all transition-all duration-300"
                         id="log-display">
                         系统就绪...
                     </div>
@@ -712,18 +712,6 @@
                                     <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
                                 </span>
                             </div>
-                        </div>
-                        
-                        <!-- 实时 A 轨日志监测器 (小窗口) -->
-                        <div class="hidden lg:flex flex-col w-64 h-16 bg-black/40 rounded-xl border border-gray-700/50 overflow-hidden group/monitor hover:h-48 transition-all duration-500 relative">
-                            <div class="bg-gray-800/80 px-2 py-1 flex items-center justify-between border-b border-gray-700/30">
-                                <span class="text-[9px] font-bold text-gray-300 uppercase tracking-tighter"><i class="fa-solid fa-microchip mr-1 text-blue-400"></i> Track A 实时监测器</span>
-                                <span class="flex h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping"></span>
-                            </div>
-                            <div id="track-a-live-logs" class="p-2 text-[8px] font-mono text-blue-300/80 whitespace-pre-wrap overflow-y-auto h-full scrollbar-hide">
-                                等待信号...
-                            </div>
-                            <div class="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-black/60 to-transparent pointer-events-none"></div>
                         </div>
                     </div>
                     <!-- Beautiful Glassmorphism Range Picker -->
@@ -1885,14 +1873,6 @@
                 document.getElementById('status-files').innerText = statusData.pending_files;
                 window.lastStatusData = statusData;
                 renderLogs(statusData);
-                
-                // 同时更新宝宝分析页面的实时日志
-                const bcLiveLogs = document.getElementById('track-a-live-logs');
-                if (bcLiveLogs) {
-                    const isAtBottom = bcLiveLogs.scrollHeight - bcLiveLogs.clientHeight <= bcLiveLogs.scrollTop + 10;
-                    bcLiveLogs.innerText = statusData.logs_a || "等待信号...";
-                    if (isAtBottom) bcLiveLogs.scrollTop = bcLiveLogs.scrollHeight;
-                }
 
                 // 如果当前处于筛选模式，不进行自动刷新（避免干扰）
                 if (currentStartDate && currentEndDate) {
@@ -2043,8 +2023,8 @@
             // 检查是否正在置底 (用于决定是否自动滚动)
             const isAtBottom = logDisplay.scrollHeight - logDisplay.scrollTop <= logDisplay.clientHeight + 40;
             
-            // 更新内容并应用颜色
-            logDisplay.className = `text-[7.5px] font-mono p-2.5 h-48 overflow-y-auto leading-relaxed scroll-smooth scrollbar-hide select-all ${colorClass}`;
+            // 更新内容并应用颜色（保留悬浮效果的 class）
+            logDisplay.className = `text-[7.5px] font-mono p-2.5 h-48 group-hover/sidebar-log:h-96 overflow-y-auto leading-relaxed scroll-smooth scrollbar-hide select-all transition-all duration-300 ${colorClass}`;
             logDisplay.innerText = content;
             
             // 智能滚动：如果原本就在底部，则跟随新内容滚动

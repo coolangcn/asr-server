@@ -7,6 +7,21 @@ echo ======================================
 echo   启动 ASR 服务套件
 echo ======================================
 echo.
+
+REM 加载环境变量
+if exist .env (
+    echo 📄 正在加载环境配置 (.env)...
+    for /f "delims=" %%a in ('findstr /v "^#" .env ^| findstr /v "^$"') do (
+        for /f "tokens=1,* delims==" %%b in ("%%a") do (
+            set "%%b=%%c"
+        )
+    )
+    echo ✅ 环境配置加载完成
+) else (
+    echo ⚠️  未找到 .env 文件，使用默认配置
+)
+echo.
+
 echo 正在启动...
 echo - ASR API 服务 (端口 5008)
 echo - Web 转录查看器 (端口 5009)

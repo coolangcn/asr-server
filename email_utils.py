@@ -3,15 +3,16 @@ from email.mime.text import MIMEText
 from email.header import Header
 import threading
 import logging
+import os
 
 logger = logging.getLogger("EmailUtils")
 
 class EmailConfig:
-    SMTP_SERVER = "smtp.qq.com"
-    SMTP_PORT = 465
-    SENDER_EMAIL = "403904552@qq.com"      # 用户 QQ 邮箱
-    SMTP_AUTH_CODE = "tsklsaxwaithbiac"    # QQ 邮箱生成的 SMTP 授权码
-    RECEIVER_EMAIL = "403904552@qq.com"    # 默认接收人相同
+    SMTP_SERVER = os.getenv("EMAIL_SMTP_SERVER", "smtp.qq.com")
+    SMTP_PORT = int(os.getenv("EMAIL_SMTP_PORT", "465"))
+    SENDER_EMAIL = os.getenv("EMAIL_SENDER", "403904552@qq.com")
+    SMTP_AUTH_CODE = os.getenv("EMAIL_AUTH_CODE", "tsklsaxwaithbiac")
+    RECEIVER_EMAIL = os.getenv("EMAIL_RECEIVER", "403904552@qq.com")
 
 def send_email_sync(subject, content):
     """
