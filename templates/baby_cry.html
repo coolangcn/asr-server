@@ -134,9 +134,9 @@
         }
 
         .event-card:hover {
-            transform: scale(1.02) translateY(-5px);
+            transform: scale(1.03) translateY(-5px);
             border-color: var(--primary-light);
-            box-shadow: 0 20px 40px -10px rgba(0,0,0,0.4);
+            box-shadow: 0 20px 40px -10px rgba(99, 102, 241, 0.3);
         }
 
         .card-header {
@@ -167,21 +167,85 @@
             font-weight: 500;
         }
 
+        .card-body {
+            display: grid;
+            grid-template-columns: 1fr 120px;
+            gap: 1rem;
+            align-items: start;
+        }
+
         .card-body h3 {
             font-family: 'Outfit', sans-serif;
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             margin-bottom: 0.75rem;
             line-height: 1.4;
+        }
+
+        .reason-content {
+            flex: 1;
+        }
+
+        .cry-illustration {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(16, 185, 129, 0.1));
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            border: 2px solid rgba(99, 102, 241, 0.2);
+            position: relative;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .cry-illustration::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+            animation: pulse 3s infinite;
+        }
+
+        .cry-illustration img {
+            border-radius: 12px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .cry-illustration img.loading {
+            opacity: 0.5;
+            animation: loading-pulse 1.5s infinite;
+        }
+
+        @keyframes loading-pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 0.8; }
         }
 
         .advice-box {
             background: rgba(255, 255, 255, 0.03);
             border-radius: 12px;
             padding: 1rem;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: var(--text-dim);
             border-left: 3px solid var(--primary);
             margin-bottom: 1rem;
+            grid-column: 1 / -1;
+        }
+
+        .advice-box ol {
+            padding-left: 1.2rem;
+            margin: 0;
+        }
+
+        .advice-box li {
+            margin-bottom: 0.5rem;
+            line-height: 1.5;
         }
 
         .card-footer {
@@ -223,28 +287,35 @@
             100% { transform: scale(1); opacity: 1; }
         }
 
-        /* Main Content Layout - Side by Side */
+        /* Main Content Layout - Side by Side (Full Height) */
         .main-content-wrapper {
             display: grid;
-            grid-template-columns: 1fr 380px;
+            grid-template-columns: 420px 1fr;
             gap: 1.5rem;
             margin-top: 2rem;
-            align-items: start;
+            height: calc(100vh - 220px);
+            align-items: stretch;
         }
 
         /* Log Container - Vertical Layout */
         #logContainer {
-            position: sticky;
-            top: 2rem;
             border-radius: 12px;
             overflow: hidden;
             border: 1px solid #334155;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
             animation: zoomIn 0.6s ease-out;
-            height: calc(100vh - 200px);
-            min-height: 600px;
+            height: 100%;
             display: flex;
             flex-direction: column;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+        }
+
+        #logContainer:hover {
+            transform: scale(1.02);
+            box-shadow: 0 25px 60px rgba(99, 102, 241, 0.3);
+            border-color: rgba(99, 102, 241, 0.5);
+            z-index: 10;
         }
 
         #logContainer::before {
@@ -292,12 +363,22 @@
         /* Grid View */
         .grid-container {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
             gap: 1.5rem;
             animation: fadeInUp 1s ease-out;
-            max-height: calc(100vh - 200px);
+            height: 100%;
             overflow-y: auto;
             padding-right: 8px;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-radius: 12px;
+            border: 1px solid transparent;
+        }
+
+        .grid-container:hover {
+            transform: scale(1.01);
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 20px 50px rgba(99, 102, 241, 0.15);
+            z-index: 10;
         }
 
         .grid-container::-webkit-scrollbar { width: 8px; }
@@ -309,18 +390,23 @@
         @media (max-width: 1200px) {
             .main-content-wrapper {
                 grid-template-columns: 1fr;
+                height: auto;
             }
             #logContainer {
                 position: relative;
-                top: 0;
                 height: 400px;
                 min-height: auto;
+            }
+            .grid-container {
+                max-height: none;
+                overflow: visible;
+                padding-right: 0;
             }
         }
 
         @media (max-width: 768px) {
             .action-bar { flex-direction: column; gap: 1rem; align-items: stretch; }
-            .grid-container { grid-template-columns: 1fr; max-height: none; overflow: visible; padding-right: 0; }
+            .grid-container { grid-template-columns: 1fr; }
         }
 
         /* Loading Skeleton */
@@ -360,22 +446,22 @@
         </div>
         
         <div class="main-content-wrapper">
-            <!-- 左侧：结果网格 -->
-            <div class="grid-container" id="cryData">
-                <!-- Data populated by JS -->
-                <div class="status" style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-dim);">
-                    🛸 正在对接神经网络数据...
-                </div>
-            </div>
-            
-            <!-- 右侧：竖直日志面板 -->
-            <div id="logContainer" style="display: none;">
+            <!-- 左侧：日志面板 (420px) -->
+            <div id="logContainer">
                 <div class="terminal-header">
                     <div class="dot red"></div>
                     <div class="dot yellow"></div>
                     <div class="dot green"></div>
                 </div>
-                <div id="processLogs">Initializing analysis protocol...</div>
+                <div id="processLogs">等待分析任务启动...</div>
+            </div>
+            
+            <!-- 右侧：结果网格 (自适应) -->
+            <div class="grid-container" id="cryData">
+                <!-- Data populated by JS -->
+                <div class="status" style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-dim);">
+                    🛸 正在对接神经网络数据...
+                </div>
             </div>
         </div>
     </div>
@@ -411,13 +497,22 @@
                         const reason = ev.reason || '未知诱因';
                         const category = (ev.reason_category || 'pending').toLowerCase();
                         const advice = ev.advice || '建议保持严密观察并在必要时提供安抚。';
+                        const illustrationUrl = ev.illustration_url || null;
                         
                         // Map category to icon
                         let icon = '🍼';
-                        if (category.includes('饿') || category.includes('hungry')) icon = '🍼';
-                        if (category.includes('痛') || category.includes('pain')) icon = '❤️‍🩹';
-                        if (category.includes('困') || category.includes('sleepy')) icon = '😴';
-                        if (category.includes('情绪') || category.includes('emotion')) icon = '🧸';
+                        let illustrationIcon = '👶';
+                        if (category.includes('饿') || category.includes('hungry')) { icon = '🍼'; illustrationIcon = '🍼'; }
+                        if (category.includes('痛') || category.includes('pain')) { icon = '❤️‍🩹'; illustrationIcon = '😢'; }
+                        if (category.includes('困') || category.includes('sleepy')) { icon = '😴'; illustrationIcon = '💤'; }
+                        if (category.includes('情绪') || category.includes('emotion')) { icon = '🧸'; illustrationIcon = '🤗'; }
+
+                        // 处理安抚建议的换行（支持 1. 2. 3. 格式）
+                        let formattedAdvice = advice;
+                        if (advice.includes('1.') || advice.includes('1、')) {
+                            const adviceLines = advice.split(/(?=\d+[.,])/g);
+                            formattedAdvice = '<ol>' + adviceLines.map(line => `<li>${line.replace(/^\d+[.,]\s*/, '')}</li>`).join('') + '</ol>';
+                        }
 
                         html += `
                             <div class="event-card" style="animation-delay: ${index * 0.1}s">
@@ -429,12 +524,17 @@
                                     </div>
                                 </div>
                                 <div class="card-body">
-                                    <h3>${reason}</h3>
-                                    <div class="advice-box">${advice}</div>
+                                    <div class="reason-content">
+                                        <h3>${reason}</h3>
+                                        <div class="advice-box">${formattedAdvice}</div>
+                                    </div>
+                                    <div class="cry-illustration" title="${ev.reason_category || '未知'}">
+                                        ${illustrationUrl ? `<img src="${illustrationUrl}" alt="${ev.reason_category}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;">` : illustrationIcon}
+                                    </div>
                                 </div>
                                 <div class="card-footer">
-                                    <div class="duration-tag">⏱️ 时段: ${start} - ${end}s</div>
-                                    <div>文件: ${ev.filename.slice(-15)}</div>
+                                    <div class="duration-tag">⏱️ 时段：${start} - ${end}s</div>
+                                    <div>文件：${ev.filename.slice(-15)}</div>
                                 </div>
                             </div>
                         `;

@@ -198,19 +198,37 @@ def update_system_status():
     path_a = os.path.join(log_dir, "asr-a.log")
     if os.path.exists(path_a):
         lines = read_last_lines(path_a, 50)
-        logs_a = [line.split(' | ', 2)[2] if ' | ' in line else line for line in lines]
+        logs_a = []
+        for line in lines:
+            if ' | ' in line:
+                parts = line.split(' | ', 2)
+                logs_a.append(parts[2] if len(parts) > 2 else line)
+            else:
+                logs_a.append(line)
     
     # B 轨日志
     path_b = os.path.join(log_dir, "asr-b.log")
     if os.path.exists(path_b):
         lines = read_last_lines(path_b, 50)
-        logs_b = [line.split(' | ', 2)[2] if ' | ' in line else line for line in lines]
+        logs_b = []
+        for line in lines:
+            if ' | ' in line:
+                parts = line.split(' | ', 2)
+                logs_b.append(parts[2] if len(parts) > 2 else line)
+            else:
+                logs_b.append(line)
     
     # Web/系统日志
     path_web = os.path.join(log_dir, "asr-web.log")
     if os.path.exists(path_web):
         lines = read_last_lines(path_web, 50)
-        logs_web = [line.split(' | ', 2)[2] if ' | ' in line else line for line in lines]
+        logs_web = []
+        for line in lines:
+            if ' | ' in line:
+                parts = line.split(' | ', 2)
+                logs_web.append(parts[2] if len(parts) > 2 else line)
+            else:
+                logs_web.append(line)
         # 保持兼容性的 last_log
         last_log_raw = "\n".join(logs_web[-20:])
     
