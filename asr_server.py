@@ -18,7 +18,10 @@ from logging.handlers import TimedRotatingFileHandler
 import whisper
 import requests
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# 东八区时区 (UTC+8) - 上海时间
+UTC_PLUS_8 = timezone(timedelta(hours=8))
 from email_utils import send_cry_alert_email   # 增加邮件通知支持
 import audio_processor
 from dotenv import load_dotenv
@@ -120,9 +123,9 @@ FileMonitorConfig = audio_processor.FileMonitorConfig
 # LLM 配置
 class LLMConfig:
     USE_GEMINI_LLM = True
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyABpNzAb90t6EpIsJtbF1UbekDTGlLaKTE")
     GEMINI_API_BASE_URL = os.getenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com")
-    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
+    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
     
     # 批量处理配置
     LLM_BATCH_MODE = True
@@ -481,7 +484,11 @@ def call_gemini_audio_api(audio_paths, prompt):
             "contents": [{
                 "parts": parts_list
             }],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 4096}
+            "generationConfig": {
+                "temperature": 0.3, 
+                "maxOutputTokens": 4096,
+                "responseModalities": ["TEXT"]
+            }
         }
         
         logger_a.info(f"  [BabyCry LLM] 发送请求到 Gemini API...")
@@ -502,17 +509,21 @@ def call_gemini_audio_api(audio_paths, prompt):
         if 'candidates' in result and len(result['candidates']) > 0:
             content = result['candidates'][0].get('content', {})
             logger_a.info(f"  [BabyCry LLM] 响应内容结构: {result}")
+            
+            # 即使 finishReason 是 MAX_TOKENS，也尝试提取已有内容
             if 'parts' in content and len(content['parts']) > 0:
                 response_text = content['parts'][0].get('text', '')
                 logger_a.info(f"  [BabyCry LLM] 收到响应，长度: {len(response_text)} 字符")
                 logger_a.info(f"  [BabyCry LLM] 响应内容: {response_text[:300]}...")
-                return response_text
-            elif result['candidates'][0].get('finishReason') == 'MAX_TOKENS':
-                logger_a.error(f"  [BabyCry LLM] 生成 Token 超限 (通常由于思考模式过长): {result}")
-                return None
-            else:
-                logger_a.error(f"  [BabyCry LLM] 安全拦截或空回复: {result}")
-                return None
+                if response_text:
+                    return response_text
+            
+            # 如果没有内容但有 MAX_TOKENS，记录警告
+            if result['candidates'][0].get('finishReason') == 'MAX_TOKENS':
+                logger_a.warning(f"  [BabyCry LLM] 生成 Token 超限，但尝试返回已生成内容")
+            
+            logger_a.error(f"  [BabyCry LLM] 安全拦截或空回复: {result}")
+            return None
         else:
             logger_a.error(f"  [BabyCry LLM] API 返回异常结构: {result}")
             return None
@@ -525,11 +536,18 @@ def call_gemini_audio_api(audio_paths, prompt):
 def call_gemini_image_api(prompt):
     """调用 Gemini API 生成插图（文生图）"""
     if not LLMConfig.USE_GEMINI_LLM:
+        logger_a.warning("🎨 [插图生成] LLM 未启用，跳过")
         return None
         
     try:
-        # 使用 Gemini 2.0 Flash Experimental 支持图像生成
-        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/gemini-2.0-flash-exp:generateContent"
+        logger_a.info(f"🎨 [插图生成] 开始调用插图生成 API")
+        logger_a.info(f"🎨 [插图生成] Prompt 长度: {len(prompt)} 字符")
+        logger_a.info(f"🎨 [插图生成] Prompt 开头: {prompt[:100]}...")
+        
+        # 使用 Gemini 2.5 Flash Image 支持图像生成
+        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/gemini-2.5-flash-image:generateContent"
+        logger_a.info(f"🎨 [插图生成] API URL: {url}")
+        
         headers = {
             "Content-Type": "application/json",
             "x-goog-api-key": LLMConfig.GEMINI_API_KEY
@@ -546,36 +564,63 @@ def call_gemini_image_api(prompt):
             }
         }
         
+        logger_a.info(f"🎨 [插图生成] 发送请求到 Gemini API...")
+        logger_a.info(f"🎨 [插图生成] 超时设置: 60秒")
+        
         response = requests.post(url, headers=headers, json=data, timeout=60)
+        
+        logger_a.info(f"🎨 [插图生成] HTTP 状态码: {response.status_code}")
         
         try:
             result = response.json()
-        except:
-            logger_sys.error(f"🎨 [插图生成] 返回非 JSON 数据：{response.text}")
+        except Exception as e:
+            logger_a.error(f"🎨 [插图生成] 返回非 JSON 数据: {e}")
+            logger_a.error(f"🎨 [插图生成] 原始响应: {response.text}")
             return None
         
         if not response.ok:
-            logger_sys.error(f"🎨 [插图生成] API HTTP 错误 {response.status_code}: {result}")
+            logger_a.error(f"🎨 [插图生成] API HTTP 错误 {response.status_code}")
+            logger_a.error(f"🎨 [插图生成] 错误详情: {json.dumps(result, indent=2, ensure_ascii=False)}")
             return None
+        
+        logger_a.info(f"🎨 [插图生成] 收到响应，正在解析...")
+        logger_a.info(f"🎨 [插图生成] 完整响应结构: {json.dumps(result, indent=2, ensure_ascii=False)}")
         
         # 解析图像数据
         if 'candidates' in result and len(result['candidates']) > 0:
+            logger_a.info(f"🎨 [插图生成] 找到 {len(result['candidates'])} 个 candidates")
             content = result['candidates'][0].get('content', {})
+            logger_a.info(f"🎨 [插图生成] Content 结构: {content}")
+            
             if 'parts' in content:
-                for part in content['parts']:
+                logger_a.info(f"🎨 [插图生成] 找到 {len(content['parts'])} 个 parts")
+                for i, part in enumerate(content['parts']):
+                    logger_a.info(f"🎨 [插图生成] Part {i} 类型: {list(part.keys())}")
                     if 'inlineData' in part:
+                        logger_a.info(f"🎨 [插图生成] 找到图像数据!")
                         image_data = part['inlineData']
                         # 返回 base64 编码的图像 URL（数据 URL 格式）
                         mime_type = image_data.get('mimeType', 'image/png')
                         data = image_data.get('data', '')
+                        logger_a.info(f"🎨 [插图生成] 图像 MIME 类型: {mime_type}")
+                        logger_a.info(f"🎨 [插图生成] 图像数据长度: {len(data)} 字符")
                         if data:
+                            logger_a.info(f"🎨 [插图生成] 图像生成成功!")
                             return f"data:{mime_type};base64,{data}"
+                        else:
+                            logger_a.warning(f"🎨 [插图生成] 图像数据为空")
+            else:
+                logger_a.warning(f"🎨 [插图生成] 响应中没有 parts")
+        else:
+            logger_a.warning(f"🎨 [插图生成] 响应中没有 candidates")
         
-        logger_sys.warning(f"🎨 [插图生成] 未返回图像数据：{result}")
+        logger_a.warning(f"🎨 [插图生成] 未返回图像数据")
         return None
         
     except Exception as e:
-        logger_a.error(f"🎨 [插图生成] 发送请求异常：{e}")
+        logger_a.error(f"🎨 [插图生成] 发送请求异常: {e}")
+        import traceback
+        logger_a.error(f"🎨 [插图生成] 异常堆栈: {traceback.format_exc()}")
         return None
 
 def process_baby_cry_async(filename, audio_path, start_time, end_time, placeholder_id=None):
@@ -1276,6 +1321,27 @@ def api_analyze_cry():
             logger_a.error(f"👶 [analyze_cry API] 文件不存在: {audio_path}")
             return jsonify({"error": f"音频文件不存在: {audio_path}"}), 404
 
+        # ── 先运行声纹检测获取投票详情 ──
+        import tempfile
+        cry_confidence = 0.0
+        cry_details = []
+        try:
+            logger_a.info(f"👶 [analyze_cry API] 开始运行声纹检测...")
+            # 预处理音频
+            temp_dir = tempfile.mkdtemp()
+            proc_temp = os.path.join(temp_dir, "processed.wav")
+            if preprocess_audio(audio_path, proc_temp):
+                _, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp)
+                logger_a.info(f"👶 [analyze_cry API] 声纹检测完成 - 置信度: {cry_confidence}, 详情数: {len(cry_details)}")
+            # 清理临时文件
+            try:
+                os.remove(proc_temp)
+                os.rmdir(temp_dir)
+            except:
+                pass
+        except Exception as e:
+            logger_a.warning(f"👶 [analyze_cry API] 声纹检测异常: {e}")
+
         # ── 模式1：调用方提供了完整事件文件列表，直接送 Gemini ──
         if audio_paths and isinstance(audio_paths, list) and len(audio_paths) > 0:
             valid_paths = [p for p in audio_paths if os.path.exists(p)]
@@ -1296,43 +1362,81 @@ def api_analyze_cry():
             logger_a.info(f"👶 [analyze_cry API] Gemini 返回: {response_text[:100] if response_text else 'None'}...")
             
             if response_text:
-                json_match = _re.search(r'\{.*\}', response_text, _re.DOTALL)
+                # 移除可能的 markdown 代码块标记
+                cleaned_text = response_text.strip()
+                if cleaned_text.startswith('```json'):
+                    cleaned_text = cleaned_text[7:]
+                if cleaned_text.startswith('```'):
+                    cleaned_text = cleaned_text[3:]
+                if cleaned_text.endswith('```'):
+                    cleaned_text = cleaned_text[:-3]
+                cleaned_text = cleaned_text.strip()
+                
+                # 尝试找到完整的 JSON 对象
+                json_match = _re.search(r'\{.*\}', cleaned_text, _re.DOTALL)
                 if json_match:
-                    result = _json.loads(json_match.group())
-                    category = result.get("category", "未知")
-                    reason = result.get("reason", "未知")
-                    advice = result.get("advice", "无")
-                    logger_a.info(f"👶 [analyze_cry API] 解析成功 - category: {category}, reason: {reason[:50]}...")
+                    try:
+                        result = _json.loads(json_match.group())
+                        category = result.get("category", "未知")
+                        reason = result.get("reason", "未知")
+                        advice = result.get("advice", "无")
+                        logger_a.info(f"👶 [analyze_cry API] 解析成功 - category: {category}, reason: {reason[:50]}...")
                     
-                    from db_manager import save_cry_analysis
-                    # 保存分析结果（包含文生图提示）
-                    save_cry_analysis(filename, start_ms / 1000.0, end_ms / 1000.0, reason, advice, reason_category=category, event_files=valid_paths)
-                    
-                    # 异步生成插图（不阻塞返回）
-                    def generate_illustration():
-                        try:
-                            # 根据原因的详细描述生成场景插图
-                            # 宝宝信息：2023 年 8 月 9 日生日，现在约 2 岁半
-                            image_prompt = (
-                                f"Create a warm, comforting children's book style cartoon illustration. "
-                                f"Main character: A cute 2.5-year-old Chinese toddler (born August 2023). "
-                                f"Scene description: {reason}. "
-                                f"Show a realistic daily life scenario of this toddler in this situation. "
-                                f"Style: soft pastel colors, gentle lighting, cute cartoon, emotional and expressive, "
-                                f"picture book illustration, heartwarming atmosphere, detailed background."
-                            )
-                            image_url = call_gemini_image_api(image_prompt)
-                            if image_url:
-                                from db_manager import update_cry_event_image
-                                update_cry_event_image(filename, image_url)
-                                logger_a.info(f"🎨 [插图生成] 成功生成插图：{image_url}")
-                        except Exception as e:
-                            logger_a.error(f"🎨 [插图生成] 失败：{e}")
-                    
-                    threading.Thread(target=generate_illustration, daemon=True).start()
-                    
-                    logger_a.info(f"👶 [analyze_cry API] 分析完成：[{category}] {reason[:50]}...")
-                    return jsonify({"category": category, "reason": reason, "advice": advice})
+                        from db_manager import save_cry_analysis
+                        # 保存分析结果（包含文生图提示和声纹详情）
+                        save_cry_analysis(
+                            filename, start_ms / 1000.0, end_ms / 1000.0, 
+                            reason, advice, 
+                            reason_category=category, 
+                            event_files=valid_paths,
+                            confidence=cry_confidence,
+                            details=cry_details
+                        )
+                        
+                        # 异步生成插图（不阻塞返回）
+                        def generate_illustration():
+                            try:
+                                logger_a.info(f"🎨 [插图生成] ================ 开始生成场景插图 ================")
+                                logger_a.info(f"🎨 [插图生成] 文件名: {filename}")
+                                logger_a.info(f"🎨 [插图生成] 原因描述: {reason}")
+                                
+                                # 根据原因的详细描述生成场景插图
+                                # 宝宝信息：2023 年 8 月 9 日生日，现在约 2 岁半
+                                image_prompt = (
+                                    f"Create a warm, comforting children's book style cartoon illustration. "
+                                    f"Main character: A cute 2.5-year-old Chinese toddler (born August 2023). "
+                                    f"Scene description: {reason}. "
+                                    f"Show a realistic daily life scenario of this toddler in this situation. "
+                                    f"Style: soft pastel colors, gentle lighting, cute cartoon, emotional and expressive, "
+                                    f"picture book illustration, heartwarming atmosphere, detailed background."
+                                )
+                                
+                                logger_a.info(f"🎨 [插图生成] Image Prompt 已构建，准备调用 API...")
+                                image_url = call_gemini_image_api(image_prompt)
+                                
+                                if image_url:
+                                    logger_a.info(f"🎨 [插图生成] API 返回成功，正在更新数据库...")
+                                    from db_manager import update_cry_event_image
+                                    update_result = update_cry_event_image(filename, image_url)
+                                    logger_a.info(f"🎨 [插图生成] 数据库更新结果: {update_result}")
+                                    logger_a.info(f"🎨 [插图生成] ================ 插图生成完成 ================")
+                                else:
+                                    logger_a.warning(f"🎨 [插图生成] API 返回空，未生成插图")
+                                    logger_a.info(f"🎨 [插图生成] ================ 插图生成失败 ================")
+                            except Exception as e:
+                                logger_a.error(f"🎨 [插图生成] 异常: {e}")
+                                import traceback
+                                logger_a.error(f"🎨 [插图生成] 异常堆栈: {traceback.format_exc()}")
+                                logger_a.info(f"🎨 [插图生成] ================ 插图生成异常 ================")
+                        
+                        logger_a.info(f"🎨 [插图生成] 启动后台线程生成插图...")
+                        threading.Thread(target=generate_illustration, daemon=True).start()
+                        
+                        logger_a.info(f"👶 [analyze_cry API] 分析完成：[{category}] {reason[:50]}...")
+                        return jsonify({"category": category, "reason": reason, "advice": advice})
+                    except Exception as e:
+                        logger_a.error(f"👶 [analyze_cry API] JSON 解析异常: {e}")
+                        logger_a.error(f"👶 [analyze_cry API] 原始响应: {response_text}")
                 else:
                     logger_a.error(f"👶 [analyze_cry API] 无法解析 JSON 响应: {response_text}")
             else:
@@ -1349,72 +1453,6 @@ def api_analyze_cry():
     except Exception as e:
         logger_a.error(f"[analyze_cry API] 异常: {e}")
         return jsonify({"error": str(e)}), 500
-
-@app.route("/api/check_gemini_key", methods=["GET"])
-def api_check_gemini_key():
-    """检查 Gemini API Key 状态"""
-    import requests
-    
-    if not LLMConfig.USE_GEMINI_LLM:
-        return jsonify({
-            "status": "disabled",
-            "message": "Gemini LLM 功能已禁用",
-            "model": LLMConfig.GEMINI_MODEL_NAME
-        })
-    
-    try:
-        # 使用简单的文本请求测试 API Key
-        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/{LLMConfig.GEMINI_MODEL_NAME}:generateContent"
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": LLMConfig.GEMINI_API_KEY
-        }
-        data = {
-            "contents": [{"parts": [{"text": "Hi"}]}]
-        }
-        
-        response = requests.post(url, headers=headers, json=data, timeout=10)
-        
-        try:
-            result = response.json()
-        except:
-            return jsonify({
-                "status": "error",
-                "message": f"无法解析响应 (HTTP {response.status_code})",
-                "model": LLMConfig.GEMINI_MODEL_NAME,
-                "http_code": response.status_code
-            })
-        
-        if response.ok:
-            return jsonify({
-                "status": "ok",
-                "message": "API Key 正常",
-                "model": LLMConfig.GEMINI_MODEL_NAME,
-                "http_code": response.status_code
-            })
-        else:
-            error_msg = result.get('error', {}).get('message', '未知错误')
-            error_status = result.get('error', {}).get('status', 'UNKNOWN_ERROR')
-            return jsonify({
-                "status": "error",
-                "message": error_msg,
-                "error_status": error_status,
-                "model": LLMConfig.GEMINI_MODEL_NAME,
-                "http_code": response.status_code
-            })
-            
-    except requests.exceptions.Timeout:
-        return jsonify({
-            "status": "timeout",
-            "message": "请求超时",
-            "model": LLMConfig.GEMINI_MODEL_NAME
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "model": LLMConfig.GEMINI_MODEL_NAME
-        })
 
 @app.route("/api/trigger_reprocess", methods=["POST"])
 def trigger_reprocess():
@@ -1437,10 +1475,11 @@ def trigger_reprocess():
         end_time = request.args.get('end_time', '')
         force_replace = request.args.get('replace', 'false').lower() == 'true'
         
-        # 如果是强制替换模式，先清理数据库中该日期的记录
-        if force_replace and date_param:
-            from db_manager import delete_cry_events_by_date
-            delete_cry_events_by_date(date_param)
+        # 选择日期时自动启用强制替换模式
+        if date_param:
+            force_replace = True
+        
+        # 不提前删除记录，等分析完成后再处理（避免记录消失）
             
         # 暂停 B 轨处理，直到 A 轨结束
         global _track_b_paused
@@ -2077,16 +2116,18 @@ def transcribe_audio():
                             logger_a.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
                         else:
                             # ── 正式报警 ──
-                            time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            time_str = datetime.now(UTC_PLUS_8).strftime("%Y-%m-%d %H:%M:%S")
                             send_cry_alert_email(file.filename, time_str)
                             
-                            # [即时占位] 立即写入数据库
+                            # [即时占位] 立即写入数据库（包含声纹投票详情）
                             from db_manager import save_cry_analysis
                             placeholder_id = save_cry_analysis(
                                 file.filename, 0, audio_duration, 
                                 "深度分析中 (5分钟观察期)...", "请稍候内容更新", 
                                 reason_category="analyzing", event_files=[], 
-                                audio_path=proc_temp
+                                audio_path=proc_temp,
+                                confidence=cry_confidence,
+                                details=cry_details
                             )
 
                             # 启动后台延迟分析任务
@@ -2163,7 +2204,7 @@ def transcribe_audio():
                             base_filename = os.path.splitext(original_filename)[0]
                             
                             # 从文件名解析日期，或使用当前日期
-                            date_str = datetime.now().strftime("%Y-%m-%d")
+                            date_str = datetime.now(UTC_PLUS_8).strftime("%Y-%m-%d")
                             # 尝试从文件名提取日期 (格式: YYYY-MM-DD 或 YYYYMMDD 或 recording-YYYYMMDD)
                             date_match = re.search(r'(\d{4})-?(\d{2})-?(\d{2})', base_filename)
                             if date_match:

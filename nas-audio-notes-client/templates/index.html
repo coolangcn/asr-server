@@ -462,12 +462,12 @@
             </button>
             <button onclick="switchTab('speaker')" id="nav-speaker"
                 class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
-                <i class="fa-solid fa-user-music text-lg group-hover:text-pink-400 transition-colors w-6 text-center"></i>
+                <i class="fa-solid fa-microphone text-lg group-hover:text-pink-400 transition-colors w-6 text-center"></i>
                 <span class="font-medium">声纹管理</span>
             </button>
             <button onclick="switchTab('babycry')" id="nav-babycry"
                 class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
-                <i class="fa-solid fa-hands-holding-child text-lg group-hover:text-yellow-400 transition-colors w-6 text-center"></i>
+                <i class="fa-solid fa-baby text-lg group-hover:text-yellow-400 transition-colors w-6 text-center"></i>
                 <span class="font-medium">宝宝分析</span>
             </button>
         </nav>
@@ -714,12 +714,11 @@
                                     <i class="fa-solid fa-rotate-right text-xs"></i>
                                 </button>
                             </h2>
-                            <div class="mt-2 text-[10px] text-gray-400 flex items-center gap-3 flex-wrap">
+                            <div class="mt-2 text-[10px] text-gray-400 flex items-center gap-3">
                                 <span id="triggerStatus" class="font-medium text-blue-400"></span>
                                 <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse">
                                     <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
                                 </span>
-                                <span id="geminiKeyStatus" class="px-2 py-0.5 rounded-full border cursor-pointer" onclick="checkGeminiKey()" title="点击刷新状态"></span>
                             </div>
                         </div>
                     </div>
@@ -873,26 +872,14 @@
                 if (typeof loadSpeakers === "function") loadSpeakers();
             } else if (tabName === 'babycry') {
                 setTimeout(initBabyCryTimeline, 100);
-                // 检查 Gemini API Key 状态
-                if (typeof checkGeminiKey === "function") checkGeminiKey();
-                // 启动定时检查（每60秒）
-                if (geminiKeyCheckTimer) clearInterval(geminiKeyCheckTimer);
-                geminiKeyCheckTimer = setInterval(() => {
-                    if (typeof checkGeminiKey === "function") checkGeminiKey();
-                }, 60000);
-                // 加载上次保存的时间范围
-                loadLastTimeRange();
                 // 添加输入框变化监听器
                 setupTimeRangeListeners();
                 if (!window.babyCryLoaded) {
-                    if (typeof fetchBabyCryEvents === "function") fetchBabyCryEvents();
+                    // 第一次加载时，不应用日期筛选，显示所有记录
+                    if (typeof fetchBabyCryEvents === "function") fetchBabyCryEvents(true);
                     window.babyCryLoaded = true;
-                }
-            } else {
-                // 离开宝宝分析页面时清除定时器
-                if (geminiKeyCheckTimer) {
-                    clearInterval(geminiKeyCheckTimer);
-                    geminiKeyCheckTimer = null;
+                    // 显示完所有记录后，再恢复上次保存的时间范围（但不自动筛选）
+                    loadLastTimeRange();
                 }
             }
         }
@@ -2573,23 +2560,37 @@
                             </div>
 
                             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                <!-- 左侧：插图 + 原因分析 -->
                                 <div class="lg:col-span-8 space-y-4">
-                                     <!-- 置信度进度条 (如果是正在分析，则显示动画) -->
+                                    <!-- 插图显示或加载状态 -->
+                                    ${item.illustration_url ? `
+                                    <div class="mb-4">
+                                        <img src="${item.illustration_url}" alt="场景插图" class="w-full h-auto rounded-2xl shadow-lg border border-white/10">
+                                    </div>
+                                    ` : (!isAnalyzing && item.reason) ? `
+                                    <div class="mb-4 flex flex-col items-center justify-center py-12 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-2xl border border-purple-500/20">
+                                        <i class="fa-solid fa-palette fa-spin text-purple-400 text-4xl mb-4"></i>
+                                        <p class="text-purple-300 font-medium text-sm animate-pulse">正在生成场景插图...</p>
+                                        <p class="text-[10px] text-gray-500 mt-2">请稍候，插图正在创作中</p>
+                                    </div>
+                                    ` : ''}
+                                    
+                                    <!-- 置信度进度条 (如果是正在分析，则显示动画) -->
                                     <div class="bg-black/20 rounded-full h-1.5 w-full overflow-hidden border border-white/5">
                                         <div class="h-full bg-gradient-to-r from-${color}-600 to-${color}-400 transition-all duration-1000 ${isAnalyzing ? 'w-full animate-pulse' : ''}" style="width: ${isAnalyzing ? '0' : (item.confidence * 100 || 0)}%"></div>
                                     </div>
-                                <!-- Reason/Analysis -->
-                                    <div class="relative z-10 text-gray-200 text-[14px] leading-relaxed" style="white-space: pre-wrap;">
+                                    
+                                    <!-- Reason/Analysis -->
+                                    <div class="relative z-10 text-gray-200 text-[14px] leading-relaxed pb-6">
                                         ${isAnalyzing ? 
                                             `<div class="flex flex-col items-center py-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
                                                 <i class="fa-solid fa-spinner fa-spin text-blue-400 text-2xl mb-4"></i>
                                                 <p class="text-blue-300 font-medium font-mono text-sm animate-pulse">Gemini Pro 2.5 正在深度对等识别中...</p>
                                                 <p class="text-[10px] text-gray-500 mt-2">（观察期通常为发现哭声后的 5 分钟内）</p>
                                             </div>` : 
-                                            (item.analysis_text || item.reason || '暂无详细分析内容').replace(/\\n/g, '<br>')
+                                            `<div class="whitespace-pre-line">${((item.analysis_text || item.reason || '暂无详细分析内容').trim())}</div>`
                                         }
                                     </div>
-                                </div>
                                 </div>
 
                                 <!-- Detail Sidebar (Models & Votes) -->
@@ -2629,13 +2630,13 @@
                                     </div>
                                     <div class="flex-1 py-1">
                                         <div class="text-[10px] uppercase tracking-wider text-emerald-500 font-black mb-1">妈咪安抚建议 / Suggestion</div>
-                                        <div class="leading-relaxed font-medium text-gray-300">${item.advice || '请持续关注宝宝情绪状态，建议观察是否有生理需求。'}</div>
+                                        <div class="leading-relaxed font-medium text-gray-300" style="white-space: pre-line;">${(item.advice || '请持续关注宝宝情绪状态，建议观察是否有生理需求。').trim()}</div>
                                     </div>
                                 </div>
                                 ` : ''}
 
                                 <!-- Actions -->
-                                <div class="flex items-center gap-3 pt-2">
+                                <div class="flex items-center gap-3 pt-6">
                                     ${item.audio_path || item.filename ?
                                     `<button onclick="playAudio('${item.audio_path || '/api/audio/' + item.filename}')" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-${color}-500/10 hover:bg-${color}-500/20 border border-${color}-500/20 transition-all text-${color}-400 font-bold text-xs group/btn active:scale-95 shadow-lg">
                                         <div class="w-6 h-6 rounded-full bg-${color}-500/20 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
@@ -2657,59 +2658,6 @@
             container.innerHTML = html;
         }
 
-        // Gemini API Key 状态定时器
-        let geminiKeyCheckTimer = null;
-        
-        async function checkGeminiKey() {
-            const statusEl = document.getElementById('geminiKeyStatus');
-            if (!statusEl) return;
-            
-            statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>检查中...';
-            statusEl.className = 'px-2 py-0.5 rounded-full border border-gray-600/50 text-gray-400 cursor-pointer';
-            
-            try {
-                const response = await fetch('/api/check_gemini_key');
-                const data = await response.json();
-                
-                let icon, text, bgClass, borderClass, textClass;
-                
-                if (data.status === 'ok') {
-                    icon = '<i class="fa-solid fa-check-circle mr-1"></i>';
-                    text = 'Gemini OK';
-                    bgClass = 'bg-green-500/20';
-                    borderClass = 'border-green-500/50';
-                    textClass = 'text-green-400';
-                } else if (data.status === 'disabled') {
-                    icon = '<i class="fa-solid fa-power-off mr-1"></i>';
-                    text = 'Gemini 已禁用';
-                    bgClass = 'bg-gray-500/20';
-                    borderClass = 'border-gray-600/50';
-                    textClass = 'text-gray-400';
-                } else if (data.status === 'timeout') {
-                    icon = '<i class="fa-solid fa-clock mr-1"></i>';
-                    text = '超时';
-                    bgClass = 'bg-yellow-500/20';
-                    borderClass = 'border-yellow-500/50';
-                    textClass = 'text-yellow-400';
-                } else {
-                    icon = '<i class="fa-solid fa-exclamation-circle mr-1"></i>';
-                    text = data.message?.substring(0, 30) || '错误';
-                    bgClass = 'bg-red-500/20';
-                    borderClass = 'border-red-500/50';
-                    textClass = 'text-red-400';
-                }
-                
-                statusEl.innerHTML = `${icon}${text}`;
-                statusEl.className = `px-2 py-0.5 rounded-full border cursor-pointer ${bgClass} ${borderClass} ${textClass}`;
-                statusEl.title = data.message || '点击刷新状态';
-                
-            } catch (e) {
-                console.error("Failed to check Gemini key", e);
-                statusEl.innerHTML = '<i class="fa-solid fa-exclamation-triangle mr-1"></i>检查失败';
-                statusEl.className = 'px-2 py-0.5 rounded-full border border-orange-500/50 bg-orange-500/20 text-orange-400 cursor-pointer';
-            }
-        }
-
         async function fetchBabyCryEvents(silent = false) {
             try {
                 const dateVal = document.getElementById('reprocessDate')?.value;
@@ -2717,9 +2665,10 @@
                 const endTimeVal = document.getElementById('reprocessEndTime')?.value;
                 
                 let url = '/api/cry_events?1=1';
-                if (dateVal) url += `&date=${encodeURIComponent(dateVal)}`;
-                if (startTimeVal) url += `&start_time=${encodeURIComponent(startTimeVal.replace(':', '-'))}`;
-                if (endTimeVal) url += `&end_time=${encodeURIComponent(endTimeVal.replace(':', '-'))}`;
+                // silent=true 时不应用日期筛选，显示所有记录
+                if (!silent && dateVal) url += `&date=${encodeURIComponent(dateVal)}`;
+                if (!silent && startTimeVal) url += `&start_time=${encodeURIComponent(startTimeVal.replace(':', '-'))}`;
+                if (!silent && endTimeVal) url += `&end_time=${encodeURIComponent(endTimeVal.replace(':', '-'))}`;
 
                 const response = await fetch(url);
                 const data = await response.json();

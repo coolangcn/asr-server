@@ -89,15 +89,28 @@ def merge_cry_events(cry_file_paths, all_sorted_files):
     # 用 all_sorted_files 构建索引，扩展上下文并去重
     all_idx = {p: i for i, p in enumerate(all_sorted_files)}
     events = []
-    for group in groups:
+    for group_idx, group in enumerate(groups, 1):
+        log_detail(f"[事件 {group_idx}] 哭声文件组: {len(group)} 个文件", 'info')
+        for f in group:
+            log_detail(f"  - {os.path.basename(f)}", 'info')
+        
         # 找首尾在总列表中的位置
         indices = [all_idx[p] for p in group if p in all_idx]
         if not indices:
+            log_detail(f"  ⚠️ 未在总列表中找到索引，跳过扩展", 'warning')
             events.append(group)
             continue
+        
+        log_detail(f"  在总列表中的索引: {min(indices)} ~ {max(indices)}", 'info')
         lo = max(0, min(indices) - CRY_CONTEXT_EACH_SIDE)
         hi = min(len(all_sorted_files) - 1, max(indices) + CRY_CONTEXT_EACH_SIDE)
+        log_detail(f"  扩展后范围: {lo} ~ {hi}", 'info')
+        
         event_files = all_sorted_files[lo:hi + 1]
+        log_detail(f"  最终事件文件数: {len(event_files)} 个", 'info')
+        for f in event_files:
+            log_detail(f"  - {os.path.basename(f)}", 'info')
+        
         events.append(event_files)
 
     return events
@@ -174,7 +187,8 @@ if __name__ == "__main__":
         return True
 
     AUDIO_EXTS = ('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc')
-    files_to_process = []
+    all_files = []  # 所有文件（用于上下文扩展）
+    target_files = []  # 目标文件（用于识别哭声）
     start_scan = time.time()
     
     try:
@@ -198,19 +212,21 @@ if __name__ == "__main__":
                     dirs[:] = []
             
             # 进度实时反馈
-            log_detail(f"    - 正在扫描容器：{os.path.basename(root) or 'root'} (已发现 {len(files_to_process)} 个待处理项)", 'info')
+            log_detail(f"    - 正在扫描容器：{os.path.basename(root) or 'root'} (已发现 {len(all_files)} 个待处理项)", 'info')
             
             for file in files:
                 if file.startswith('.'): continue
                 if not file.lower().endswith(AUDIO_EXTS): continue
                 
-                # 严格校验：
-                # 1. 日期校验
+                # 1. 日期校验 - 所有符合日期的都加入 all_files
                 if filter_date and filter_date not in file: continue
-                # 2. 时间段校验
-                if not is_time_in_range(file, start_time_arg, end_time_arg): continue
                 
-                files_to_process.append(os.path.join(root, file))
+                file_path = os.path.join(root, file)
+                all_files.append(file_path)
+                
+                # 2. 时间段校验 - 时间范围内的加入 target_files
+                if is_time_in_range(file, start_time_arg, end_time_arg):
+                    target_files.append(file_path)
                 
         log_detail(f"\n[*] 扫描逻辑执行完毕。", 'info')
                 
@@ -218,9 +234,20 @@ if __name__ == "__main__":
         log_detail(f"\n错误：扫描目录时遇到问题：{e}", 'error')
 
     # 去重并排序，防止重复扫描
-    files_to_process = sorted(list(set(files_to_process)))
-    log_detail(f"[*] 极速扫描完成！耗时 {time.time()-start_scan:.2f} 秒，找到 {len(files_to_process)} 个合法文件", 'info')
+    all_files = sorted(list(set(all_files)))
+    target_files = sorted(list(set(target_files)))
+    
+    log_detail(f"[*] 极速扫描完成！耗时 {time.time()-start_scan:.2f} 秒", 'info')
+    log_detail(f"   - 扫描范围: {'指定日期 ' + filter_date if filter_date else '全日期'}", 'info')
+    log_detail(f"   - 所有文件数: {len(all_files)} 个", 'info')
+    log_detail(f"   - 目标文件数: {len(target_files)} 个", 'info')
+    log_detail(f"[*] 文件列表（前20个）:", 'info')
+    for i, f in enumerate(all_files[:20], 1):
+        log_detail(f"    {i}. {os.path.basename(f)}", 'info')
 
+    # 用于分析的文件列表（优先用目标文件，没有就用所有文件）
+    files_to_process = target_files if target_files else all_files
+    
     if not files_to_process:
         log_detail(f"在 {target_dir} 中未找到任何支持的音频文件。", 'warning')
         sys.exit(0)
@@ -228,7 +255,11 @@ if __name__ == "__main__":
     # 初始化数据库连接池
     init_pool()
 
-    log_detail(f"\n找到 {len(files_to_process)} 个支持的音频文件，准备重新转录并分析 (按 Ctrl+C 中止)...", 'info')
+    # 如果指定了日期，先删除该日期的旧记录（在识别哭声之后、分析之前删除）
+    if filter_date:
+        log_detail(f"📅 已选择日期: {filter_date}，将在分析开始后删除旧记录", 'info')
+
+    log_detail(f"\n找到 {len(files_to_process)} 个文件进行哭声识别，{len(all_files)} 个文件用于上下文扩展...", 'info')
 
     # =====================================================================
     # 阶段一：全量转录，识别哭声文件（不触发 Gemini 分析）
@@ -314,7 +345,18 @@ if __name__ == "__main__":
     # =====================================================================
     # 阶段二：合并连续事件，构建事件文件夹，统一分析
     # =====================================================================
-    events = merge_cry_events(cry_file_paths, files_to_process)
+    # 在分析前删除该日期的旧记录（避免新旧重复）
+    if filter_date:
+        log_detail(f"🗑️  正在删除日期 {filter_date} 的旧分析记录...", 'info')
+        try:
+            from db_manager import delete_cry_events_by_date
+            deleted_count = delete_cry_events_by_date(filter_date)
+            log_detail(f"✅ 已删除 {deleted_count} 条旧记录", 'info')
+        except Exception as e:
+            log_detail(f"⚠️  删除旧记录失败: {e}", 'warning')
+    
+    # 使用当天所有文件来扩展上下文（确保能扩展到10个文件）
+    events = merge_cry_events(cry_file_paths, all_files)
 
     # 事件文件夹统一放在 SOURCE_DIR/cry_events/ 下
     events_base_dir = os.path.join(SOURCE_DIR, "cry_events")
