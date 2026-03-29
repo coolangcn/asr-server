@@ -412,7 +412,7 @@ def get_baby_cry_event_by_id(event_id: int) -> Dict:
             'reason': row[6],
             'advice': row[7],
             'reason_category': row[8],
-            'event_files_json': row[9],
+            'event_files_json': json.loads(row[9]) if row[9] else [],
             'audio_path': row[10],
             'confidence': float(row[11]) if row[11] else 0,
             'details_json': row[12],

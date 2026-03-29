@@ -2564,15 +2564,22 @@ def serve_audio_file(filename):
 def serve_event_audio(event_id):
     """获取事件的完整上下文音频文件列表"""
     try:
+        logger_sys.info(f"🔍 [上下文音频] 收到请求 event_id={event_id}")
         from db_manager import get_baby_cry_event_by_id
         event = get_baby_cry_event_by_id(event_id)
+        logger_sys.info(f"🔍 [上下文音频] 查询结果: {event}")
         if not event:
+            logger_sys.warning(f"⚠️ [上下文音频] 事件 {event_id} 未找到")
             return jsonify({"error": "Event not found"}), 404
 
         event_files = event.get('event_files_json', [])
+        logger_sys.info(f"🔍 [上下文音频] event_files: {event_files}")
         audio_urls = []
         for f in event_files:
-            if f.startswith('/'):
+            # 转换为相对于 SOURCE_DIR 的路径
+            if f.startswith(FileMonitorConfig.SOURCE_DIR):
+                f = os.path.relpath(f, FileMonitorConfig.SOURCE_DIR)
+            elif f.startswith('/'):
                 f = f.lstrip('/')
             audio_urls.append(f"/api/audio/{f}")
 
@@ -2583,6 +2590,8 @@ def serve_event_audio(event_id):
         })
     except Exception as e:
         logger_sys.error(f"获取事件音频列表失败: {str(e)}")
+        import traceback
+        logger_sys.error(f"异常堆栈: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 

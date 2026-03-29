@@ -7,7 +7,7 @@ import json
 import sys
 import threading
 import time
-from flask import Flask, render_template, jsonify, request, Response, send_file
+from flask import Flask, render_template, jsonify, request, Response, send_file, session, redirect, url_for
 import datetime
 import requests
 import subprocess
@@ -75,6 +75,24 @@ def update_config(args):
 # -----------------
 
 app = Flask(__name__)
+app.secret_key = 'cncncncn_secret_key_2026'  # 用于session加密
+
+# 密码保护配置
+REQUIRED_PASSWORD = 'cncncncn'
+
+def check_auth():
+    """检查是否已登录"""
+    return 'logged_in' in session and session['logged_in'] is True
+
+def login_required(f):
+    """登录验证装饰器"""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not check_auth():
+            return render_template('login.html')
+        return f(*args, **kwargs)
+    return decorated_function
 
 def format_timestamp(milliseconds):
     try:
@@ -276,12 +294,28 @@ def get_transcripts(offset=0, limit=20):
 
 # --- HTML 模板 ---
 
+# =================== 登录认证 ===================
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        if password == REQUIRED_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+        else:
+            return render_template('login.html', error='密码错误')
+    return render_template('login.html')
 
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('login'))
 
 # =================== 声纹管理API转发 ===================
 ASR_SERVER_URL = "http://localhost:5008"
 
 @app.route('/speaker/register', methods=['POST'])
+@login_required
 def proxy_register_speaker():
     """转发声纹注册请求到ASR服务器"""
     try:
@@ -307,6 +341,7 @@ def proxy_register_speaker():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/speaker/list', methods=['GET'])
+@login_required
 def proxy_list_speakers():
     """转发获取说话人列表请求"""
     try:
@@ -316,6 +351,7 @@ def proxy_list_speakers():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/speaker/<speaker_name>', methods=['DELETE'])
+@login_required
 def proxy_delete_speaker(speaker_name):
     """转发删除说话人请求"""
     try:
@@ -325,6 +361,7 @@ def proxy_delete_speaker(speaker_name):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/speaker/audio/<path:filename>', methods=['GET'])
+@login_required
 def proxy_speaker_audio(filename):
     """转发音频文件请求"""
     try:
@@ -336,6 +373,7 @@ def proxy_speaker_audio(filename):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/register_page')
+@login_required
 def proxy_register_page():
     """转发声纹注册页面"""
     try:
@@ -348,6 +386,7 @@ def proxy_register_page():
         return f"<h1>Error loading speaker registration page</h1><p>{str(e)}</p>", 500
 
 @app.route('/baby_cry_page')
+@login_required
 def proxy_baby_cry_page():
     """转发宝宝哭闹分析页面"""
     try:
@@ -361,6 +400,7 @@ def proxy_baby_cry_page():
         return f"<h1>Error loading baby cry page</h1><p>{str(e)}</p>", 500
 
 @app.route('/api/trigger_reprocess', methods=['POST'])
+@login_required
 def proxy_trigger_reprocess():
     try:
         date_param = request.args.get('date', '')
@@ -374,6 +414,7 @@ def proxy_trigger_reprocess():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/stop_reprocess', methods=['POST'])
+@login_required
 def proxy_stop_reprocess():
     try:
         url = f"{ASR_SERVER_URL}/api/stop_reprocess"
@@ -383,6 +424,7 @@ def proxy_stop_reprocess():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/cry_events', methods=['GET'])
+@login_required
 def proxy_cry_events():
     try:
         limit = request.args.get('limit', 100)
@@ -393,6 +435,7 @@ def proxy_cry_events():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/reprocess_logs', methods=['GET'])
+@login_required
 def proxy_reprocess_logs():
     try:
         response = requests.get(f"{ASR_SERVER_URL}/api/reprocess_logs", timeout=5)
@@ -400,11 +443,22 @@ def proxy_reprocess_logs():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/event_audio/<int:event_id>', methods=['GET'])
+@login_required
+def proxy_event_audio(event_id):
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/event_audio/{event_id}", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/status')
+@login_required
 def api_status():
     return jsonify(get_system_status())
 
 @app.route('/api/data')
+@login_required
 def api_data():
     """获取转录数据，支持分页"""
     offset = request.args.get('offset', 0, type=int)
@@ -412,6 +466,7 @@ def api_data():
     return jsonify(get_transcripts(offset=offset, limit=limit))
 
 @app.route('/api/data/range')
+@login_required
 def api_data_range():
     """
     按时间范围查询转录数据
@@ -542,6 +597,7 @@ def api_data_range():
         }), 500
 
 @app.route('/api/emotion-timeline')
+@login_required
 def api_emotion_timeline():
     """获取情感时间线数据"""
     try:
@@ -623,6 +679,7 @@ def api_emotion_timeline():
         }), 500
 
 @app.route('/api/heatmap')
+@login_required
 def api_heatmap():
     """获取对话热力图数据（24小时 x 说话人）"""
     try:
@@ -683,10 +740,12 @@ def api_heatmap():
         }), 500
 
 @app.route('/api/config', methods=['GET'])
+@login_required
 def api_get_config():
     return jsonify(CONFIG)
 
 @app.route('/api/config', methods=['POST'])
+@login_required
 def api_update_config():
     config_data = request.get_json(silent=True)
     if config_data:
@@ -727,6 +786,7 @@ def api_update_config():
 
 
 @app.route('/audio_segments/<path:filepath>')
+@login_required
 def serve_audio_segment(filepath):
     """提供音频片段文件"""
     try:
@@ -748,6 +808,7 @@ def serve_audio_segment(filepath):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/audio/<path:filepath>')
+@login_required
 def serve_original_audio(filepath):
     """提供原始或已处理的录音文件回放"""
     try:
@@ -783,6 +844,7 @@ def serve_original_audio(filepath):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/long_sentences/<path:filename>')
+@login_required
 def serve_long_sentence_audio(filename):
     """提供ASR服务器保存的长句音频文件"""
     try:

@@ -707,6 +707,9 @@
                 <!-- Main Header -->
                 <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl flex justify-between items-center">
                     <div class="flex items-center gap-6">
+                        <button onclick="openPlaylistModal()" class="p-3 rounded-2xl bg-gradient-to-r from-purple-500/20 to-blue-500/20 hover:from-purple-500/30 hover:to-blue-500/30 border border-purple-500/20 hover:border-purple-500/40 text-purple-400 hover:text-purple-300 transition-all active:scale-95" title="播放列表">
+                            <i class="fa-solid fa-list-music"></i>
+                        </button>
                         <div>
                             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                 <i class="fa-solid fa-baby text-yellow-400 mb-1"></i> A轨：宝宝哭声全息分析看板
@@ -970,11 +973,20 @@
                 currentPlaylistIndex++;
                 playNextInPlaylist();
             };
+            currentAudio.onplay = () => {
+                // 播放开始时更新UI
+                if (playlistModalOpen) {
+                    renderPlaylist();
+                }
+            };
             currentAudio.play().catch(e => {
                 console.error("Playback failed:", e);
                 currentPlaylistIndex++;
                 playNextInPlaylist();
             });
+
+            // 打开弹窗并更新内容
+            openPlaylistModal();
         }
 
         function parseFilenameTime(filename) {
@@ -2760,6 +2772,239 @@
             updateIndicator();
         }
     </script>
-</body>
 
+    <!-- 播放列表弹窗 -->
+    <div id="playlist-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-gray-900 rounded-3xl border border-gray-700 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <!-- 弹窗标题 -->
+            <div class="flex items-center justify-between p-5 border-b border-gray-800 bg-gradient-to-r from-purple-900/30 to-blue-900/30">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
+                        <i class="fa-solid fa-list-music text-purple-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-white font-bold text-lg">播放列表</h3>
+                        <p class="text-gray-400 text-xs" id="playlist-status">准备播放</p>
+                    </div>
+                </div>
+                <button onclick="closePlaylistModal()" class="w-10 h-10 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-all flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            
+            <!-- 当前播放信息 -->
+            <div class="p-5 border-b border-gray-800 bg-gray-800/30">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500/30 to-blue-500/30 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-wave-square text-purple-400 text-2xl" id="playlist-visualizer"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white font-semibold truncate" id="current-playing-filename">未选择文件</p>
+                        <p class="text-gray-400 text-sm" id="current-playing-index">第 0 首 / 共 0 首</p>
+                    </div>
+                </div>
+                
+                <!-- 进度条 -->
+                <div class="mb-3">
+                    <div class="flex items-center justify-between text-xs text-gray-400 mb-1">
+                        <span id="current-time">0:00</span>
+                        <span id="total-time">0:00</span>
+                    </div>
+                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden cursor-pointer" onclick="seekTo(event)">
+                        <div id="progress-bar" class="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                </div>
+                
+                <!-- 控制按钮 -->
+                <div class="flex items-center justify-center gap-4">
+                    <button onclick="playPrevious()" class="w-12 h-12 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-all flex items-center justify-center">
+                        <i class="fa-solid fa-backward-step"></i>
+                    </button>
+                    <button onclick="togglePlayPause()" id="play-pause-btn" class="w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white transition-all flex items-center justify-center shadow-lg shadow-purple-500/30">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button onclick="playNext()" class="w-12 h-12 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-all flex items-center justify-center">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 播放列表 -->
+            <div class="flex-1 overflow-y-auto">
+                <div id="playlist-items" class="divide-y divide-gray-800">
+                    <!-- 播放列表项将动态生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 播放列表相关变量
+        let playlistModalOpen = false;
+        let progressUpdateInterval = null;
+
+        // 打开播放列表弹窗
+        function openPlaylistModal() {
+            document.getElementById('playlist-modal').classList.remove('hidden');
+            document.getElementById('playlist-modal').classList.add('flex');
+            playlistModalOpen = true;
+            renderPlaylist();
+            startProgressUpdate();
+        }
+
+        // 关闭播放列表弹窗
+        function closePlaylistModal() {
+            document.getElementById('playlist-modal').classList.add('hidden');
+            document.getElementById('playlist-modal').classList.remove('flex');
+            playlistModalOpen = false;
+            stopProgressUpdate();
+        }
+
+        // 渲染播放列表
+        function renderPlaylist() {
+            const container = document.getElementById('playlist-items');
+            if (!currentPlaylist || currentPlaylist.length === 0) {
+                container.innerHTML = '<div class="p-8 text-center text-gray-500"><i class="fa-solid fa-music-slash text-4xl mb-3"></i><p>暂无播放列表</p></div>';
+                return;
+            }
+
+            let html = '';
+            currentPlaylist.forEach((url, index) => {
+                const filename = url.split('/').pop();
+                const isPlaying = index === currentPlaylistIndex;
+                html += `
+                    <div class="playlist-item p-4 hover:bg-gray-800/50 transition-all cursor-pointer ${isPlaying ? 'bg-purple-500/10' : ''}" onclick="playFromList(${index})">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl ${isPlaying ? 'bg-purple-500/30' : 'bg-gray-700/50'} flex items-center justify-center flex-shrink-0">
+                                ${isPlaying ? '<i class="fa-solid fa-volume-high text-purple-400"></i>' : `<span class="text-gray-400 font-medium">${index + 1}</span>`}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm ${isPlaying ? 'text-purple-400 font-semibold' : 'text-gray-300'} truncate">${filename}</p>
+                            </div>
+                            ${isPlaying ? '<i class="fa-solid fa-bars text-purple-400 animate-pulse"></i>' : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+
+            // 更新当前播放信息
+            updateCurrentPlayingInfo();
+        }
+
+        // 更新当前播放信息
+        function updateCurrentPlayingInfo() {
+            if (!currentPlaylist || currentPlaylist.length === 0) return;
+            
+            const url = currentPlaylist[currentPlaylistIndex];
+            const filename = url.split('/').pop();
+            
+            document.getElementById('current-playing-filename').textContent = filename;
+            document.getElementById('current-playing-index').textContent = `第 ${currentPlaylistIndex + 1} 首 / 共 ${currentPlaylist.length} 首`;
+            document.getElementById('playlist-status').textContent = currentAudio && !currentAudio.paused ? '正在播放' : '已暂停';
+            
+            // 更新播放/暂停按钮图标
+            const btn = document.getElementById('play-pause-btn');
+            const icon = btn.querySelector('i');
+            if (currentAudio && !currentAudio.paused) {
+                icon.className = 'fa-solid fa-pause';
+            } else {
+                icon.className = 'fa-solid fa-play';
+            }
+        }
+
+        // 从列表播放指定歌曲
+        function playFromList(index) {
+            currentPlaylistIndex = index;
+            playNextInPlaylist();
+        }
+
+        // 播放上一曲
+        function playPrevious() {
+            if (currentPlaylistIndex > 0) {
+                currentPlaylistIndex--;
+                playNextInPlaylist();
+            }
+        }
+
+        // 播放下一曲
+        function playNext() {
+            if (currentPlaylistIndex < currentPlaylist.length - 1) {
+                currentPlaylistIndex++;
+                playNextInPlaylist();
+            }
+        }
+
+        // 切换播放/暂停
+        function togglePlayPause() {
+            if (!currentAudio) return;
+            
+            if (currentAudio.paused) {
+                currentAudio.play();
+            } else {
+                currentAudio.pause();
+            }
+            updateCurrentPlayingInfo();
+        }
+
+        // 跳转到指定位置
+        function seekTo(event) {
+            if (!currentAudio) return;
+            
+            const progressBar = event.currentTarget;
+            const rect = progressBar.getBoundingClientRect();
+            const percentage = (event.clientX - rect.left) / rect.width;
+            
+            if (currentAudio.duration) {
+                currentAudio.currentTime = percentage * currentAudio.duration;
+            }
+        }
+
+        // 格式化时间
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // 开始更新进度
+        function startProgressUpdate() {
+            stopProgressUpdate();
+            progressUpdateInterval = setInterval(updateProgress, 100);
+        }
+
+        // 停止更新进度
+        function stopProgressUpdate() {
+            if (progressUpdateInterval) {
+                clearInterval(progressUpdateInterval);
+                progressUpdateInterval = null;
+            }
+        }
+
+        // 更新进度条
+        function updateProgress() {
+            if (!currentAudio) return;
+            
+            const currentTime = currentAudio.currentTime;
+            const duration = currentAudio.duration;
+            
+            document.getElementById('current-time').textContent = formatTime(currentTime);
+            document.getElementById('total-time').textContent = formatTime(duration);
+            
+            if (duration) {
+                const percentage = (currentTime / duration) * 100;
+                document.getElementById('progress-bar').style.width = `${percentage}%`;
+            }
+            
+            // 更新视觉效果
+            const visualizer = document.getElementById('playlist-visualizer');
+            if (!currentAudio.paused) {
+                visualizer.classList.add('animate-pulse');
+            } else {
+                visualizer.classList.remove('animate-pulse');
+            }
+        }
+    </script>
+</body>
 </html>
