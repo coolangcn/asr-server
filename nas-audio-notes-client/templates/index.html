@@ -910,6 +910,9 @@
         }
 
         let currentAudio = null;
+        let currentPlaylist = [];
+        let currentPlaylistIndex = 0;
+
         function playAudio(path) {
             if (!path) return;
             // 如果路径不以 / 或 http 开点，尝试拼接 ASR 服务地址
@@ -917,17 +920,60 @@
             if (!path.startsWith('/') && !path.startsWith('http')) {
                 fullUrl = '/api/audio/' + path;
             }
-            
+
             console.log("Playing audio:", fullUrl);
-            
+
             if (currentAudio) {
                 currentAudio.pause();
             }
-            
+
             currentAudio = new Audio(fullUrl);
             currentAudio.play().catch(e => {
                 console.error("Playback failed:", e);
                 alert("播放失败，请检查文件是否存在: " + fullUrl);
+            });
+        }
+
+        function playEventAudio(eventId) {
+            console.log("Playing event audio for event:", eventId);
+            fetch(`/api/event_audio/${eventId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.audio_urls && data.audio_urls.length > 0) {
+                        currentPlaylist = data.audio_urls;
+                        currentPlaylistIndex = 0;
+                        playNextInPlaylist();
+                    } else {
+                        alert("没有找到上下文音频文件");
+                    }
+                })
+                .catch(e => {
+                    console.error("Failed to fetch event audio:", e);
+                    alert("获取上下文音频失败");
+                });
+        }
+
+        function playNextInPlaylist() {
+            if (currentPlaylistIndex >= currentPlaylist.length) {
+                console.log("Playlist finished");
+                return;
+            }
+            const url = currentPlaylist[currentPlaylistIndex];
+            console.log(`Playing ${currentPlaylistIndex + 1}/${currentPlaylist.length}:`, url);
+
+            if (currentAudio) {
+                currentAudio.pause();
+            }
+
+            currentAudio = new Audio(url);
+            currentAudio.onended = () => {
+                currentPlaylistIndex++;
+                playNextInPlaylist();
+            };
+            currentAudio.play().catch(e => {
+                console.error("Playback failed:", e);
+                currentPlaylistIndex++;
+                playNextInPlaylist();
             });
         }
 
@@ -2200,54 +2246,10 @@
         }
 
         // 切换到声纹管理时加载列表
-        function jumpToChat(time) {
-            if (!time) return;
-            switchTab('chat');
-            
-            // 确保数据已加载
-            if (allItems.length === 0) {
-                loadMore();
-            }
-
-            // 给 UI 切换留出一点缓冲时间
-            setTimeout(() => {
-                const targetDate = new Date(time);
-                const allChatItems = Array.from(document.querySelectorAll('[data-file-time]'));
-                
-                if (allChatItems.length === 0) {
-                    // 如果页面还没有元素，尝试再次等待
-                    setTimeout(() => jumpToChat(time), 1000);
-                    return;
-                }
-                
-                let closestEl = null;
-                let minDiff = Infinity;
-                
-                allChatItems.forEach(el => {
-                    const elTimeStr = el.getAttribute('data-file-time');
-                    const elTime = new Date(elTimeStr);
-                    const diff = Math.abs(elTime.getTime() - targetDate.getTime());
-                    if (diff < minDiff) {
-                        minDiff = diff;
-                        closestEl = el;
-                    }
-                });
-                
-                if (closestEl) {
-                    closestEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // 强力高亮效果
-                    closestEl.style.transition = 'all 0.5s ease-in-out';
-                    closestEl.classList.add('ring-4', 'ring-accent-500', 'bg-accent-500/20', 'rounded-2xl', 'scale-[1.05]', 'z-50', 'relative');
-                    
-                    setTimeout(() => {
-                        closestEl.classList.remove('ring-4', 'ring-accent-500', 'bg-accent-500/20', 'scale-[1.05]');
-                    }, 5000);
-                }
-            }, 500);
-        }
 
         // === Baby Cry Logic ===
         let bcLogInterval = null;
+        let lastLogContent = '';
 
         async function fetchBcLogs() {
             try {
@@ -2258,16 +2260,18 @@
                     const isScrolledToBottom = logEl.scrollHeight - logEl.clientHeight <= logEl.scrollTop + 10;
                     logEl.textContent = result.logs;
                     if (isScrolledToBottom) logEl.scrollTop = logEl.scrollHeight;
-                    
-                    // 自动刷新数据（静默模式）
-                    if (typeof fetchBabyCryEvents === "function") {
-                        fetchBabyCryEvents(true);
-                    }
 
-                    // 如果检测到“分析任务已结束”，自动停止轮询并恢复 UI
+                    // 如果检测到"分析任务已结束"，自动刷新数据
                     if (result.logs.includes("历史音频重分析任务已结束") || result.logs.includes("任务已手动停止")) {
-                        stopReprocess(true); // 内部静默调用，仅重置 UI
+                        // 只在任务结束时刷新一次
+                        if (!lastLogContent.includes("历史音频重分析任务已结束") && !lastLogContent.includes("任务已手动停止")) {
+                            if (typeof fetchBabyCryEvents === "function") {
+                                fetchBabyCryEvents(true);
+                            }
+                        }
                     }
+                    
+                    lastLogContent = result.logs;
                 }
             } catch (e) {
                 console.error("Fetch log error:", e);
@@ -2305,13 +2309,18 @@
             btn.innerHTML = '<i class="fa-solid fa-bolt text-yellow-300 mr-2"></i>定向检索';
             btn.classList.replace('from-gray-600', 'from-blue-600');
             btn.classList.replace('to-gray-600', 'to-indigo-600');
-            
+
             // 恢复停止按钮状态
             stopBtn.disabled = false;
             stopBtn.innerHTML = '<i class="fa-solid fa-stop mr-2"></i>马上停止';
-            
-            // 5秒后自动刷新一次，确保看到最新持久化结果
+
+            // 多次刷新，确保图片生成完成后也能获取到
+            // 2秒后立即刷新一次（获取分析结果）
             setTimeout(() => fetchBabyCryEvents(), 2000);
+            // 之后每隔15秒刷新一次，共刷新3次（确保图片生成完成）
+            setTimeout(() => fetchBabyCryEvents(), 17000);
+            setTimeout(() => fetchBabyCryEvents(), 32000);
+            setTimeout(() => fetchBabyCryEvents(), 47000);
         }
 
         function setQuickDate(type) {
@@ -2601,7 +2610,7 @@
                                             <i class="fa-solid fa-check-double text-emerald-500"></i>
                                         </h4>
                                         <div class="space-y-2">
-                                            ${(item.details || []).map(detail => {
+                                            ${(item.details || []).filter(detail => !detail.includes('结论:')).map(detail => {
                                                 const isPass = detail.includes('✅ PASS');
                                                 const modelName = detail.split(':')[0].trim();
                                                 const scoreText = detail.split(':')[1]?.replace('✅ PASS', '').replace('❌ FAIL', '').trim() || '';
@@ -2644,10 +2653,13 @@
                                         </div>
                                         播放现场原声
                                     </button>` : ''}
-                                    
-                                    <button onclick="jumpToChat('${fileTime}')" class="bg-gray-800/80 hover:bg-white/10 px-4 py-3 rounded-2xl border border-white/5 text-gray-400 hover:text-white transition-all active:scale-95" title="定位到时光轴">
-                                        <i class="fa-solid fa-clock-rotate-left"></i>
-                                    </button>
+                                    ${item.id ?
+                                    `<button onclick="playEventAudio(${item.id})" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 transition-all text-purple-400 font-bold text-xs group/btn active:scale-95 shadow-lg">
+                                        <div class="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
+                                            <i class="fa-solid fa-layer-group text-[10px]"></i>
+                                        </div>
+                                        播放上下文语音
+                                    </button>` : ''}
                                 </div>
                             </div>
                         </div>

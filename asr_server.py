@@ -485,8 +485,8 @@ def call_gemini_audio_api(audio_paths, prompt):
                 "parts": parts_list
             }],
             "generationConfig": {
-                "temperature": 0.3, 
-                "maxOutputTokens": 4096,
+                "temperature": 0.3,
+                "maxOutputTokens": 32768,  # 32K token，足以容纳思考+输出
                 "responseModalities": ["TEXT"]
             }
         }
@@ -1364,81 +1364,108 @@ def api_analyze_cry():
             if response_text:
                 # 移除可能的 markdown 代码块标记
                 cleaned_text = response_text.strip()
+                
+                # 移除 markdown 代码块标记
                 if cleaned_text.startswith('```json'):
                     cleaned_text = cleaned_text[7:]
-                if cleaned_text.startswith('```'):
+                elif cleaned_text.startswith('```'):
                     cleaned_text = cleaned_text[3:]
                 if cleaned_text.endswith('```'):
                     cleaned_text = cleaned_text[:-3]
                 cleaned_text = cleaned_text.strip()
                 
-                # 尝试找到完整的 JSON 对象
-                json_match = _re.search(r'\{.*\}', cleaned_text, _re.DOTALL)
-                if json_match:
+                # 尝试解析 JSON（可能不完整）
+                category = "未知"
+                reason = "未知"
+                advice = "无"
+                parse_success = False
+                
+                # 方法1：直接尝试解析整个清理后的文本
+                try:
+                    result = _json.loads(cleaned_text)
+                    category = result.get("category", "未知")
+                    reason = result.get("reason", "未知")
+                    advice = result.get("advice", "无")
+                    parse_success = True
+                    logger_a.info(f"👶 [analyze_cry API] 直接解析成功")
+                except Exception as e1:
+                    # 方法2：尝试找到 JSON 对象
                     try:
-                        result = _json.loads(json_match.group())
-                        category = result.get("category", "未知")
-                        reason = result.get("reason", "未知")
-                        advice = result.get("advice", "无")
-                        logger_a.info(f"👶 [analyze_cry API] 解析成功 - category: {category}, reason: {reason[:50]}...")
+                        # 找到第一个 { 和最后一个 }
+                        start_idx = cleaned_text.find('{')
+                        end_idx = cleaned_text.rfind('}') + 1
+                        if start_idx != -1 and end_idx > start_idx:
+                            json_str = cleaned_text[start_idx:end_idx]
+                            result = _json.loads(json_str)
+                            category = result.get("category", "未知")
+                            reason = result.get("reason", "未知")
+                            advice = result.get("advice", "无")
+                            parse_success = True
+                            logger_a.info(f"👶 [analyze_cry API] 提取解析成功")
+                    except Exception as e2:
+                        logger_a.warning(f"👶 [analyze_cry API] JSON 解析失败: {e1}, {e2}")
+                        logger_a.info(f"👶 [analyze_cry API] 原始响应前200字符: {cleaned_text[:200]}")
+                
+                if parse_success:
+                    logger_a.info(f"👶 [analyze_cry API] 解析结果 - category: {category}, reason: {reason[:50]}...")
                     
-                        from db_manager import save_cry_analysis
-                        # 保存分析结果（包含文生图提示和声纹详情）
-                        save_cry_analysis(
-                            filename, start_ms / 1000.0, end_ms / 1000.0, 
-                            reason, advice, 
-                            reason_category=category, 
-                            event_files=valid_paths,
-                            confidence=cry_confidence,
-                            details=cry_details
-                        )
-                        
-                        # 异步生成插图（不阻塞返回）
-                        def generate_illustration():
-                            try:
-                                logger_a.info(f"🎨 [插图生成] ================ 开始生成场景插图 ================")
-                                logger_a.info(f"🎨 [插图生成] 文件名: {filename}")
-                                logger_a.info(f"🎨 [插图生成] 原因描述: {reason}")
-                                
-                                # 根据原因的详细描述生成场景插图
-                                # 宝宝信息：2023 年 8 月 9 日生日，现在约 2 岁半
-                                image_prompt = (
-                                    f"Create a warm, comforting children's book style cartoon illustration. "
-                                    f"Main character: A cute 2.5-year-old Chinese toddler (born August 2023). "
-                                    f"Scene description: {reason}. "
-                                    f"Show a realistic daily life scenario of this toddler in this situation. "
-                                    f"Style: soft pastel colors, gentle lighting, cute cartoon, emotional and expressive, "
-                                    f"picture book illustration, heartwarming atmosphere, detailed background."
-                                )
-                                
-                                logger_a.info(f"🎨 [插图生成] Image Prompt 已构建，准备调用 API...")
-                                image_url = call_gemini_image_api(image_prompt)
-                                
-                                if image_url:
-                                    logger_a.info(f"🎨 [插图生成] API 返回成功，正在更新数据库...")
-                                    from db_manager import update_cry_event_image
-                                    update_result = update_cry_event_image(filename, image_url)
-                                    logger_a.info(f"🎨 [插图生成] 数据库更新结果: {update_result}")
-                                    logger_a.info(f"🎨 [插图生成] ================ 插图生成完成 ================")
-                                else:
-                                    logger_a.warning(f"🎨 [插图生成] API 返回空，未生成插图")
-                                    logger_a.info(f"🎨 [插图生成] ================ 插图生成失败 ================")
-                            except Exception as e:
-                                logger_a.error(f"🎨 [插图生成] 异常: {e}")
-                                import traceback
-                                logger_a.error(f"🎨 [插图生成] 异常堆栈: {traceback.format_exc()}")
-                                logger_a.info(f"🎨 [插图生成] ================ 插图生成异常 ================")
-                        
-                        logger_a.info(f"🎨 [插图生成] 启动后台线程生成插图...")
-                        threading.Thread(target=generate_illustration, daemon=True).start()
-                        
-                        logger_a.info(f"👶 [analyze_cry API] 分析完成：[{category}] {reason[:50]}...")
-                        return jsonify({"category": category, "reason": reason, "advice": advice})
-                    except Exception as e:
-                        logger_a.error(f"👶 [analyze_cry API] JSON 解析异常: {e}")
-                        logger_a.error(f"👶 [analyze_cry API] 原始响应: {response_text}")
+                    from db_manager import save_cry_analysis
+                    # 保存分析结果（包含文生图提示和声纹详情）
+                    save_cry_analysis(
+                        filename, start_ms / 1000.0, end_ms / 1000.0,
+                        reason, advice,
+                        reason_category=category,
+                        event_files=valid_paths,
+                        audio_path=audio_path,
+                        confidence=cry_confidence,
+                        details=cry_details
+                    )
+
+                    # 异步生成插图（不阻塞返回）
+                    def generate_illustration():
+                        try:
+                            logger_a.info(f"🎨 [插图生成] ================ 开始生成场景插图 ================")
+                            logger_a.info(f"🎨 [插图生成] 文件名: {filename}")
+                            logger_a.info(f"🎨 [插图生成] 原因描述: {reason}")
+
+                            # 根据原因的详细描述生成场景插图
+                            # 宝宝信息：2023 年 8 月 9 日生日，现在约 2 岁半
+                            image_prompt = (
+                                f"创作一幅温暖治愈的儿童绘本风格卡通插图。"
+                                f"主角：一个可爱的2岁半中国宝宝（2023年8月出生）。"
+                                f"场景描述：{reason}。"
+                                f"展现这个宝宝在此情境下的真实日常生活场景。"
+                                f"风格：柔和的粉彩色调、柔和的灯光、可爱的卡通形象、情感丰富、表情生动，"
+                                f"绘本插画风格、温馨氛围、细节丰富的背景。"
+                                f"重要：请在画面中添加中文文字（如对话框、场景标注等），使用中文。"
+                            )
+
+                            logger_a.info(f"🎨 [插图生成] Image Prompt 已构建，准备调用 API...")
+                            image_url = call_gemini_image_api(image_prompt)
+
+                            if image_url:
+                                logger_a.info(f"🎨 [插图生成] API 返回成功，正在更新数据库...")
+                                from db_manager import update_cry_event_image
+                                update_result = update_cry_event_image(filename, image_url)
+                                logger_a.info(f"🎨 [插图生成] 数据库更新结果: {update_result}")
+                                logger_a.info(f"🎨 [插图生成] ================ 插图生成完成 ================")
+                            else:
+                                logger_a.warning(f"🎨 [插图生成] API 返回空，未生成插图")
+                                logger_a.info(f"🎨 [插图生成] ================ 插图生成失败 ================")
+                        except Exception as e:
+                            logger_a.error(f"🎨 [插图生成] 异常: {e}")
+                            import traceback
+                            logger_a.error(f"🎨 [插图生成] 异常堆栈: {traceback.format_exc()}")
+                            logger_a.info(f"🎨 [插图生成] ================ 插图生成异常 ================")
+
+                    logger_a.info(f"🎨 [插图生成] 启动后台线程生成插图...")
+                    threading.Thread(target=generate_illustration, daemon=True).start()
+
+                    logger_a.info(f"👶 [analyze_cry API] 分析完成：[{category}] {reason[:50]}...")
+                    return jsonify({"category": category, "reason": reason, "advice": advice})
                 else:
-                    logger_a.error(f"👶 [analyze_cry API] 无法解析 JSON 响应: {response_text}")
+                    logger_a.error(f"👶 [analyze_cry API] 无法解析 JSON 响应")
+                    logger_a.info(f"👶 [analyze_cry API] 原始响应: {response_text[:500]}")
             else:
                 logger_a.error(f"👶 [analyze_cry API] Gemini 未返回响应")
             return jsonify({"reason": None, "advice": None, "message": "Gemini 未返回有效分析结果"}), 200
@@ -2519,6 +2546,44 @@ def serve_audio_segment(filename):
     except Exception as e:
         logger_sys.error(f"获取音频片段失败: {str(e)}")
         return jsonify({"error": "Audio segment not found"}), 404
+
+
+@app.route('/api/audio/<filename>')
+def serve_audio_file(filename):
+    """提供原始音频文件服务（如 TermuxAudioRecording_xxx.m4a）"""
+    try:
+        # 清理路径（移除开头的 /）
+        clean_filename = filename.lstrip('/')
+        return send_from_directory(FileMonitorConfig.SOURCE_DIR, clean_filename)
+    except Exception as e:
+        logger_sys.error(f"获取音频文件失败: {str(e)}")
+        return jsonify({"error": "Audio file not found"}), 404
+
+
+@app.route('/api/event_audio/<int:event_id>')
+def serve_event_audio(event_id):
+    """获取事件的完整上下文音频文件列表"""
+    try:
+        from db_manager import get_baby_cry_event_by_id
+        event = get_baby_cry_event_by_id(event_id)
+        if not event:
+            return jsonify({"error": "Event not found"}), 404
+
+        event_files = event.get('event_files_json', [])
+        audio_urls = []
+        for f in event_files:
+            if f.startswith('/'):
+                f = f.lstrip('/')
+            audio_urls.append(f"/api/audio/{f}")
+
+        return jsonify({
+            "event_id": event_id,
+            "audio_count": len(audio_urls),
+            "audio_urls": audio_urls
+        })
+    except Exception as e:
+        logger_sys.error(f"获取事件音频列表失败: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/logs/stream")

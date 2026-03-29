@@ -385,6 +385,46 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
         if conn:
             return_connection(conn)
 
+def get_baby_cry_event_by_id(event_id: int) -> Dict:
+    """根据 ID 获取单个宝宝哭声分析事件"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return None
+
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url FROM baby_cry_events WHERE id = %s",
+            (event_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        return {
+            'id': row[0],
+            'filename': row[1],
+            'created_at': row[2].isoformat() if row[2] else None,
+            'recording_time': row[3].isoformat() if row[3] else None,
+            'start_time': float(row[4]) if row[4] else 0,
+            'end_time': float(row[5]) if row[5] else 0,
+            'reason': row[6],
+            'advice': row[7],
+            'reason_category': row[8],
+            'event_files_json': row[9],
+            'audio_path': row[10],
+            'confidence': float(row[11]) if row[11] else 0,
+            'details_json': row[12],
+            'illustration_url': row[13]
+        }
+    except Exception as e:
+        print(f"[DB Error] 查询哭声记录失败: {e}")
+        return None
+    finally:
+        if conn:
+            return_connection(conn)
+
 def save_cry_analysis(filename: str, start_time: float, end_time: float, reason: str, advice: str, 
                       reason_category: str = None, event_files: list = None, audio_path = None, confidence: float = 0.0, details: list = None, illustration_url: str = None) -> bool:
     """保存宝宝哭声分析结果"""
