@@ -104,6 +104,26 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_recording_time ON transcriptions(recording_time DESC NULLS LAST);
         ''')
         
+        # 创建宝宝哭声分析进度表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS babycry_analysis_progress (
+            id SERIAL PRIMARY KEY,
+            session_id VARCHAR(64) NOT NULL UNIQUE,
+            all_dates JSONB NOT NULL,
+            loaded_count INTEGER NOT NULL DEFAULT 0,
+            has_more BOOLEAN NOT NULL DEFAULT TRUE,
+            current_date VARCHAR(10),
+            dates_state JSONB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        ''')
+        
+        # 创建索引
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_babycry_session ON babycry_analysis_progress(session_id);
+        ''')
+        
         conn.commit()
         cursor.close()
         print("[DB] 数据库表结构初始化成功")
@@ -201,6 +221,132 @@ def get_transcripts(offset: int = 0, limit: int = 100, db_url: str = None) -> Li
     except Exception as e:
         print(f"[DB Error] 查询失败: {e}")
         return []
+    finally:
+        if conn:
+            return_connection(conn)
+
+def save_analysis_progress(session_id: str, all_dates: list, loaded_count: int, 
+                           has_more: bool, current_date: str, dates_state: dict) -> bool:
+    """
+    保存宝宝哭声分析进度到数据库
+    
+    Args:
+        session_id: 会话ID
+        all_dates: 所有日期列表
+        loaded_count: 已加载数量
+        has_more: 是否还有更多
+        current_date: 当前处理日期
+        dates_state: 各日期状态字典
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            print("[DB Error] 无法获取数据库连接")
+            return False
+            
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO babycry_analysis_progress 
+            (session_id, all_dates, loaded_count, has_more, current_date, dates_state, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (session_id) 
+            DO UPDATE SET 
+                all_dates = EXCLUDED.all_dates,
+                loaded_count = EXCLUDED.loaded_count,
+                has_more = EXCLUDED.has_more,
+                current_date = EXCLUDED.current_date,
+                dates_state = EXCLUDED.dates_state,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (session_id, json.dumps(all_dates), loaded_count, has_more, 
+              current_date, json.dumps(dates_state)))
+        
+        conn.commit()
+        cursor.close()
+        return True
+    except Exception as e:
+        print(f"[DB Error] 保存分析进度失败: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            return_connection(conn)
+
+def load_analysis_progress(session_id: str) -> dict:
+    """
+    从数据库加载宝宝哭声分析进度
+    
+    Args:
+        session_id: 会话ID
+        
+    Returns:
+        进度字典，如果没有找到则返回None
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            print("[DB Error] 无法获取数据库连接")
+            return None
+            
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT all_dates, loaded_count, has_more, current_date, dates_state 
+            FROM babycry_analysis_progress 
+            WHERE session_id = %s
+        ''', (session_id,))
+        
+        row = cursor.fetchone()
+        cursor.close()
+        
+        if row:
+            return {
+                'all_dates': row[0],
+                'loaded_count': row[1],
+                'has_more': row[2],
+                'current_date': row[3],
+                'dates_state': row[4]
+            }
+        return None
+    except Exception as e:
+        print(f"[DB Error] 加载分析进度失败: {e}")
+        return None
+    finally:
+        if conn:
+            return_connection(conn)
+
+def clear_analysis_progress(session_id: str) -> bool:
+    """
+    清除数据库中的分析进度
+    
+    Args:
+        session_id: 会话ID
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            print("[DB Error] 无法获取数据库连接")
+            return False
+            
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            DELETE FROM babycry_analysis_progress 
+            WHERE session_id = %s
+        ''', (session_id,))
+        
+        conn.commit()
+        cursor.close()
+        return True
+    except Exception as e:
+        print(f"[DB Error] 清除分析进度失败: {e}")
+        if conn:
+            conn.rollback()
+        return False
     finally:
         if conn:
             return_connection(conn)

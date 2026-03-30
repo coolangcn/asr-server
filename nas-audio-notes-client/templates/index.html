@@ -706,23 +706,18 @@
             <div class="w-full h-full flex flex-col">
                 <!-- Main Header -->
                 <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl flex justify-between items-center">
-                    <div class="flex items-center gap-6">
-                        <button onclick="openPlaylistModal()" class="p-3 rounded-2xl bg-gradient-to-r from-purple-500/20 to-blue-500/20 hover:from-purple-500/30 hover:to-blue-500/30 border border-purple-500/20 hover:border-purple-500/40 text-purple-400 hover:text-purple-300 transition-all active:scale-95" title="播放列表">
-                            <i class="fa-solid fa-list-music"></i>
-                        </button>
-                        <div>
-                            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                <i class="fa-solid fa-baby text-yellow-400 mb-1"></i> A轨：宝宝哭声全息分析看板
-                                <button onclick="fetchBabyCryEvents()" class="ml-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-500 hover:text-white transition-all active:rotate-180" title="刷新记录">
-                                    <i class="fa-solid fa-rotate-right text-xs"></i>
-                                </button>
-                            </h2>
-                            <div class="mt-2 text-[10px] text-gray-400 flex items-center gap-3">
-                                <span id="triggerStatus" class="font-medium text-blue-400"></span>
-                                <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse">
-                                    <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
-                                </span>
-                            </div>
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-baby text-yellow-400 mb-1"></i>
+                            <button onclick="fetchBabyCryEvents()" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-500 hover:text-white transition-all active:rotate-180" title="刷新记录">
+                                <i class="fa-solid fa-rotate-right text-xs"></i>
+                            </button>
+                        </h2>
+                        <div class="text-[10px] text-gray-400 flex flex-col items-start gap-2">
+                            <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse">
+                                <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
+                            </span>
+                            <span id="triggerStatus" class="text-xs font-bold text-purple-400 px-2 py-1 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-fade-in"></span>
                         </div>
                     </div>
                     <!-- Beautiful Glassmorphism Range Picker -->
@@ -766,13 +761,41 @@
                         <button id="stopReprocessBtn" onclick="stopReprocess()" class="ml-2 px-4 py-2.5 bg-gray-800/80 hover:bg-red-600/90 text-gray-300 hover:text-white active:scale-95 rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg border border-gray-600/50 hover:border-red-500 hover:shadow-red-500/30 relative overflow-hidden flex items-center whitespace-nowrap group" title="随时停止分析">
                             <i class="fa-solid fa-stop mr-2 group-hover:scale-110 transition-transform text-red-400 group-hover:text-white"></i>马上停止
                         </button>
+                        
+                        <!-- Playlist Button -->
+                        <button onclick="openPlaylistModal()" class="ml-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 active:scale-95 text-white rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50 border border-purple-500/30 relative overflow-hidden flex items-center whitespace-nowrap group" title="播放列表">
+                            <i class="fa-solid fa-list-music mr-2 group-hover:scale-110 transition-transform"></i>播放列表
+                        </button>
                     </div>
                 </header>
 
                 <!-- Main Content: Left (Logs) + Right (Results) Layout -->
                 <div class="flex-1 flex overflow-hidden relative" style="height: calc(100vh - 220px);">
-                    <!-- Left: Log Panel (420px fixed width) -->
-                    <div id="logContainer" class="flex flex-col w-[420px] border-r border-gray-800/50 bg-gray-900/50 transition-all duration-300 hover:w-[630px] hover:shadow-[0_0_40px_rgba(99,102,241,0.35)] hover:border-primary-500/60 hover:z-20">
+                    <!-- Left: Log Panel -->
+                    <div id="logContainer" class="flex flex-col border-r border-gray-800/50 bg-gray-900/50" style="width: 420px; min-width: 300px; max-width: 70%;">
+                        <!-- 日期队列展示区域 -->
+                        <div class="p-4 bg-gray-900/80 border-b border-gray-700/50">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-calendar-check text-purple-400"></i>
+                                    <span class="text-sm font-bold text-white">处理队列</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-[10px]">
+                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>处理中</span>
+                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-gray-500"></span>待处理</span>
+                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500"></span>已完成</span>
+                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span>错误</span>
+                                </div>
+                            </div>
+                            <div id="dateQueue" class="flex flex-wrap gap-2">
+                                <!-- 日期方块将动态生成 -->
+                                <div class="text-xs text-gray-500 py-2">等待分析任务...</div>
+                            </div>
+                            <button id="loadMoreBtn" onclick="loadMoreDates()" class="hidden w-full mt-3 py-2 px-4 bg-gradient-to-r from-purple-600/20 to-pink-600/20 hover:from-purple-600/30 hover:to-pink-600/30 border border-purple-500/30 rounded-xl text-purple-400 text-xs font-medium transition-all duration-200 active:scale-95">
+                                <i class="fa-solid fa-plus mr-2"></i>加载更多日期
+                            </button>
+                        </div>
+                        <!-- 日志标题 -->
                         <div class="p-3 bg-gray-900/80 border-b border-gray-700/50 flex items-center gap-2">
                             <div class="w-2.5 h-2.5 rounded-full bg-red-500"></div>
                             <div class="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
@@ -782,10 +805,15 @@
                         <div class="flex-1 bg-[#020617] p-4 overflow-y-auto" id="processLogs" style="color: #10b981; font-family: 'Fira Code', monospace; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;">等待分析任务启动...</div>
                     </div>
                     
+                    <!-- Resizable Divider -->
+                    <div id="resizeDivider" class="w-1 bg-gray-700/50 hover:bg-primary-500/50 cursor-col-resize transition-colors relative z-30" title="拖动调整宽度">
+                        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-1 h-8 bg-gray-500/50 rounded-full"></div>
+                    </div>
+                    
                     <!-- Right: Results Grid (adaptive width) -->
                     <div class="flex-1 flex overflow-hidden relative">
                         <div class="flex-1 flex flex-col overflow-hidden">
-                            <div class="w-full h-full flex flex-col bg-gray-900/30 relative z-0 transition-all duration-300 hover:shadow-[0_0_35px_rgba(99,102,241,0.25)] hover:border-primary-500/50 hover:z-10">
+                            <div class="w-full h-full flex flex-col bg-gray-900/30 relative z-0">
                                 <div id="babycry-content" class="flex-1 p-6 pb-20 overflow-y-auto w-full">
                                     <div class="text-center text-gray-500 mt-20"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i><br>加载数据中...</div>
                                 </div>
@@ -2262,6 +2290,252 @@
         // === Baby Cry Logic ===
         let bcLogInterval = null;
         let lastLogContent = '';
+        
+        // 可拖动分割线逻辑
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+        
+        function initResizableDivider() {
+            const divider = document.getElementById('resizeDivider');
+            const logContainer = document.getElementById('logContainer');
+            
+            if (!divider || !logContainer) return;
+            
+            // 从 localStorage 加载保存的宽度
+            const savedWidth = localStorage.getItem('babyCryLogPanelWidth');
+            if (savedWidth) {
+                logContainer.style.width = savedWidth + 'px';
+            }
+            
+            divider.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                startX = e.clientX;
+                startWidth = logContainer.offsetWidth;
+                
+                // 添加拖动时的样式
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                divider.classList.add('bg-primary-500');
+                
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                const diff = e.clientX - startX;
+                const newWidth = Math.max(300, Math.min(startWidth + diff, window.innerWidth * 0.7));
+                
+                logContainer.style.width = newWidth + 'px';
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    divider.classList.remove('bg-primary-500');
+                    
+                    // 保存宽度到 localStorage
+                    localStorage.setItem('babyCryLogPanelWidth', logContainer.offsetWidth);
+                }
+            });
+        }
+        
+        // 页面加载时初始化拖动功能
+        document.addEventListener('DOMContentLoaded', initResizableDivider);
+        
+        // 日期队列状态管理
+        const dateQueueState = {
+            dates: new Map(), // { dateStr: { status: 'pending'|'processing'|'completed'|'error', fileCount: 0 } }
+            currentDate: null,
+            orderedDates: [],
+            batchSize: 7, // 每批加载 7 天
+            loadedCount: 0, // 已加载的日期数量
+            hasMore: true, // 是否还有更多日期
+            allDates: [] // 所有找到的日期（用于分页）
+        };
+
+        function updateDateQueueDisplay() {
+            const queueEl = document.getElementById('dateQueue');
+            if (!queueEl) return;
+
+            if (dateQueueState.orderedDates.length === 0) {
+                queueEl.innerHTML = '<div class="text-xs text-gray-500 py-2">等待分析任务...</div>';
+                return;
+            }
+
+            let html = '';
+            dateQueueState.orderedDates.forEach(dateStr => {
+                const state = dateQueueState.dates.get(dateStr);
+                let bgClass, textClass, borderClass, icon, statusText;
+                
+                switch(state.status) {
+                    case 'processing':
+                        bgClass = 'bg-yellow-500/20';
+                        textClass = 'text-yellow-400';
+                        borderClass = 'border-yellow-500/40';
+                        icon = 'fa-circle-notch fa-spin';
+                        statusText = '处理中';
+                        break;
+                    case 'completed':
+                        bgClass = 'bg-green-500/20';
+                        textClass = 'text-green-400';
+                        borderClass = 'border-green-500/40';
+                        icon = 'fa-check-circle';
+                        statusText = '已完成';
+                        break;
+                    case 'error':
+                        bgClass = 'bg-red-500/20';
+                        textClass = 'text-red-400';
+                        borderClass = 'border-red-500/40';
+                        icon = 'fa-exclamation-circle';
+                        statusText = '错误';
+                        break;
+                    default:
+                        bgClass = 'bg-gray-500/20';
+                        textClass = 'text-gray-400';
+                        borderClass = 'border-gray-500/40';
+                        icon = 'fa-clock';
+                        statusText = '待处理';
+                }
+
+                html += `
+                    <div class="flex flex-col items-center gap-1 p-2 rounded-xl ${bgClass} border ${borderClass} min-w-[70px] transition-all hover:scale-105">
+                        <i class="fa-solid ${icon} ${textClass} text-sm"></i>
+                        <span class="text-[10px] ${textClass} font-mono">${dateStr}</span>
+                        <span class="text-[9px] ${textClass}">${state.fileCount}个</span>
+                    </div>
+                `;
+            });
+            queueEl.innerHTML = html;
+            
+            // 更新"加载更多"按钮显示
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            if (loadMoreBtn) {
+                if (dateQueueState.hasMore) {
+                    loadMoreBtn.classList.remove('hidden');
+                    const loaded = dateQueueState.loadedCount;
+                    const total = dateQueueState.allDates.length;
+                    loadMoreBtn.innerHTML = `<i class="fa-solid fa-plus mr-2"></i>加载更多日期（已加载 ${loaded}/${total} 天）`;
+                } else {
+                    loadMoreBtn.classList.add('hidden');
+                }
+            }
+        }
+
+        async function parseDateQueueFromLogs(logs) {
+            const lines = logs.split('\n');
+            const datePattern = /(\d{4}-\d{2}-\d{2})/;
+            
+            // 第一遍：找到所有提到的日期
+            const foundDates = new Set();
+            lines.forEach(line => {
+                const match = line.match(datePattern);
+                if (match) {
+                    foundDates.add(match[1]);
+                }
+            });
+            
+            // 转换为数组并排序
+            const sortedDates = Array.from(foundDates).sort();
+            
+            // 保存所有日期到状态
+            dateQueueState.allDates = sortedDates;
+            
+            // 检查是否有保存的进度（异步加载）
+            const savedProgress = await loadBatchProgress();
+            let startIndex = 0;
+            
+            if (savedProgress && savedProgress.allDates && savedProgress.allDates.length > 0) {
+                // 如果有保存的进度，恢复它
+                dateQueueState.dates = new Map();
+                dateQueueState.orderedDates = [];
+                dateQueueState.loadedCount = savedProgress.loadedCount || 0;
+                
+                // 恢复保存的日期状态
+                savedProgress.allDates.forEach(dateStr => {
+                    const state = savedProgress.dates[dateStr];
+                    if (state) {
+                        dateQueueState.dates.set(dateStr, state);
+                        dateQueueState.orderedDates.push(dateStr);
+                    }
+                });
+                
+                // 找到当前处理位置
+                const currentIndex = sortedDates.indexOf(dateQueueState.currentDate);
+                if (currentIndex !== -1) {
+                    startIndex = currentIndex;
+                }
+            } else {
+                // 新任务，从零开始
+                dateQueueState.dates = new Map();
+                dateQueueState.orderedDates = [];
+                dateQueueState.loadedCount = 0;
+                startIndex = 0;
+            }
+            
+            // 批量加载日期（按需加载）
+            const endIndex = Math.min(startIndex + dateQueueState.batchSize, sortedDates.length);
+            
+            for (let i = startIndex; i < endIndex; i++) {
+                const dateStr = sortedDates[i];
+                if (!dateQueueState.dates.has(dateStr)) {
+                    dateQueueState.dates.set(dateStr, {
+                        status: 'pending',
+                        fileCount: 0
+                    });
+                    dateQueueState.orderedDates.push(dateStr);
+                }
+            }
+            
+            dateQueueState.loadedCount = endIndex;
+            dateQueueState.hasMore = endIndex < sortedDates.length;
+            
+            // 保存进度（异步）
+            await saveBatchProgress();
+            
+            // 第二遍：分析处理进度
+            let processingDate = null;
+            lines.forEach(line => {
+                // 查找正在扫描的日期
+                const scanMatch = line.match(/正在扫描容器：(\d{4}-\d{2}-\d{2})/);
+                if (scanMatch) {
+                    processingDate = scanMatch[1];
+                    if (dateQueueState.dates.has(processingDate)) {
+                        dateQueueState.dates.get(processingDate).status = 'processing';
+                        dateQueueState.currentDate = processingDate;
+                    }
+                }
+
+                // 查找已发现的文件数
+                const fileMatch = line.match(/已发现 (\d+) 个待处理项/);
+                if (fileMatch && processingDate && dateQueueState.dates.has(processingDate)) {
+                    dateQueueState.dates.get(processingDate).fileCount = parseInt(fileMatch[1]);
+                }
+
+                // 查找完成信号
+                if (line.includes('✅ 历史音频重新分析完成')) {
+                    if (processingDate && dateQueueState.dates.has(processingDate)) {
+                        dateQueueState.dates.get(processingDate).status = 'completed';
+                    }
+                }
+            });
+
+            // 标记已完成的日期（当前处理日期之前的都标记为完成）
+            if (dateQueueState.currentDate) {
+                const currentIndex = dateQueueState.orderedDates.indexOf(dateQueueState.currentDate);
+                for (let i = 0; i < currentIndex; i++) {
+                    const dateStr = dateQueueState.orderedDates[i];
+                    if (dateQueueState.dates.get(dateStr).status === 'pending') {
+                        dateQueueState.dates.get(dateStr).status = 'completed';
+                    }
+                }
+            }
+
+            updateDateQueueDisplay();
+        }
 
         async function fetchBcLogs() {
             try {
@@ -2272,6 +2546,9 @@
                     const isScrolledToBottom = logEl.scrollHeight - logEl.clientHeight <= logEl.scrollTop + 10;
                     logEl.textContent = result.logs;
                     if (isScrolledToBottom) logEl.scrollTop = logEl.scrollHeight;
+
+                    // 更新日期队列（异步）
+                    await parseDateQueueFromLogs(result.logs);
 
                     // 如果检测到"分析任务已结束"，自动刷新数据
                     if (result.logs.includes("历史音频重分析任务已结束") || result.logs.includes("任务已手动停止")) {
@@ -2359,8 +2636,192 @@
             const day = String(targetDate.getDate()).padStart(2, '0');
             dateInput.value = `${year}-${month}-${day}`;
             
+            // 清空状态标签（清除"已切换到全量分析模式"）
+            clearStatusLabel();
+            
             // 保存时间范围
             saveLastTimeRange();
+        }
+
+        function clearStatusLabel() {
+            // 清空状态标签（清除"已切换到全量分析模式"）
+            const statusLabel = document.getElementById('triggerStatus');
+            if (statusLabel) {
+                statusLabel.innerHTML = '';
+            }
+        }
+
+        // 生成会话ID（用于跨浏览器识别）
+        function getSessionId() {
+            let sessionId = localStorage.getItem('babyCrySessionId');
+            if (!sessionId) {
+                sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('babyCrySessionId', sessionId);
+            }
+            return sessionId;
+        }
+
+        async function saveBatchProgress() {
+            // 准备进度数据
+            const datesState = {};
+            dateQueueState.dates.forEach((state, date) => {
+                datesState[date] = state;
+            });
+            
+            const progress = {
+                session_id: getSessionId(),
+                all_dates: dateQueueState.allDates,
+                loaded_count: dateQueueState.loadedCount,
+                has_more: dateQueueState.hasMore,
+                current_date: dateQueueState.currentDate,
+                dates_state: datesState
+            };
+            
+            // 同时保存到 localStorage（作为备份）
+            localStorage.setItem('babyCryBatchProgress', JSON.stringify({
+                allDates: dateQueueState.allDates,
+                loadedCount: dateQueueState.loadedCount,
+                hasMore: dateQueueState.hasMore,
+                currentDate: dateQueueState.currentDate,
+                dates: datesState
+            }));
+            
+            // 保存到数据库（主要存储）
+            try {
+                const response = await fetch('/api/babycry/progress', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(progress)
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    console.log('[DB] 进度已保存到数据库');
+                }
+            } catch (e) {
+                console.error('[DB] 保存进度到数据库失败:', e);
+            }
+        }
+
+        async function loadBatchProgress() {
+            const sessionId = getSessionId();
+            
+            // 优先从数据库加载
+            try {
+                const response = await fetch(`/api/babycry/progress?session_id=${sessionId}`);
+                const result = await response.json();
+                
+                if (result.status === 'success' && result.data) {
+                    console.log('[DB] 从数据库加载进度成功');
+                    return {
+                        allDates: result.data.all_dates,
+                        loadedCount: result.data.loaded_count,
+                        hasMore: result.data.has_more,
+                        currentDate: result.data.current_date,
+                        dates: result.data.dates_state
+                    };
+                }
+            } catch (e) {
+                console.error('[DB] 从数据库加载进度失败:', e);
+            }
+            
+            // 数据库加载失败，尝试从 localStorage 加载（降级方案）
+            const saved = localStorage.getItem('babyCryBatchProgress');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    console.log('[LocalStorage] 从本地存储加载进度');
+                    return data;
+                } catch (e) {
+                    console.error('解析本地进度失败:', e);
+                }
+            }
+            
+            return null;
+        }
+
+        async function clearBatchProgress() {
+            const sessionId = getSessionId();
+            
+            // 清除本地存储
+            localStorage.removeItem('babyCryBatchProgress');
+            dateQueueState.allDates = [];
+            dateQueueState.loadedCount = 0;
+            dateQueueState.hasMore = true;
+            dateQueueState.dates = new Map();
+            dateQueueState.orderedDates = [];
+            dateQueueState.currentDate = null;
+            
+            // 清除数据库中的进度
+            try {
+                const response = await fetch(`/api/babycry/progress?session_id=${sessionId}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    console.log('[DB] 数据库进度已清除');
+                }
+            } catch (e) {
+                console.error('[DB] 清除数据库进度失败:', e);
+            }
+        }
+
+        async function loadMoreDates() {
+            // 加载更多日期
+            if (!dateQueueState.hasMore) return;
+            
+            const startIndex = dateQueueState.loadedCount;
+            const endIndex = Math.min(startIndex + dateQueueState.batchSize, dateQueueState.allDates.length);
+            
+            for (let i = startIndex; i < endIndex; i++) {
+                const dateStr = dateQueueState.allDates[i];
+                if (!dateQueueState.dates.has(dateStr)) {
+                    dateQueueState.dates.set(dateStr, {
+                        status: 'pending',
+                        fileCount: 0
+                    });
+                    dateQueueState.orderedDates.push(dateStr);
+                }
+            }
+            
+            dateQueueState.loadedCount = endIndex;
+            dateQueueState.hasMore = endIndex < dateQueueState.allDates.length;
+            
+            // 保存进度（异步）
+            await saveBatchProgress();
+            
+            // 更新显示
+            updateDateQueueDisplay();
+            
+            // 更新状态标签
+            const statusLabel = document.getElementById('triggerStatus');
+            if (statusLabel) {
+                const loaded = dateQueueState.loadedCount;
+                const total = dateQueueState.allDates.length;
+                statusLabel.innerHTML = `<span class="text-purple-400 font-bold"><i class="fa-solid fa-clock mr-2"></i>已加载 ${loaded}/${total} 天</span>`;
+            }
+        }
+
+        function clearAllFilters() {
+            // 清空所有筛选条件
+            const dateInput = document.getElementById('reprocessDate');
+            const startTimeInput = document.getElementById('reprocessStartTime');
+            const endTimeInput = document.getElementById('reprocessEndTime');
+            
+            if (dateInput) dateInput.value = '';
+            if (startTimeInput) startTimeInput.value = '';
+            if (endTimeInput) endTimeInput.value = '';
+            
+            // 清除 localStorage 中的保存记录
+            localStorage.removeItem('babyCryLastTimeRange');
+            
+            // 清除批次进度
+            clearBatchProgress();
+            
+            // 显示全量分析状态
+            const statusLabel = document.getElementById('triggerStatus');
+            if (statusLabel) {
+                statusLabel.innerHTML = '<span class="text-purple-400 font-bold"><i class="fa-solid fa-check mr-2"></i>已切换到全量分析模式</span>';
+            }
         }
 
         function saveLastTimeRange() {
@@ -2394,27 +2855,48 @@
             const startTimeInput = document.getElementById('reprocessStartTime');
             const endTimeInput = document.getElementById('reprocessEndTime');
             
+            const handleTimeRangeChange = () => {
+                clearStatusLabel();
+                saveLastTimeRange();
+            };
+            
             if (dateInput) {
-                dateInput.addEventListener('change', saveLastTimeRange);
+                dateInput.addEventListener('change', handleTimeRangeChange);
             }
             if (startTimeInput) {
-                startTimeInput.addEventListener('change', saveLastTimeRange);
+                startTimeInput.addEventListener('change', handleTimeRangeChange);
             }
             if (endTimeInput) {
-                endTimeInput.addEventListener('change', saveLastTimeRange);
+                endTimeInput.addEventListener('change', handleTimeRangeChange);
             }
             
             timeRangeListenersSetup = true;
         }
 
         async function triggerReprocess() {
+            // 重置日期队列状态
+            dateQueueState.dates.clear();
+            dateQueueState.orderedDates = [];
+            dateQueueState.currentDate = null;
+            updateDateQueueDisplay();
+            
+            // 验证时间范围有效性
+            const startTimeInput = document.getElementById('reprocessStartTime').value;
+            const endTimeInput = document.getElementById('reprocessEndTime').value;
+            
+            if (startTimeInput && endTimeInput && startTimeInput > endTimeInput) {
+                const statusLabel = document.getElementById('triggerStatus');
+                statusLabel.innerHTML = '<span class="text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation mr-2"></i>开始时间不能晚于结束时间！</span>';
+                return;
+            }
+            
             // 保存当前时间范围
             saveLastTimeRange();
             
             const btn = document.getElementById('reprocessBtn');
             const dateInput = document.getElementById('reprocessDate').value;
-            let startTime = document.getElementById('reprocessStartTime').value;
-            let endTime = document.getElementById('reprocessEndTime').value;
+            let startTime = startTimeInput;
+            let endTime = endTimeInput;
             
             // 将选择的 HH:MM 格式转换为文件名中的 HH-MM 格式
             if (startTime) startTime = startTime.replace(/:/g, '-');

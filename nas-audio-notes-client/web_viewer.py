@@ -12,7 +12,7 @@ import datetime
 import requests
 import subprocess
 import argparse
-from db_manager import init_pool, get_transcripts as db_get_transcripts
+from db_manager import init_pool, get_transcripts as db_get_transcripts, save_analysis_progress, load_analysis_progress, clear_analysis_progress
 
 # --- 配置 ---
 # 获取脚本自身所在的目录
@@ -452,6 +452,65 @@ def proxy_event_audio(event_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/babycry/progress', methods=['POST'])
+@login_required
+def api_save_babycry_progress():
+    """保存宝宝哭声分析进度"""
+    try:
+        data = request.json
+        session_id = data.get('session_id', 'default')
+        all_dates = data.get('all_dates', [])
+        loaded_count = data.get('loaded_count', 0)
+        has_more = data.get('has_more', True)
+        current_date = data.get('current_date')
+        dates_state = data.get('dates_state', {})
+        
+        success = save_analysis_progress(
+            session_id=session_id,
+            all_dates=all_dates,
+            loaded_count=loaded_count,
+            has_more=has_more,
+            current_date=current_date,
+            dates_state=dates_state
+        )
+        
+        if success:
+            return jsonify({"status": "success", "message": "进度已保存"})
+        else:
+            return jsonify({"status": "error", "message": "保存失败"}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/babycry/progress', methods=['GET'])
+@login_required
+def api_load_babycry_progress():
+    """加载宝宝哭声分析进度"""
+    try:
+        session_id = request.args.get('session_id', 'default')
+        progress = load_analysis_progress(session_id)
+        
+        if progress:
+            return jsonify({"status": "success", "data": progress})
+        else:
+            return jsonify({"status": "success", "data": None, "message": "没有找到保存的进度"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/babycry/progress', methods=['DELETE'])
+@login_required
+def api_clear_babycry_progress():
+    """清除宝宝哭声分析进度"""
+    try:
+        session_id = request.args.get('session_id', 'default')
+        success = clear_analysis_progress(session_id)
+        
+        if success:
+            return jsonify({"status": "success", "message": "进度已清除"})
+        else:
+            return jsonify({"status": "error", "message": "清除失败"}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route('/api/status')
 @login_required
 def api_status():
@@ -880,6 +939,8 @@ def serve_long_sentence_audio(filename):
 
 @app.route('/')
 def index():
+    if not check_auth():
+        return redirect(url_for('login'))
     return render_template('index.html')
 
 if __name__ == "__main__":
