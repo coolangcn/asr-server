@@ -12,7 +12,7 @@ import datetime
 import requests
 import subprocess
 import argparse
-from db_manager import init_pool, get_transcripts as db_get_transcripts, save_analysis_progress, load_analysis_progress, clear_analysis_progress
+from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, save_analysis_progress, load_analysis_progress, clear_analysis_progress, fix_recording_time
 
 # --- 配置 ---
 # 获取脚本自身所在的目录
@@ -462,7 +462,7 @@ def api_save_babycry_progress():
         all_dates = data.get('all_dates', [])
         loaded_count = data.get('loaded_count', 0)
         has_more = data.get('has_more', True)
-        current_date = data.get('current_date')
+        processing_date = data.get('current_date')
         dates_state = data.get('dates_state', {})
         
         success = save_analysis_progress(
@@ -470,7 +470,7 @@ def api_save_babycry_progress():
             all_dates=all_dates,
             loaded_count=loaded_count,
             has_more=has_more,
-            current_date=current_date,
+            current_date=processing_date,
             dates_state=dates_state
         )
         
@@ -490,7 +490,15 @@ def api_load_babycry_progress():
         progress = load_analysis_progress(session_id)
         
         if progress:
-            return jsonify({"status": "success", "data": progress})
+            # 转换字段名以兼容前端
+            data = {
+                'all_dates': progress['all_dates'],
+                'loaded_count': progress['loaded_count'],
+                'has_more': progress['has_more'],
+                'current_date': progress['processing_date'],  # 前端期望 current_date
+                'dates_state': progress['dates_state']
+            }
+            return jsonify({"status": "success", "data": data})
         else:
             return jsonify({"status": "success", "data": None, "message": "没有找到保存的进度"})
     except Exception as e:
@@ -508,6 +516,20 @@ def api_clear_babycry_progress():
             return jsonify({"status": "success", "message": "进度已清除"})
         else:
             return jsonify({"status": "error", "message": "清除失败"}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/fix_recording_time', methods=['POST'])
+@login_required
+def api_fix_recording_time():
+    """修复数据库中 recording_time 为 NULL 的记录"""
+    try:
+        fixed_count = fix_recording_time()
+        return jsonify({
+            "status": "success",
+            "message": f"已修复 {fixed_count} 条记录",
+            "fixed_count": fixed_count
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -950,6 +972,10 @@ if __name__ == "__main__":
         if not init_pool(CONFIG["DATABASE_URL"]):
             logger_web.error("数据库连接池初始化失败，程序退出")
             sys.exit(1)
+        
+        # 初始化数据库表结构
+        logger_web.info("初始化数据库表结构...")
+        init_db()
         
         args = parse_args()
         update_config(args)

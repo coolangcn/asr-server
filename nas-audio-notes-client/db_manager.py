@@ -44,7 +44,10 @@ def return_connection(conn):
 def parse_recording_time(filename: str) -> Optional[datetime]:
     """
     从文件名中解析录音时间
-    支持格式: TermuxAudioRecording_2025-11-23_12-56-54.m4a
+    支持格式: 
+        - TermuxAudioRecording_2025-11-23_12-56-54.m4a
+        - 2026-03-30_09-29-10.m4a
+        - recording-20251123-125654.m4a
     
     Args:
         filename: 文件名
@@ -52,19 +55,24 @@ def parse_recording_time(filename: str) -> Optional[datetime]:
     Returns:
         datetime对象，如果无法解析则返回None
     """
-    # 匹配格式: YYYY-MM-DD_HH-MM-SS
-    pattern = r'(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})'
-    match = re.search(pattern, filename)
+    # 尝试多种格式
+    patterns = [
+        # 格式1: YYYY-MM-DD_HH-MM-SS (如 2026-03-30_09-29-10)
+        (r'(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})', '%Y-%m-%d_%H-%M-%S'),
+        # 格式2: YYYYMMDD-HHMMSS (如 recording-20251123-125654)
+        (r'(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})', '%Y%m%d-%H%M%S'),
+    ]
     
-    if match:
-        year, month, day, hour, minute, second = map(int, match.groups())
-        try:
-            return datetime(year, month, day, hour, minute, second)
-        except ValueError:
-            # 日期值无效（如月份13）
-            return None
+    for pattern, _ in patterns:
+        match = re.search(pattern, filename)
+        if match:
+            year, month, day, hour, minute, second = map(int, match.groups())
+            try:
+                return datetime(year, month, day, hour, minute, second)
+            except ValueError:
+                continue
     
-    # 如果无法解析，返回None（调用者应使用当前时间）
+    # 如果无法解析，返回None
     return None
 
 
@@ -112,7 +120,7 @@ def init_db():
             all_dates JSONB NOT NULL,
             loaded_count INTEGER NOT NULL DEFAULT 0,
             has_more BOOLEAN NOT NULL DEFAULT TRUE,
-            current_date VARCHAR(10),
+            processing_date VARCHAR(10),
             dates_state JSONB NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -225,6 +233,56 @@ def get_transcripts(offset: int = 0, limit: int = 100, db_url: str = None) -> Li
         if conn:
             return_connection(conn)
 
+def fix_recording_time() -> int:
+    """
+    修复现有数据中 recording_time 为 NULL 的记录
+    从文件名中解析时间并更新数据库
+    
+    Returns:
+        修复的记录数量
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            print("[DB Error] 无法获取数据库连接")
+            return 0
+            
+        cursor = conn.cursor()
+        
+        # 获取所有 recording_time 为 NULL 的记录
+        cursor.execute(
+            "SELECT id, filename FROM transcriptions WHERE recording_time IS NULL"
+        )
+        rows = cursor.fetchall()
+        
+        fixed_count = 0
+        for row in rows:
+            id, filename = row
+            recording_time = parse_recording_time(filename)
+            
+            if recording_time:
+                cursor.execute(
+                    "UPDATE transcriptions SET recording_time = %s WHERE id = %s",
+                    (recording_time, id)
+                )
+                fixed_count += 1
+                print(f"[DB Fix] 修复记录 {id}: {filename} -> {recording_time}")
+        
+        conn.commit()
+        cursor.close()
+        
+        print(f"[DB Fix] 共修复 {fixed_count} 条记录")
+        return fixed_count
+    except Exception as e:
+        print(f"[DB Error] 修复 recording_time 失败: {e}")
+        if conn:
+            conn.rollback()
+        return 0
+    finally:
+        if conn:
+            return_connection(conn)
+
 def save_analysis_progress(session_id: str, all_dates: list, loaded_count: int, 
                            has_more: bool, current_date: str, dates_state: dict) -> bool:
     """
@@ -249,14 +307,14 @@ def save_analysis_progress(session_id: str, all_dates: list, loaded_count: int,
         
         cursor.execute('''
             INSERT INTO babycry_analysis_progress 
-            (session_id, all_dates, loaded_count, has_more, current_date, dates_state, updated_at)
+            (session_id, all_dates, loaded_count, has_more, processing_date, dates_state, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (session_id) 
             DO UPDATE SET 
                 all_dates = EXCLUDED.all_dates,
                 loaded_count = EXCLUDED.loaded_count,
                 has_more = EXCLUDED.has_more,
-                current_date = EXCLUDED.current_date,
+                processing_date = EXCLUDED.processing_date,
                 dates_state = EXCLUDED.dates_state,
                 updated_at = CURRENT_TIMESTAMP
         ''', (session_id, json.dumps(all_dates), loaded_count, has_more, 
@@ -294,7 +352,7 @@ def load_analysis_progress(session_id: str) -> dict:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT all_dates, loaded_count, has_more, current_date, dates_state 
+            SELECT all_dates, loaded_count, has_more, processing_date, dates_state 
             FROM babycry_analysis_progress 
             WHERE session_id = %s
         ''', (session_id,))
@@ -307,7 +365,7 @@ def load_analysis_progress(session_id: str) -> dict:
                 'all_dates': row[0],
                 'loaded_count': row[1],
                 'has_more': row[2],
-                'current_date': row[3],
+                'processing_date': row[3],
                 'dates_state': row[4]
             }
         return None

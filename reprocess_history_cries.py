@@ -163,6 +163,16 @@ if __name__ == "__main__":
     log_detail(f"   - 合并阈值：{CRY_MERGE_GAP_SEC}秒 ({CRY_MERGE_GAP_SEC//60}分钟)", 'info')
     log_detail(f"   - 上下文扩展：前后各 {CRY_CONTEXT_EACH_SIDE} 个文件", 'info')
     log_detail(f"{'='*80}\n", 'info')
+    
+    # 强调当前处理日期
+    if filter_date:
+        log_detail(f"📅 【当前处理日期】{filter_date}", 'info')
+        log_detail(f"   └─ 该日期的所有音频文件将被扫描和分析", 'info')
+        log_detail(f"   └─ 旧记录将在分析前自动清理", 'info')
+    else:
+        log_detail(f"📅 【当前处理模式】全量扫描模式", 'info')
+        log_detail(f"   └─ 将扫描目标目录下的所有日期文件夹", 'info')
+        log_detail(f"   └─ 按日期顺序逐一处理", 'info')
 
     if filter_date or start_time_arg or end_time_arg:
         log_detail(
@@ -211,8 +221,17 @@ if __name__ == "__main__":
                     log_detail(f"[*] 未发现日期目录 '{filter_date}'，将仅扫描根目录文件。", 'info')
                     dirs[:] = []
             
-            # 进度实时反馈
-            log_detail(f"    - 正在扫描容器：{os.path.basename(root) or 'root'} (已发现 {len(all_files)} 个待处理项)", 'info')
+            # 进度实时反馈 - 强调当前处理的日期目录
+            current_container = os.path.basename(root) or 'root'
+            if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
+                # 这是一个日期目录，高亮显示
+                log_detail(f"", 'info')
+                log_detail(f"    📅 【当前处理日期】{current_container}", 'info')
+                log_detail(f"       已扫描文件数: {len(all_files):,} 个", 'info')
+                log_detail(f"       目标文件数:   {len(target_files):,} 个", 'info')
+                log_detail(f"       扫描进度:     正在遍历音频文件...", 'info')
+            else:
+                log_detail(f"    - 正在扫描容器：{current_container} (已发现 {len(all_files)} 个待处理项)", 'info')
             
             for file in files:
                 if file.startswith('.'): continue
@@ -259,7 +278,7 @@ if __name__ == "__main__":
     if filter_date:
         log_detail(f"📅 已选择日期: {filter_date}，将在分析开始后删除旧记录", 'info')
 
-    log_detail(f"\n找到 {len(files_to_process)} 个文件进行哭声识别，{len(all_files)} 个文件用于上下文扩展...", 'info')
+    log_detail(f"\n找到 {len(files_to_process)} 个文件进行哭声识别（扫描范围内共 {len(all_files)} 个音频文件，哭声事件将从中选取上下文）...", 'info')
 
     # =====================================================================
     # 阶段一：全量转录，识别哭声文件（不触发 Gemini 分析）
@@ -267,15 +286,72 @@ if __name__ == "__main__":
     log_detail(f"\n{'='*60}", 'info')
     log_detail(f"📡 阶段一：逐文件转录，识别哭声片段（共 {len(files_to_process)} 个）", 'info')
     log_detail(f"{'='*60}", 'info')
+    
+    # 显示当前处理的日期范围 - 更详细的日期信息
+    if files_to_process:
+        first_file = os.path.basename(files_to_process[0])
+        last_file = os.path.basename(files_to_process[-1])
+        first_date = parse_file_datetime(first_file)
+        last_date = parse_file_datetime(last_file)
+        
+        log_detail(f"", 'info')
+        log_detail(f"📅 【当前处理日期详细信息】", 'info')
+        log_detail(f"{'─'*60}", 'info')
+        
+        if first_date and last_date:
+            day_span = (last_date - first_date).days + 1
+            log_detail(f"   � 日期范围: {first_date.strftime('%Y-%m-%d %H:%M')} → {last_date.strftime('%Y-%m-%d %H:%M')}", 'info')
+            log_detail(f"   � 时间跨度: {day_span} 天", 'info')
+            log_detail(f"   ⏰ 起始时间: {first_date.strftime('%H:%M:%S')}", 'info')
+            log_detail(f"   ⏰ 结束时间: {last_date.strftime('%H:%M:%S')}", 'info')
+        
+        log_detail(f"   � 首个文件: {first_file}", 'info')
+        log_detail(f"   � 末个文件: {last_file}", 'info')
+        log_detail(f"   📈 文件总数: {len(files_to_process)} 个", 'info')
+        
+        # 如果是按日期过滤，显示当前日期
+        if filter_date:
+            log_detail(f"   🎯 指定日期: {filter_date}", 'info')
+            log_detail(f"   📝 处理状态: 准备开始哭声识别...", 'info')
+        
+        log_detail(f"{'─'*60}", 'info')
+    log_detail(f"{'='*60}", 'info')
 
     cry_file_paths = []   # 有哭声的文件路径列表（有序）
     success_count = 0
     skip_count = 0
     error_count = 0
 
+    current_processing_date = None
+    date_file_count = {}  # 统计每个日期的文件数
+    date_processed_count = {}  # 统计每个日期已处理的文件数
+
+    # 先统计每个日期的文件数量
+    for filepath in files_to_process:
+        filename = os.path.basename(filepath)
+        file_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        if file_date_match:
+            file_date = file_date_match.group(1)
+            date_file_count[file_date] = date_file_count.get(file_date, 0) + 1
+
     for idx, filepath in enumerate(files_to_process, 1):
         filename = os.path.basename(filepath)
-        
+
+        # 提取当前文件的日期并显示
+        file_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        if file_date_match:
+            file_date = file_date_match.group(1)
+            date_processed_count[file_date] = date_processed_count.get(file_date, 0) + 1
+            if file_date != current_processing_date:
+                current_processing_date = file_date
+                log_detail(f"", 'info')
+                log_detail(f"    📅 【正在处理日期】{file_date} (该日期共 {date_file_count.get(file_date, 0)} 个文件)", 'info')
+            # 显示该日期内的进度
+            date_progress = date_processed_count[file_date]
+            date_total = date_file_count.get(file_date, 0)
+            if idx % 10 == 0 or date_progress == date_total:  # 每10个文件或完成时显示
+                log_detail(f"       该日期进度: {date_progress}/{date_total} ({date_progress*100//date_total}%)", 'info')
+
         # 【断电续传/跳过逻辑】
         # 如果指定了具体的日期或时间范围，视为定向重分析，不再跳过已处理文件
         is_targeted = bool(filter_date or start_time_arg or end_time_arg)
@@ -330,12 +406,16 @@ if __name__ == "__main__":
         time.sleep(1)
 
     log_detail(f"\n{'='*60}", 'info')
-    log_detail(f"📊 阶段一统计:", 'info')
-    log_detail(f"   - 总文件数：{len(files_to_process)}", 'info')
-    log_detail(f"   - 成功处理：{success_count}", 'info')
-    log_detail(f"   - 跳过文件：{skip_count}", 'info')
-    log_detail(f"   - 处理错误：{error_count}", 'info')
-    log_detail(f"   - 检出哭声文件：{len(cry_file_paths)}", 'info')
+    log_detail(f"📊 阶段一统计 (日期: {filter_date or current_processing_date or '全部'}):", 'info')
+    log_detail(f"{'─'*60}", 'info')
+    log_detail(f"   📁 总文件数：     {len(files_to_process):>6}", 'info')
+    log_detail(f"   ✅ 成功处理：     {success_count:>6}", 'info')
+    log_detail(f"   ⏭️  跳过文件：     {skip_count:>6}", 'info')
+    log_detail(f"   ❌ 处理错误：     {error_count:>6}", 'info')
+    log_detail(f"   🍼 检出哭声文件： {len(cry_file_paths):>6}", 'info')
+    log_detail(f"{'─'*60}", 'info')
+    if filter_date:
+        log_detail(f"   ✅ 日期 {filter_date} 阶段一完成 (哭声识别)", 'info')
     log_detail(f"{'='*60}\n", 'info')
 
     if not cry_file_paths:
@@ -363,9 +443,15 @@ if __name__ == "__main__":
     os.makedirs(events_base_dir, exist_ok=True)
 
     log_detail(f"\n{'='*60}", 'info')
-    log_detail(f"🧠 阶段二：合并结果 → {len(cry_file_paths)} 个哭声文件 → {len(events)} 个独立事件", 'info')
-    log_detail(f"   事件文件夹根目录：{events_base_dir}", 'info')
-    log_detail(f"   合并阈值：{CRY_MERGE_GAP_SEC//60} 分钟，上下文各扩展 {CRY_CONTEXT_EACH_SIDE} 个文件", 'info')
+    log_detail(f"🧠 阶段二：哭声事件深度分析", 'info')
+    log_detail(f"{'─'*60}", 'info')
+    log_detail(f"   📅 处理日期: {filter_date or '全部日期'}", 'info')
+    log_detail(f"   🍼 哭声文件: {len(cry_file_paths)} 个", 'info')
+    log_detail(f"   🔔 独立事件: {len(events)} 个", 'info')
+    log_detail(f"   📁 事件目录: {events_base_dir}", 'info')
+    log_detail(f"   ⏱️  合并阈值: {CRY_MERGE_GAP_SEC//60} 分钟", 'info')
+    log_detail(f"   📎 上下文扩展: 前后各 {CRY_CONTEXT_EACH_SIDE} 个文件", 'info')
+    log_detail(f"{'─'*60}", 'info')
     log_detail(f"{'='*60}", 'info')
 
     for idx, event_files in enumerate(events, 1):
@@ -440,8 +526,14 @@ if __name__ == "__main__":
         time.sleep(2)
 
     log_detail(f"\n{'='*60}", 'info')
-    log_detail(f"✅ 历史音频重新分析完成！", 'info')
-    log_detail(f"   事件文件夹已保存至：{events_base_dir}", 'info')
-    log_detail(f"   共处理 {len(events)} 个独立事件", 'info')
+    if filter_date:
+        log_detail(f"✅ 日期 {filter_date} 全部处理完成！", 'info')
+    else:
+        log_detail(f"✅ 历史音频重新分析完成！", 'info')
+    log_detail(f"{'─'*60}", 'info')
+    log_detail(f"   📅 处理日期: {filter_date or '全部日期'}", 'info')
+    log_detail(f"   📁 事件文件夹: {events_base_dir}", 'info')
+    log_detail(f"   🔔 独立事件数: {len(events)} 个", 'info')
+    log_detail(f"{'─'*60}", 'info')
     log_detail(f"{'='*60}", 'info')
     log_detail(f"\n请在上方切换到【宝宝分析】标签页查看自动刷新的记录。", 'info')

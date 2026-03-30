@@ -955,6 +955,37 @@
             });
         }
 
+        // 提取简单时间（HH:MM）
+        function getSimpleTime(item) {
+            // 优先使用 recording_time
+            let timeStr = item.recording_time;
+            
+            // 如果没有 recording_time，尝试 created_at
+            if (!timeStr) {
+                timeStr = item.created_at;
+            }
+            
+            if (!timeStr) return '';
+            
+            // 如果是 ISO 格式（2026-03-30T09:29:10），提取时间部分
+            if (timeStr.includes('T')) {
+                return timeStr.split('T')[1].substring(0, 5); // 返回 HH:MM
+            }
+            
+            // 尝试解析为日期
+            const date = new Date(timeStr);
+            if (!isNaN(date.getTime())) {
+                return date.toLocaleTimeString('zh-CN', {
+                    timeZone: 'Asia/Shanghai',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+            }
+            
+            return '';
+        }
+
         let currentAudio = null;
         let currentPlaylist = [];
         let currentPlaylistIndex = 0;
@@ -1113,7 +1144,7 @@
                             </div>
                             <div>
                                 <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
+                                <span class="text-xs text-gray-500">${getSimpleTime(item)}</span>
                             </div>
                         </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
@@ -1196,7 +1227,7 @@
                         <div class="flex items-center gap-2 mb-4 px-4">
                             <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
                             <span class="text-xs font-mono text-gray-500">${item.filename.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 30)}</span>
-                            <span class="text-xs text-gray-600 ml-auto">${item.time_simple || formatTime(fileTime)}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${getSimpleTime(item)}</span>
                         </div>
                     `;
 
@@ -1223,7 +1254,7 @@
                                 ${showAvatar ? `
                                 <div class="flex items-baseline gap-2 mb-1">
                                     <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
-                                    <span class="text-[10px] text-gray-600">${item.time_simple || formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
+                                    <span class="text-[10px] text-gray-600">${getSimpleTime(item)}</span>
                                 </div>
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
@@ -1311,7 +1342,7 @@
                             </div>
                             <div>
                                 <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
+                                <span class="text-xs text-gray-500">${getSimpleTime(item)}</span>
                             </div>
                         </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
@@ -1383,7 +1414,7 @@
                         <div class="flex items-center gap-2 mb-4 px-4">
                             <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
                             <span class="text-xs font-mono text-gray-500">${item.filename.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 30)}</span>
-                            <span class="text-xs text-gray-600 ml-auto">${item.time_simple || formatTime(fileTime)}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${getSimpleTime(item)}</span>
                         </div>
                     `;
 
@@ -1407,7 +1438,7 @@
                                 ${showAvatar ? `
                                 <div class="flex items-baseline gap-2 mb-1">
                                     <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
-                                    <span class="text-[10px] text-gray-600">${item.time_simple || formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
+                                    <span class="text-[10px] text-gray-600">${getSimpleTime(item)}</span>
                                 </div>
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
@@ -2549,28 +2580,34 @@
         }
 
         async function parseDateQueueFromLogs(logs) {
-            const lines = logs.split('\n');
-            const datePattern = /(\d{4}-\d{2}-\d{2})/;
-            
-            // 第一遍：找到所有提到的日期
-            const foundDates = new Set();
-            lines.forEach(line => {
-                const match = line.match(datePattern);
-                if (match) {
-                    foundDates.add(match[1]);
-                }
-            });
-            
-            // 转换为数组并按日期排序（升序，最旧的在前）
-            const sortedDates = Array.from(foundDates).sort((a, b) => {
-                return new Date(a) - new Date(b);
-            });
-            
-            // 保存所有日期到状态
-            dateQueueState.allDates = sortedDates;
-            
-            // 检查是否有保存的进度（异步加载）
+            // 先检查是否有保存的进度
             const savedProgress = await loadBatchProgress();
+            
+            // 如果有保存的进度，直接使用保存的 all_dates，不再扫描日志
+            if (savedProgress && savedProgress.allDates && savedProgress.allDates.length > 0) {
+                console.log('[续传] 使用数据库保存的日期列表:', savedProgress.allDates);
+                dateQueueState.allDates = savedProgress.allDates;
+            } else {
+                // 新任务：从日志扫描日期
+                const lines = logs.split('\n');
+                const datePattern = /(\d{4}-\d{2}-\d{2})/;
+                
+                const foundDates = new Set();
+                lines.forEach(line => {
+                    const match = line.match(datePattern);
+                    if (match) {
+                        foundDates.add(match[1]);
+                    }
+                });
+                
+                // 转换为数组并按日期排序（升序，最旧的在前）
+                const sortedDates = Array.from(foundDates).sort((a, b) => {
+                    return new Date(a) - new Date(b);
+                });
+                
+                dateQueueState.allDates = sortedDates;
+                console.log('[新任务] 从日志扫描到的日期列表:', sortedDates);
+            }
             
             // 重置显示列表（保留所有已加载的日期）
             dateQueueState.dates = new Map();
@@ -2587,21 +2624,38 @@
             }
             
             // 确保不超过总日期数
-            targetLoadedCount = Math.min(targetLoadedCount, sortedDates.length);
+            targetLoadedCount = Math.min(targetLoadedCount, dateQueueState.allDates.length);
             
             // 加载目标数量的日期
             for (let i = 0; i < targetLoadedCount; i++) {
-                const dateStr = sortedDates[i];
+                const dateStr = dateQueueState.allDates[i];
                 const savedState = savedProgress && savedProgress.dates && savedProgress.dates[dateStr];
-                dateQueueState.dates.set(dateStr, savedState || {
-                    status: 'pending',
-                    fileCount: 0
-                });
+                
+                if (savedState) {
+                    // 续传：已完成的保持完成状态，处理中的重置为待处理（需要通过日志重新确定）
+                    if (savedState.status === 'completed') {
+                        dateQueueState.dates.set(dateStr, {
+                            status: 'completed',
+                            fileCount: savedState.fileCount || 0
+                        });
+                    } else {
+                        // processing 或 pending 都重置为 pending，等待日志分析
+                        dateQueueState.dates.set(dateStr, {
+                            status: 'pending',
+                            fileCount: savedState.fileCount || 0
+                        });
+                    }
+                } else {
+                    dateQueueState.dates.set(dateStr, {
+                        status: 'pending',
+                        fileCount: 0
+                    });
+                }
                 dateQueueState.orderedDates.push(dateStr);
             }
             
             dateQueueState.loadedCount = targetLoadedCount;
-            dateQueueState.hasMore = targetLoadedCount < sortedDates.length;
+            dateQueueState.hasMore = targetLoadedCount < dateQueueState.allDates.length;
             
             // 保存进度（异步）
             await saveBatchProgress();
@@ -2609,8 +2663,8 @@
             // 第二遍：分析处理进度
             let processingDate = null;
             lines.forEach(line => {
-                // 查找正在扫描的日期
-                const scanMatch = line.match(/正在扫描容器：(\d{4}-\d{2}-\d{2})/);
+                // 查找正在扫描的日期（新格式：📅 【当前处理日期】2024-01-15）
+                const scanMatch = line.match(/【当前处理日期】(\d{4}-\d{2}-\d{2})/);
                 if (scanMatch) {
                     processingDate = scanMatch[1];
                     if (dateQueueState.dates.has(processingDate)) {
@@ -2619,16 +2673,31 @@
                     }
                 }
 
-                // 查找已发现的文件数
-                const fileMatch = line.match(/已发现 (\d+) 个待处理项/);
+                // 查找该日期的文件数（新格式：该日期共 523 个文件）
+                const fileMatch = line.match(/该日期共 (\d+) 个文件/);
                 if (fileMatch && processingDate && dateQueueState.dates.has(processingDate)) {
                     dateQueueState.dates.get(processingDate).fileCount = parseInt(fileMatch[1]);
                 }
 
-                // 查找完成信号
-                if (line.includes('✅ 历史音频重新分析完成')) {
-                    if (processingDate && dateQueueState.dates.has(processingDate)) {
-                        dateQueueState.dates.get(processingDate).status = 'completed';
+                // 查找日期完成信号（新格式：✅ 日期 2024-01-15 全部处理完成！）
+                const completedMatch = line.match(/✅ 日期 (\d{4}-\d{2}-\d{2}) 全部处理完成/);
+                if (completedMatch) {
+                    const completedDate = completedMatch[1];
+                    if (dateQueueState.dates.has(completedDate)) {
+                        dateQueueState.dates.get(completedDate).status = 'completed';
+                    }
+                }
+
+                // 查找阶段一完成但没有哭声的情况（也算完成）
+                const stage1CompletedMatch = line.match(/✅ 日期 (\d{4}-\d{2}-\d{2}) 阶段一完成/);
+                if (stage1CompletedMatch) {
+                    const completedDate = stage1CompletedMatch[1];
+                    if (dateQueueState.dates.has(completedDate)) {
+                        // 检查是否已经有哭声文件在处理，如果没有则标记为完成
+                        const hasCryProcessing = lines.some(l => l.includes('阶段二') && l.includes(completedDate));
+                        if (!hasCryProcessing) {
+                            dateQueueState.dates.get(completedDate).status = 'completed';
+                        }
                     }
                 }
             });
