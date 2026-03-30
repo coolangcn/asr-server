@@ -2580,18 +2580,43 @@
         }
 
         async function parseDateQueueFromLogs(logs) {
+            // 从文件系统扫描最新日期列表
+            let fsDates = [];
+            try {
+                const response = await fetch('/api/scan_dates');
+                const result = await response.json();
+                if (result.status === 'success' && result.dates) {
+                    fsDates = result.dates;
+                    console.log('[文件系统扫描] 获取到', fsDates.length, '个日期');
+                }
+            } catch (e) {
+                console.error('[文件系统扫描] 失败:', e);
+            }
+
             // 先检查是否有保存的进度
             const savedProgress = await loadBatchProgress();
-            
-            // 如果有保存的进度，直接使用保存的 all_dates，不再扫描日志
+
             if (savedProgress && savedProgress.allDates && savedProgress.allDates.length > 0) {
-                console.log('[续传] 使用数据库保存的日期列表:', savedProgress.allDates);
-                dateQueueState.allDates = savedProgress.allDates;
+                // 续传：合并保存的日期和文件系统日期（去重+排序）
+                const mergedDates = [...new Set([...savedProgress.allDates, ...fsDates])];
+                mergedDates.sort((a, b) => new Date(a) - new Date(b));
+                dateQueueState.allDates = mergedDates;
+                console.log('[续传] 合并后的日期列表:', dateQueueState.allDates.length, '个');
             } else {
-                // 新任务：从日志扫描日期
+                // 新任务：使用文件系统日期
+                if (fsDates.length > 0) {
+                    dateQueueState.allDates = fsDates;
+                    console.log('[新任务] 从文件系统扫描到的日期列表:', fsDates.length, '个');
+                } else {
+                    // 降级：从日志扫描
+                    scanDatesFromLogs(logs);
+                }
+            }
+
+            function scanDatesFromLogs(logs) {
                 const lines = logs.split('\n');
                 const datePattern = /(\d{4}-\d{2}-\d{2})/;
-                
+
                 const foundDates = new Set();
                 lines.forEach(line => {
                     const match = line.match(datePattern);
@@ -2599,14 +2624,13 @@
                         foundDates.add(match[1]);
                     }
                 });
-                
-                // 转换为数组并按日期排序（升序，最旧的在前）
+
                 const sortedDates = Array.from(foundDates).sort((a, b) => {
                     return new Date(a) - new Date(b);
                 });
-                
+
                 dateQueueState.allDates = sortedDates;
-                console.log('[新任务] 从日志扫描到的日期列表:', sortedDates);
+                console.log('[降级] 从日志扫描到的日期列表:', sortedDates);
             }
             
             // 重置显示列表（保留所有已加载的日期）

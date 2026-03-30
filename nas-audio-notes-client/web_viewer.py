@@ -443,6 +443,32 @@ def proxy_reprocess_logs():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/scan_dates', methods=['GET'])
+@login_required
+def api_scan_dates():
+    """扫描文件系统获取所有日期目录"""
+    try:
+        source_dir = SOURCE_DIR
+        if not os.path.exists(source_dir):
+            return jsonify({"error": f"目录不存在: {source_dir}"}), 400
+
+        date_dirs = []
+        for item in os.listdir(source_dir):
+            item_path = os.path.join(source_dir, item)
+            if os.path.isdir(item_path) and re.match(r'\d{4}-\d{2}-\d{2}', item):
+                date_dirs.append(item)
+
+        # 按日期升序排序
+        date_dirs.sort(key=lambda x: datetime.strptime(x, '%Y-%m-%d'))
+
+        return jsonify({
+            "status": "success",
+            "dates": date_dirs,
+            "total": len(date_dirs)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/event_audio/<int:event_id>', methods=['GET'])
 @login_required
 def proxy_event_audio(event_id):
