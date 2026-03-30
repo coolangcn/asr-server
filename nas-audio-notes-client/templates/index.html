@@ -727,6 +727,7 @@
                         <button onclick="setQuickDate('yesterday')" class="px-3 py-2 text-xs bg-gray-900/60 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 rounded-xl border border-gray-700/50 hover:border-blue-500/50 transition-all duration-200 font-medium">昨天</button>
                         <button onclick="setQuickDate('7days')" class="px-3 py-2 text-xs bg-gray-900/60 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 rounded-xl border border-gray-700/50 hover:border-blue-500/50 transition-all duration-200 font-medium">7天前</button>
                         <button onclick="setQuickDate('30days')" class="px-3 py-2 text-xs bg-gray-900/60 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 rounded-xl border border-gray-700/50 hover:border-blue-500/50 transition-all duration-200 font-medium">30天前</button>
+                        <button onclick="clearAllFilters()" class="px-3 py-2 text-xs bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl border border-purple-500/50 transition-all duration-200 font-medium shadow-lg shadow-purple-500/20">全量分析</button>
                         
                         <div class="w-px h-6 bg-gradient-to-b from-transparent via-gray-600 to-transparent"></div>
                         
@@ -787,12 +788,26 @@
                                     <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span>错误</span>
                                 </div>
                             </div>
+                            <div class="flex items-center gap-2 mb-3">
+                                <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+                                    <input type="checkbox" id="autoLoadNextCheckbox" checked onchange="dateQueueState.autoLoadNext = this.checked" class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-purple-500 focus:ring-purple-500 focus:ring-offset-gray-900">
+                                    <span>自动加载下一天</span>
+                                </label>
+                            </div>
+                            <!-- 当前处理日期显示 -->
+                            <div id="currentProcessingDate" class="hidden mb-3 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-spinner fa-spin text-yellow-400 text-xs"></i>
+                                    <span class="text-xs text-yellow-400 font-medium">当前处理：</span>
+                                    <span id="currentDateText" class="text-sm font-bold text-yellow-300 font-mono">--</span>
+                                </div>
+                            </div>
                             <div id="dateQueue" class="flex flex-wrap gap-2">
                                 <!-- 日期方块将动态生成 -->
                                 <div class="text-xs text-gray-500 py-2">等待分析任务...</div>
                             </div>
                             <button id="loadMoreBtn" onclick="loadMoreDates()" class="hidden w-full mt-3 py-2 px-4 bg-gradient-to-r from-purple-600/20 to-pink-600/20 hover:from-purple-600/30 hover:to-pink-600/30 border border-purple-500/30 rounded-xl text-purple-400 text-xs font-medium transition-all duration-200 active:scale-95">
-                                <i class="fa-solid fa-plus mr-2"></i>加载更多日期
+                                <i class="fa-solid fa-forward mr-2"></i>加载下一天
                             </button>
                         </div>
                         <!-- 日志标题 -->
@@ -1042,8 +1057,8 @@
         function processStats(items) {
             // 简单的数据预处理
             return items.map(item => {
-                // 优先使用 recording_time，如果没有则使用 created_at
-                const timeStr = item.recording_time || item.created_at;
+                // 优先使用后端解析好的 parsed_time，其次 recording_time，最后 created_at
+                const timeStr = item.parsed_time || item.recording_time || item.created_at;
                 item.date_group = timeStr ? timeStr.split('T')[0] : 'Unknown';
                 return item;
             });
@@ -1098,7 +1113,7 @@
                             </div>
                             <div>
                                 <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.recording_time || item.created_at)}</span>
+                                <span class="text-xs text-gray-500">${formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
                             </div>
                         </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
@@ -1155,8 +1170,8 @@
             Object.keys(allGroups).sort().reverse().forEach(date => {
                 // 对同一天内的记录按文件名时间严格倒序排列(最新的在上面)
                 allGroups[date].sort((a, b) => {
-                    const timeA = parseFilenameTime(a.filename) || a.recording_time || a.created_at;
-                    const timeB = parseFilenameTime(b.filename) || b.recording_time || b.created_at;
+                    const timeA = a.recording_time || a.created_at;
+                    const timeB = b.recording_time || b.created_at;
                     return new Date(timeB) - new Date(timeA);  // 倒序: 新 - 旧
                 });
 
@@ -1172,7 +1187,7 @@
 
                 allGroups[date].forEach(item => {
                     // 文件头 - 添加 data-file-time 属性用于时间轴
-                    const fileTime = parseFilenameTime(item.filename) || item.recording_time || item.created_at;
+                    const fileTime = item.parsed_time || item.recording_time || item.created_at;
                     const fileDate = new Date(fileTime);
                     const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -1181,7 +1196,7 @@
                         <div class="flex items-center gap-2 mb-4 px-4">
                             <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
                             <span class="text-xs font-mono text-gray-500">${item.filename.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 30)}</span>
-                            <span class="text-xs text-gray-600 ml-auto">${formatTime(fileTime)}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${item.time_simple || formatTime(fileTime)}</span>
                         </div>
                     `;
 
@@ -1208,7 +1223,7 @@
                                 ${showAvatar ? `
                                 <div class="flex items-baseline gap-2 mb-1">
                                     <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
-                                    <span class="text-[10px] text-gray-600">${formatTime(item.recording_time || item.created_at)}</span>
+                                    <span class="text-[10px] text-gray-600">${item.time_simple || formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
                                 </div>
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
@@ -1296,7 +1311,7 @@
                             </div>
                             <div>
                                 <h3 class="font-semibold text-white text-sm truncate w-40" title="${item.filename}">${item.filename}</h3>
-                                <span class="text-xs text-gray-500">${formatTime(parseFilenameTime(item.filename) || item.recording_time || item.created_at)}</span>
+                                <span class="text-xs text-gray-500">${formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
                             </div>
                         </div>
                         <span class="text-xs font-mono text-gray-600 bg-gray-900 px-2 py-1 rounded">ID: ${item.id}</span>
@@ -1338,10 +1353,10 @@
                 // 检查该日期是否已经存在
                 const existingDateHeader = container.querySelector(`[data-date="${date}"]`);
 
-                // 对同一天内的记录按文件名时间严格倒序排列
+                // 对同一天内的记录按 recording_time 严格倒序排列
                 groups[date].sort((a, b) => {
-                    const timeA = parseFilenameTime(a.filename) || a.recording_time || a.created_at;
-                    const timeB = parseFilenameTime(b.filename) || b.recording_time || b.created_at;
+                    const timeA = a.recording_time || a.created_at;
+                    const timeB = b.recording_time || b.created_at;
                     return new Date(timeB) - new Date(timeA);
                 });
 
@@ -1359,7 +1374,7 @@
                 }
 
                 groups[date].forEach(item => {
-                    const fileTime = parseFilenameTime(item.filename) || item.recording_time || item.created_at;
+                    const fileTime = item.parsed_time || item.recording_time || item.created_at;
                     const fileDate = new Date(fileTime);
                     const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -1368,7 +1383,7 @@
                         <div class="flex items-center gap-2 mb-4 px-4">
                             <i class="fa-solid fa-record-vinyl text-gray-600 text-xs"></i>
                             <span class="text-xs font-mono text-gray-500">${item.filename.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 30)}</span>
-                            <span class="text-xs text-gray-600 ml-auto">${formatTime(fileTime)}</span>
+                            <span class="text-xs text-gray-600 ml-auto">${item.time_simple || formatTime(fileTime)}</span>
                         </div>
                     `;
 
@@ -1392,7 +1407,7 @@
                                 ${showAvatar ? `
                                 <div class="flex items-baseline gap-2 mb-1">
                                     <span class="text-sm font-bold text-gray-200">${seg.spk.replace("TermuxAudioRecording_", "").replace("recording-", "").substring(0, 25)}</span>
-                                    <span class="text-[10px] text-gray-600">${formatTime(item.recording_time || item.created_at)}</span>
+                                    <span class="text-[10px] text-gray-600">${item.time_simple || formatTime(item.parsed_time || item.recording_time || item.created_at)}</span>
                                 </div>
                                 ` : ''}
                                 <div class="text-gray-300 leading-relaxed text-sm flex items-start gap-2">
@@ -1716,7 +1731,7 @@
             const emotionWeights = { 'happy': 1, 'laughter': 0.8, 'surprised': 0.5, 'neutral': 0, 'sad': -0.8, 'angry': -1, 'fearful': -0.5 };
 
             items.forEach(item => {
-                const date = (parseFilenameTime(item.filename) || item.recording_time || item.created_at).split('T')[0];
+                const date = (item.parsed_time || item.recording_time || item.created_at).split('T')[0];
                 if (!dailyScores[date]) dailyScores[date] = { score: 0, count: 0 };
 
                 item.segments.forEach(seg => {
@@ -1767,7 +1782,7 @@
             const dataMap = {}; // key: "speaker|hour", value: count
 
             items.forEach(item => {
-                const timeStr = parseFilenameTime(item.filename) || item.recording_time || item.created_at;
+                const timeStr = item.parsed_time || item.recording_time || item.created_at;
                 const hour = new Date(timeStr).getHours();
 
                 item.segments.forEach(seg => {
@@ -2351,11 +2366,68 @@
             dates: new Map(), // { dateStr: { status: 'pending'|'processing'|'completed'|'error', fileCount: 0 } }
             currentDate: null,
             orderedDates: [],
-            batchSize: 7, // 每批加载 7 天
+            batchSize: 1, // 按天为单位，一次处理一天
             loadedCount: 0, // 已加载的日期数量
             hasMore: true, // 是否还有更多日期
-            allDates: [] // 所有找到的日期（用于分页）
+            allDates: [], // 所有找到的日期（按日期降序排列）
+            autoLoadNext: true, // 是否自动加载下一天（当一天处理完成时）
+            showAllCompleted: false, // 是否展开显示所有已完成
+            showAllPending: false // 是否展开显示所有待处理
         };
+
+        // 创建日期方块
+        function createDateBlock(dateStr, state, status) {
+            let bgClass, textClass, borderClass, icon;
+            
+            switch(status) {
+                case 'processing':
+                    bgClass = 'bg-yellow-500/20';
+                    textClass = 'text-yellow-400';
+                    borderClass = 'border-yellow-500/40';
+                    icon = 'fa-circle-notch fa-spin';
+                    break;
+                case 'completed':
+                    bgClass = 'bg-green-500/20';
+                    textClass = 'text-green-400';
+                    borderClass = 'border-green-500/40';
+                    icon = 'fa-check-circle';
+                    break;
+                case 'error':
+                    bgClass = 'bg-red-500/20';
+                    textClass = 'text-red-400';
+                    borderClass = 'border-red-500/40';
+                    icon = 'fa-exclamation-circle';
+                    break;
+                default:
+                    bgClass = 'bg-gray-500/20';
+                    textClass = 'text-gray-400';
+                    borderClass = 'border-gray-500/40';
+                    icon = 'fa-clock';
+            }
+
+            return `
+                <div class="flex flex-col items-center gap-1 p-2 rounded-xl ${bgClass} border ${borderClass} min-w-[70px] transition-all hover:scale-105">
+                    <i class="fa-solid ${icon} ${textClass} text-sm"></i>
+                    <span class="text-[10px] ${textClass} font-mono">${dateStr}</span>
+                    <span class="text-[9px] ${textClass}">${state.fileCount}个</span>
+                </div>
+            `;
+        }
+
+        // 创建折叠按钮
+        function createCollapsedButton(count, type, colorClass) {
+            const icon = type === 'completed' ? 'fa-check' : 'fa-clock';
+            const action = type === 'completed' ? 
+                'dateQueueState.showAllCompleted = true; updateDateQueueDisplay();' : 
+                'dateQueueState.showAllPending = true; updateDateQueueDisplay();';
+            
+            return `
+                <button onclick="${action}" class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl ${colorClass} border min-w-[70px] min-h-[70px] transition-all hover:scale-105 cursor-pointer">
+                    <span class="text-lg font-bold">+${count}</span>
+                    <i class="fa-solid ${icon} text-xs opacity-70"></i>
+                </button>
+            `;
+        }
 
         function updateDateQueueDisplay() {
             const queueEl = document.getElementById('dateQueue');
@@ -2366,50 +2438,100 @@
                 return;
             }
 
-            let html = '';
+            // 分类日期
+            const completedDates = [];
+            const processingDates = [];
+            const pendingDates = [];
+            
             dateQueueState.orderedDates.forEach(dateStr => {
                 const state = dateQueueState.dates.get(dateStr);
-                let bgClass, textClass, borderClass, icon, statusText;
+                if (!state) return;
                 
                 switch(state.status) {
-                    case 'processing':
-                        bgClass = 'bg-yellow-500/20';
-                        textClass = 'text-yellow-400';
-                        borderClass = 'border-yellow-500/40';
-                        icon = 'fa-circle-notch fa-spin';
-                        statusText = '处理中';
-                        break;
                     case 'completed':
-                        bgClass = 'bg-green-500/20';
-                        textClass = 'text-green-400';
-                        borderClass = 'border-green-500/40';
-                        icon = 'fa-check-circle';
-                        statusText = '已完成';
+                        completedDates.push({ date: dateStr, state });
                         break;
-                    case 'error':
-                        bgClass = 'bg-red-500/20';
-                        textClass = 'text-red-400';
-                        borderClass = 'border-red-500/40';
-                        icon = 'fa-exclamation-circle';
-                        statusText = '错误';
+                    case 'processing':
+                        processingDates.push({ date: dateStr, state });
                         break;
                     default:
-                        bgClass = 'bg-gray-500/20';
-                        textClass = 'text-gray-400';
-                        borderClass = 'border-gray-500/40';
-                        icon = 'fa-clock';
-                        statusText = '待处理';
+                        pendingDates.push({ date: dateStr, state });
                 }
-
-                html += `
-                    <div class="flex flex-col items-center gap-1 p-2 rounded-xl ${bgClass} border ${borderClass} min-w-[70px] transition-all hover:scale-105">
-                        <i class="fa-solid ${icon} ${textClass} text-sm"></i>
-                        <span class="text-[10px] ${textClass} font-mono">${dateStr}</span>
-                        <span class="text-[9px] ${textClass}">${state.fileCount}个</span>
-                    </div>
-                `;
             });
+
+            let html = '';
+            const maxVisible = 3; // 每类最多显示3个
+            
+            // 显示已完成的日期
+            if (dateQueueState.showAllCompleted) {
+                // 展开显示所有已完成
+                completedDates.forEach(({ date, state }) => {
+                    html += createDateBlock(date, state, 'completed');
+                });
+                // 添加收起按钮
+                html += `
+                    <button onclick="dateQueueState.showAllCompleted = false; updateDateQueueDisplay();" 
+                            class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-green-500/10 text-green-400 border border-green-500/30 min-w-[70px] min-h-[70px] transition-all hover:scale-105 cursor-pointer">
+                        <i class="fa-solid fa-chevron-up text-sm"></i>
+                        <span class="text-[10px]">收起</span>
+                    </button>
+                `;
+            } else {
+                // 折叠显示（最多3个最新的）
+                const visibleCompleted = completedDates.slice(-maxVisible);
+                if (completedDates.length > maxVisible) {
+                    const hiddenCount = completedDates.length - maxVisible;
+                    html += createCollapsedButton(hiddenCount, 'completed', 'bg-green-500/20 text-green-400 border-green-500/40');
+                }
+                visibleCompleted.forEach(({ date, state }) => {
+                    html += createDateBlock(date, state, 'completed');
+                });
+            }
+            
+            // 显示处理中的日期（全部显示）
+            processingDates.forEach(({ date, state }) => {
+                html += createDateBlock(date, state, 'processing');
+            });
+            
+            // 显示待处理的日期
+            if (dateQueueState.showAllPending) {
+                // 展开显示所有待处理
+                pendingDates.forEach(({ date, state }) => {
+                    html += createDateBlock(date, state, 'pending');
+                });
+                // 添加收起按钮
+                html += `
+                    <button onclick="dateQueueState.showAllPending = false; updateDateQueueDisplay();" 
+                            class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-gray-500/10 text-gray-400 border border-gray-500/30 min-w-[70px] min-h-[70px] transition-all hover:scale-105 cursor-pointer">
+                        <i class="fa-solid fa-chevron-up text-sm"></i>
+                        <span class="text-[10px]">收起</span>
+                    </button>
+                `;
+            } else {
+                // 折叠显示（最多3个）
+                const visiblePending = pendingDates.slice(0, maxVisible);
+                visiblePending.forEach(({ date, state }) => {
+                    html += createDateBlock(date, state, 'pending');
+                });
+                if (pendingDates.length > maxVisible) {
+                    const hiddenCount = pendingDates.length - maxVisible;
+                    html += createCollapsedButton(hiddenCount, 'pending', 'bg-gray-500/20 text-gray-400 border-gray-500/40');
+                }
+            }
+            
             queueEl.innerHTML = html;
+            
+            // 更新当前处理日期显示
+            const currentProcessingEl = document.getElementById('currentProcessingDate');
+            const currentDateTextEl = document.getElementById('currentDateText');
+            if (currentProcessingEl && currentDateTextEl) {
+                if (dateQueueState.currentDate && processingDates.length > 0) {
+                    currentProcessingEl.classList.remove('hidden');
+                    currentDateTextEl.textContent = dateQueueState.currentDate;
+                } else {
+                    currentProcessingEl.classList.add('hidden');
+                }
+            }
             
             // 更新"加载更多"按钮显示
             const loadMoreBtn = document.getElementById('loadMoreBtn');
@@ -2418,7 +2540,8 @@
                     loadMoreBtn.classList.remove('hidden');
                     const loaded = dateQueueState.loadedCount;
                     const total = dateQueueState.allDates.length;
-                    loadMoreBtn.innerHTML = `<i class="fa-solid fa-plus mr-2"></i>加载更多日期（已加载 ${loaded}/${total} 天）`;
+                    const nextDate = dateQueueState.allDates[loaded];
+                    loadMoreBtn.innerHTML = `<i class="fa-solid fa-forward mr-2"></i>加载下一天 (${nextDate}) - 进度 ${loaded}/${total}`;
                 } else {
                     loadMoreBtn.classList.add('hidden');
                 }
@@ -2438,60 +2561,47 @@
                 }
             });
             
-            // 转换为数组并排序
-            const sortedDates = Array.from(foundDates).sort();
+            // 转换为数组并按日期排序（升序，最旧的在前）
+            const sortedDates = Array.from(foundDates).sort((a, b) => {
+                return new Date(a) - new Date(b);
+            });
             
             // 保存所有日期到状态
             dateQueueState.allDates = sortedDates;
             
             // 检查是否有保存的进度（异步加载）
             const savedProgress = await loadBatchProgress();
-            let startIndex = 0;
             
+            // 重置显示列表（保留所有已加载的日期）
+            dateQueueState.dates = new Map();
+            dateQueueState.orderedDates = [];
+            
+            // 计算应该加载多少日期（首次只加载 1 天）
+            let targetLoadedCount;
             if (savedProgress && savedProgress.allDates && savedProgress.allDates.length > 0) {
-                // 如果有保存的进度，恢复它
-                dateQueueState.dates = new Map();
-                dateQueueState.orderedDates = [];
-                dateQueueState.loadedCount = savedProgress.loadedCount || 0;
-                
-                // 恢复保存的日期状态
-                savedProgress.allDates.forEach(dateStr => {
-                    const state = savedProgress.dates[dateStr];
-                    if (state) {
-                        dateQueueState.dates.set(dateStr, state);
-                        dateQueueState.orderedDates.push(dateStr);
-                    }
-                });
-                
-                // 找到当前处理位置
-                const currentIndex = sortedDates.indexOf(dateQueueState.currentDate);
-                if (currentIndex !== -1) {
-                    startIndex = currentIndex;
-                }
+                // 如果有保存的进度，恢复已加载的日期
+                targetLoadedCount = savedProgress.loadedCount || dateQueueState.batchSize;
             } else {
-                // 新任务，从零开始
-                dateQueueState.dates = new Map();
-                dateQueueState.orderedDates = [];
-                dateQueueState.loadedCount = 0;
-                startIndex = 0;
+                // 新任务，只加载第 1 天
+                targetLoadedCount = dateQueueState.batchSize;
             }
             
-            // 批量加载日期（按需加载）
-            const endIndex = Math.min(startIndex + dateQueueState.batchSize, sortedDates.length);
+            // 确保不超过总日期数
+            targetLoadedCount = Math.min(targetLoadedCount, sortedDates.length);
             
-            for (let i = startIndex; i < endIndex; i++) {
+            // 加载目标数量的日期
+            for (let i = 0; i < targetLoadedCount; i++) {
                 const dateStr = sortedDates[i];
-                if (!dateQueueState.dates.has(dateStr)) {
-                    dateQueueState.dates.set(dateStr, {
-                        status: 'pending',
-                        fileCount: 0
-                    });
-                    dateQueueState.orderedDates.push(dateStr);
-                }
+                const savedState = savedProgress && savedProgress.dates && savedProgress.dates[dateStr];
+                dateQueueState.dates.set(dateStr, savedState || {
+                    status: 'pending',
+                    fileCount: 0
+                });
+                dateQueueState.orderedDates.push(dateStr);
             }
             
-            dateQueueState.loadedCount = endIndex;
-            dateQueueState.hasMore = endIndex < sortedDates.length;
+            dateQueueState.loadedCount = targetLoadedCount;
+            dateQueueState.hasMore = targetLoadedCount < sortedDates.length;
             
             // 保存进度（异步）
             await saveBatchProgress();
@@ -2524,17 +2634,25 @@
             });
 
             // 标记已完成的日期（当前处理日期之前的都标记为完成）
+            let justCompletedDate = null;
             if (dateQueueState.currentDate) {
                 const currentIndex = dateQueueState.orderedDates.indexOf(dateQueueState.currentDate);
                 for (let i = 0; i < currentIndex; i++) {
                     const dateStr = dateQueueState.orderedDates[i];
                     if (dateQueueState.dates.get(dateStr).status === 'pending') {
                         dateQueueState.dates.get(dateStr).status = 'completed';
+                        justCompletedDate = dateStr;
                     }
                 }
             }
 
             updateDateQueueDisplay();
+            
+            // 如果刚刚完成了一天，且启用了自动加载，则自动加载下一天
+            if (justCompletedDate && dateQueueState.autoLoadNext && dateQueueState.hasMore) {
+                console.log(`[AutoLoad] 日期 ${justCompletedDate} 处理完成，自动加载下一天`);
+                setTimeout(() => loadMoreDates(), 1000); // 延迟1秒后加载下一天
+            }
         }
 
         async function fetchBcLogs() {
@@ -2769,9 +2887,11 @@
             // 加载更多日期
             if (!dateQueueState.hasMore) return;
             
+            // 计算下一批要加载的日期范围
             const startIndex = dateQueueState.loadedCount;
             const endIndex = Math.min(startIndex + dateQueueState.batchSize, dateQueueState.allDates.length);
             
+            // 加载下一批日期
             for (let i = startIndex; i < endIndex; i++) {
                 const dateStr = dateQueueState.allDates[i];
                 if (!dateQueueState.dates.has(dateStr)) {
@@ -2929,7 +3049,7 @@
                 const result = await response.json();
                 
                 if (response.ok) {
-                    statusLabel.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-check-double mr-2"></i>任务拉起成功</span> <span class="text-xs text-gray-500 ml-2">PID: ${result.pid || '已在后台执行'}</span>`;
+                    statusLabel.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-check-double mr-2"></i>任务拉起成功</span> <span class="text-xs text-gray-500 ml-2">已后台执行</span>`;
                     // 按钮保持禁用，直到手动停止或检测到结束
                 } else {
                     statusLabel.innerHTML = `<span class="text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation mr-2"></i>触发失败: ${result.error}</span>`;
@@ -3062,42 +3182,31 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                                <!-- 左侧：插图 + 原因分析 -->
-                                <div class="lg:col-span-8 space-y-4">
-                                    <!-- 插图显示或加载状态 -->
+                            <!-- 第一块：图片 + 声纹投票（左右并排） -->
+                            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+                                <!-- 左侧：插图 -->
+                                <div class="lg:col-span-8">
                                     ${item.illustration_url ? `
-                                    <div class="mb-4">
+                                    <div class="relative">
                                         <img src="${item.illustration_url}" alt="场景插图" class="w-full h-auto rounded-2xl shadow-lg border border-white/10">
+                                        <!-- 置信度进度条覆盖在图片底部 -->
+                                        <div class="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm rounded-b-2xl px-4 py-2">
+                                            <div class="bg-white/20 rounded-full h-1.5 w-full overflow-hidden">
+                                                <div class="h-full bg-gradient-to-r from-${color}-400 to-${color}-300 transition-all duration-1000 ${isAnalyzing ? 'animate-pulse' : ''}" style="width: ${isAnalyzing ? '30' : (item.confidence * 100 || 0)}%"></div>
+                                            </div>
+                                        </div>
                                     </div>
                                     ` : (!isAnalyzing && item.reason) ? `
-                                    <div class="mb-4 flex flex-col items-center justify-center py-12 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-2xl border border-purple-500/20">
+                                    <div class="flex flex-col items-center justify-center py-12 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-2xl border border-purple-500/20">
                                         <i class="fa-solid fa-palette fa-spin text-purple-400 text-4xl mb-4"></i>
                                         <p class="text-purple-300 font-medium text-sm animate-pulse">正在生成场景插图...</p>
                                         <p class="text-[10px] text-gray-500 mt-2">请稍候，插图正在创作中</p>
                                     </div>
                                     ` : ''}
-                                    
-                                    <!-- 置信度进度条 (如果是正在分析，则显示动画) -->
-                                    <div class="bg-black/20 rounded-full h-1.5 w-full overflow-hidden border border-white/5">
-                                        <div class="h-full bg-gradient-to-r from-${color}-600 to-${color}-400 transition-all duration-1000 ${isAnalyzing ? 'w-full animate-pulse' : ''}" style="width: ${isAnalyzing ? '0' : (item.confidence * 100 || 0)}%"></div>
-                                    </div>
-                                    
-                                    <!-- Reason/Analysis -->
-                                    <div class="relative z-10 text-gray-200 text-[14px] leading-relaxed pb-6">
-                                        ${isAnalyzing ? 
-                                            `<div class="flex flex-col items-center py-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
-                                                <i class="fa-solid fa-spinner fa-spin text-blue-400 text-2xl mb-4"></i>
-                                                <p class="text-blue-300 font-medium font-mono text-sm animate-pulse">Gemini Pro 2.5 正在深度对等识别中...</p>
-                                                <p class="text-[10px] text-gray-500 mt-2">（观察期通常为发现哭声后的 5 分钟内）</p>
-                                            </div>` : 
-                                            `<div class="whitespace-pre-line">${((item.analysis_text || item.reason || '暂无详细分析内容').trim())}</div>`
-                                        }
-                                    </div>
                                 </div>
 
-                                <!-- Detail Sidebar (Models & Votes) -->
-                                <div class="lg:col-span-4 space-y-3">
+                                <!-- 右侧：声纹投票 -->
+                                <div class="lg:col-span-4">
                                     <div class="bg-black/30 rounded-2xl p-4 border border-white/5 h-full">
                                         <h4 class="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center justify-between">
                                             <span>VOICEPRINT VOTING / 声纹投票</span>
@@ -3124,8 +3233,23 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- 第二块：文字分析（单独一块） -->
+                            <div class="bg-gray-800/30 rounded-2xl p-5 border border-white/5 mb-6">
+                                <!-- Reason/Analysis -->
+                                <div class="relative z-10 text-gray-200 text-[14px] leading-relaxed">
+                                    ${isAnalyzing ? 
+                                        `<div class="flex flex-col items-center py-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
+                                            <i class="fa-solid fa-spinner fa-spin text-blue-400 text-2xl mb-4"></i>
+                                            <p class="text-blue-300 font-medium font-mono text-sm animate-pulse">Gemini Pro 2.5 正在深度对等识别中...</p>
+                                            <p class="text-[10px] text-gray-500 mt-2">（观察期通常为发现哭声后的 5 分钟内）</p>
+                                        </div>` : 
+                                        `<div class="whitespace-pre-line">${((item.analysis_text || item.reason || '暂无详细分析内容').trim())}</div>`
+                                    }
+                                </div>
+                            </div>
                                 
-                                <!-- Advice -->
+                            <!-- Advice -->
                                 ${!isAnalyzing ? `
                                 <div class="bg-emerald-500/5 p-4 rounded-2xl text-emerald-300/90 text-sm border border-emerald-500/10 flex items-start gap-3 shadow-lg">
                                     <div class="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0 text-amber-300 shadow-inner">
