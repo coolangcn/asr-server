@@ -717,7 +717,9 @@
                             <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse">
                                 <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
                             </span>
-                            <span id="triggerStatus" class="text-xs font-bold text-purple-400 px-2 py-1 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-fade-in"></span>
+                            <span id="triggerStatus" class="text-xs font-bold text-purple-400 px-2 py-1 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-fade-in">
+                                <i class="fa-solid fa-clock mr-1"></i>等待分析任务...
+                            </span>
                         </div>
                     </div>
                     <!-- Beautiful Glassmorphism Range Picker -->
@@ -788,12 +790,6 @@
                                     <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span>错误</span>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2 mb-3">
-                                <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
-                                    <input type="checkbox" id="autoLoadNextCheckbox" checked onchange="dateQueueState.autoLoadNext = this.checked" class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-purple-500 focus:ring-purple-500 focus:ring-offset-gray-900">
-                                    <span>自动加载下一天</span>
-                                </label>
-                            </div>
                             <!-- 当前处理日期显示 -->
                             <div id="currentProcessingDate" class="hidden mb-3 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                                 <div class="flex items-center gap-2">
@@ -807,7 +803,8 @@
                                 <div class="text-xs text-gray-500 py-2">等待分析任务...</div>
                             </div>
                             <button id="loadMoreBtn" onclick="loadMoreDates()" class="hidden w-full mt-3 py-2 px-4 bg-gradient-to-r from-purple-600/20 to-pink-600/20 hover:from-purple-600/30 hover:to-pink-600/30 border border-purple-500/30 rounded-xl text-purple-400 text-xs font-medium transition-all duration-200 active:scale-95">
-                                <i class="fa-solid fa-forward mr-2"></i>加载下一天
+                                <i class="fa-solid fa-forward mr-2"></i>加载更多
+                            </button>
                             </button>
                         </div>
                         <!-- 日志标题 -->
@@ -2392,23 +2389,23 @@
         // 页面加载时初始化拖动功能
         document.addEventListener('DOMContentLoaded', initResizableDivider);
         
+        // 页面加载时初始化日期队列
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(fetchBcLogs, 500);  // 延迟500ms确保页面已完全加载
+        });
+        
         // 日期队列状态管理
         const dateQueueState = {
-            dates: new Map(), // { dateStr: { status: 'pending'|'processing'|'completed'|'error', fileCount: 0 } }
+            dates: new Map(), // { dateStr: { status: 'pending'|'processing'|'completed'|'error', fileCount: 0, processedCount: 0 } }
             currentDate: null,
-            orderedDates: [],
-            batchSize: 1, // 按天为单位，一次处理一天
-            loadedCount: 0, // 已加载的日期数量
-            hasMore: true, // 是否还有更多日期
-            allDates: [], // 所有找到的日期（按日期降序排列）
-            autoLoadNext: true, // 是否自动加载下一天（当一天处理完成时）
-            showAllCompleted: false, // 是否展开显示所有已完成
-            showAllPending: false // 是否展开显示所有待处理
+            allDates: [], // 所有找到的日期（按日期升序排列）
+            selectedDate: null, // 当前选中的日期（用于过滤日志）
+            showAllPending: true // 是否显示所有待处理日期
         };
 
         // 创建日期方块
         function createDateBlock(dateStr, state, status) {
-            let bgClass, textClass, borderClass, icon;
+            let bgClass, textClass, borderClass, icon, extraClass = '';
             
             switch(status) {
                 case 'processing':
@@ -2436,26 +2433,63 @@
                     icon = 'fa-clock';
             }
 
+            // 如果是选中的日期，添加发光边框
+            if (dateStr === dateQueueState.selectedDate) {
+                extraClass = 'ring-2 ring-blue-400 ring-offset-2 ring-offset-gray-900 shadow-lg shadow-blue-400/30';
+            }
+
             return `
-                <div class="flex flex-col items-center gap-1 p-2 rounded-xl ${bgClass} border ${borderClass} min-w-[70px] transition-all hover:scale-105">
-                    <i class="fa-solid ${icon} ${textClass} text-sm"></i>
+                <div class="flex flex-col items-center gap-1 p-2 rounded-xl ${bgClass} border ${borderClass} ${extraClass} min-w-[70px] transition-all hover:scale-105 cursor-pointer" 
+                     onclick="selectDateBlock('${dateStr}')"
+                     title="点击查看该日期日志">
+                    <i class="fa-solid ${icon} ${textClass} text-sm ${status === 'processing' ? 'animate-spin' : ''}"></i>
                     <span class="text-[10px] ${textClass} font-mono">${dateStr}</span>
                     <span class="text-[9px] ${textClass}">${state.fileCount}个</span>
                 </div>
             `;
         }
 
-        // 创建折叠按钮
-        function createCollapsedButton(count, type, colorClass) {
-            const icon = type === 'completed' ? 'fa-check' : 'fa-clock';
-            const action = type === 'completed' ? 
-                'dateQueueState.showAllCompleted = true; updateDateQueueDisplay();' : 
-                'dateQueueState.showAllPending = true; updateDateQueueDisplay();';
-            
+        // 选择日期方块
+        function selectDateBlock(dateStr) {
+            // 如果点击已选中的日期，则取消选中
+            if (dateQueueState.selectedDate === dateStr) {
+                dateQueueState.selectedDate = null;
+                // 显示全部日志
+                const logEl = document.getElementById('processLogs');
+                if (logEl && window.fullLogs) {
+                    logEl.textContent = window.fullLogs;
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            } else {
+                dateQueueState.selectedDate = dateStr;
+                filterLogsByDate(dateStr);
+            }
+            updateDateQueueDisplay();
+        }
+
+        // 按日期过滤日志
+        function filterLogsByDate(dateStr) {
+            const logEl = document.getElementById('processLogs');
+            if (!logEl || !window.fullLogs) return;
+
+            if (!dateStr) {
+                logEl.textContent = window.fullLogs;
+                return;
+            }
+
+            // 过滤出包含该日期的日志行
+            const lines = window.fullLogs.split('\n');
+            const filteredLines = lines.filter(line => line.includes(dateStr));
+            logEl.textContent = filteredLines.join('\n');
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // 创建折叠按钮（用于待处理日期）
+        function createCollapsedButton(count, colorClass) {
             return `
-                <button onclick="${action}" class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl ${colorClass} border min-w-[70px] min-h-[70px] transition-all hover:scale-105 cursor-pointer">
+                <button onclick="dateQueueState.showAllPending = true; updateDateQueueDisplay();" class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl ${colorClass} border min-w-[70px] min-h-[70px] transition-all hover:scale-105 cursor-pointer">
                     <span class="text-lg font-bold">+${count}</span>
-                    <i class="fa-solid ${icon} text-xs opacity-70"></i>
+                    <i class="fa-solid fa-clock text-xs opacity-70"></i>
                 </button>
             `;
         }
@@ -2464,7 +2498,16 @@
             const queueEl = document.getElementById('dateQueue');
             if (!queueEl) return;
 
-            if (dateQueueState.orderedDates.length === 0) {
+            // 直接从 dates Map 获取状态
+            const datesToShow = [];
+            dateQueueState.dates.forEach((state, dateStr) => {
+                datesToShow.push({ date: dateStr, state });
+            });
+
+            // 按日期排序
+            datesToShow.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            if (datesToShow.length === 0) {
                 queueEl.innerHTML = '<div class="text-xs text-gray-500 py-2">等待分析任务...</div>';
                 return;
             }
@@ -2473,85 +2516,46 @@
             const completedDates = [];
             const processingDates = [];
             const pendingDates = [];
-            
-            dateQueueState.orderedDates.forEach(dateStr => {
-                const state = dateQueueState.dates.get(dateStr);
-                if (!state) return;
-                
+
+            datesToShow.forEach(({ date, state }) => {
+
                 switch(state.status) {
                     case 'completed':
-                        completedDates.push({ date: dateStr, state });
+                        completedDates.push({ date, state });
                         break;
                     case 'processing':
-                        processingDates.push({ date: dateStr, state });
+                        processingDates.push({ date, state });
                         break;
                     default:
-                        pendingDates.push({ date: dateStr, state });
+                        pendingDates.push({ date, state });
                 }
             });
 
             let html = '';
-            const maxVisible = 3; // 每类最多显示3个
-            
-            // 显示已完成的日期
-            if (dateQueueState.showAllCompleted) {
-                // 展开显示所有已完成
-                completedDates.forEach(({ date, state }) => {
-                    html += createDateBlock(date, state, 'completed');
-                });
-                // 添加收起按钮
-                html += `
-                    <button onclick="dateQueueState.showAllCompleted = false; updateDateQueueDisplay();" 
-                            class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-green-500/10 text-green-400 border border-green-500/30 min-w-[70px] min-h-[70px] transition-all hover:scale-105 cursor-pointer">
-                        <i class="fa-solid fa-chevron-up text-sm"></i>
-                        <span class="text-[10px]">收起</span>
-                    </button>
-                `;
-            } else {
-                // 折叠显示（最多3个最新的）
-                const visibleCompleted = completedDates.slice(-maxVisible);
-                if (completedDates.length > maxVisible) {
-                    const hiddenCount = completedDates.length - maxVisible;
-                    html += createCollapsedButton(hiddenCount, 'completed', 'bg-green-500/20 text-green-400 border-green-500/40');
-                }
-                visibleCompleted.forEach(({ date, state }) => {
-                    html += createDateBlock(date, state, 'completed');
-                });
-            }
-            
+            const maxVisible = 3; // 待处理最多显示3个
+
+            // 显示已完成的日期（全部展开）
+            completedDates.forEach(({ date, state }) => {
+                html += createDateBlock(date, state, 'completed');
+            });
+
             // 显示处理中的日期（全部显示）
             processingDates.forEach(({ date, state }) => {
                 html += createDateBlock(date, state, 'processing');
             });
-            
-            // 显示待处理的日期
-            if (dateQueueState.showAllPending) {
-                // 展开显示所有待处理
-                pendingDates.forEach(({ date, state }) => {
-                    html += createDateBlock(date, state, 'pending');
-                });
-                // 添加收起按钮
-                html += `
-                    <button onclick="dateQueueState.showAllPending = false; updateDateQueueDisplay();" 
-                            class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-gray-500/10 text-gray-400 border border-gray-500/30 min-w-[70px] min-h-[70px] transition-all hover:scale-105 cursor-pointer">
-                        <i class="fa-solid fa-chevron-up text-sm"></i>
-                        <span class="text-[10px]">收起</span>
-                    </button>
-                `;
-            } else {
-                // 折叠显示（最多3个）
-                const visiblePending = pendingDates.slice(0, maxVisible);
-                visiblePending.forEach(({ date, state }) => {
-                    html += createDateBlock(date, state, 'pending');
-                });
-                if (pendingDates.length > maxVisible) {
-                    const hiddenCount = pendingDates.length - maxVisible;
-                    html += createCollapsedButton(hiddenCount, 'pending', 'bg-gray-500/20 text-gray-400 border-gray-500/40');
-                }
+
+            // 显示待处理的日期（最多显示3个）
+            const visiblePending = pendingDates.slice(0, maxVisible);
+            visiblePending.forEach(({ date, state }) => {
+                html += createDateBlock(date, state, 'pending');
+            });
+            if (pendingDates.length > maxVisible) {
+                const hiddenCount = pendingDates.length - maxVisible;
+                html += createCollapsedButton(hiddenCount, 'pending', 'bg-gray-500/20 text-gray-400 border-gray-500/40');
             }
-            
+
             queueEl.innerHTML = html;
-            
+
             // 更新当前处理日期显示
             const currentProcessingEl = document.getElementById('currentProcessingDate');
             const currentDateTextEl = document.getElementById('currentDateText');
@@ -2563,16 +2567,14 @@
                     currentProcessingEl.classList.add('hidden');
                 }
             }
-            
-            // 更新"加载更多"按钮显示
+
+            // 更新"加载更多"按钮 - 基于待处理数量
             const loadMoreBtn = document.getElementById('loadMoreBtn');
             if (loadMoreBtn) {
-                if (dateQueueState.hasMore) {
+                const pendingCount = pendingDates.length;
+                if (pendingCount > maxVisible) {
                     loadMoreBtn.classList.remove('hidden');
-                    const loaded = dateQueueState.loadedCount;
-                    const total = dateQueueState.allDates.length;
-                    const nextDate = dateQueueState.allDates[loaded];
-                    loadMoreBtn.innerHTML = `<i class="fa-solid fa-forward mr-2"></i>加载下一天 (${nextDate}) - 进度 ${loaded}/${total}`;
+                    loadMoreBtn.innerHTML = `<i class="fa-solid fa-forward mr-2"></i>还有 ${pendingCount - maxVisible} 天待处理`;
                 } else {
                     loadMoreBtn.classList.add('hidden');
                 }
@@ -2580,115 +2582,39 @@
         }
 
         async function parseDateQueueFromLogs(logs) {
-            // 从文件系统扫描最新日期列表
-            let fsDates = [];
+            // 将日志分割成行，供后续分析使用
+            const lines = logs.split('\n');
+
+            // 从 API 获取日期列表及状态（后端已缓存，不会每次都扫盘）
             try {
                 const response = await fetch('/api/scan_dates');
                 const result = await response.json();
                 if (result.status === 'success' && result.dates) {
-                    fsDates = result.dates;
-                    console.log('[文件系统扫描] 获取到', fsDates.length, '个日期');
+                    dateQueueState.allDates = result.dates;
+
+                    // 从 API 响应直接获取状态
+                    for (const dateStr of result.dates) {
+                        const info = result.date_info[dateStr];
+                        if (info) {
+                            dateQueueState.dates.set(dateStr, {
+                                status: info.status,
+                                fileCount: info.fileCount,
+                                processedCount: info.processedCount
+                            });
+                        }
+                    }
+
+                    console.log('[API] 获取到', result.dates.length, '个日期');
                 }
             } catch (e) {
-                console.error('[文件系统扫描] 失败:', e);
+                console.error('[API] 获取日期失败:', e);
             }
 
-            // 先检查是否有保存的进度
-            const savedProgress = await loadBatchProgress();
-
-            if (savedProgress && savedProgress.allDates && savedProgress.allDates.length > 0) {
-                // 续传：合并保存的日期和文件系统日期（去重+排序）
-                const mergedDates = [...new Set([...savedProgress.allDates, ...fsDates])];
-                mergedDates.sort((a, b) => new Date(a) - new Date(b));
-                dateQueueState.allDates = mergedDates;
-                console.log('[续传] 合并后的日期列表:', dateQueueState.allDates.length, '个');
-            } else {
-                // 新任务：使用文件系统日期
-                if (fsDates.length > 0) {
-                    dateQueueState.allDates = fsDates;
-                    console.log('[新任务] 从文件系统扫描到的日期列表:', fsDates.length, '个');
-                } else {
-                    // 降级：从日志扫描
-                    scanDatesFromLogs(logs);
-                }
-            }
-
-            function scanDatesFromLogs(logs) {
-                const lines = logs.split('\n');
-                const datePattern = /(\d{4}-\d{2}-\d{2})/;
-
-                const foundDates = new Set();
-                lines.forEach(line => {
-                    const match = line.match(datePattern);
-                    if (match) {
-                        foundDates.add(match[1]);
-                    }
-                });
-
-                const sortedDates = Array.from(foundDates).sort((a, b) => {
-                    return new Date(a) - new Date(b);
-                });
-
-                dateQueueState.allDates = sortedDates;
-                console.log('[降级] 从日志扫描到的日期列表:', sortedDates);
-            }
-            
-            // 重置显示列表（保留所有已加载的日期）
-            dateQueueState.dates = new Map();
-            dateQueueState.orderedDates = [];
-            
-            // 计算应该加载多少日期（首次只加载 1 天）
-            let targetLoadedCount;
-            if (savedProgress && savedProgress.allDates && savedProgress.allDates.length > 0) {
-                // 如果有保存的进度，恢复已加载的日期
-                targetLoadedCount = savedProgress.loadedCount || dateQueueState.batchSize;
-            } else {
-                // 新任务，只加载第 1 天
-                targetLoadedCount = dateQueueState.batchSize;
-            }
-            
-            // 确保不超过总日期数
-            targetLoadedCount = Math.min(targetLoadedCount, dateQueueState.allDates.length);
-            
-            // 加载目标数量的日期
-            for (let i = 0; i < targetLoadedCount; i++) {
-                const dateStr = dateQueueState.allDates[i];
-                const savedState = savedProgress && savedProgress.dates && savedProgress.dates[dateStr];
-                
-                if (savedState) {
-                    // 续传：已完成的保持完成状态，处理中的重置为待处理（需要通过日志重新确定）
-                    if (savedState.status === 'completed') {
-                        dateQueueState.dates.set(dateStr, {
-                            status: 'completed',
-                            fileCount: savedState.fileCount || 0
-                        });
-                    } else {
-                        // processing 或 pending 都重置为 pending，等待日志分析
-                        dateQueueState.dates.set(dateStr, {
-                            status: 'pending',
-                            fileCount: savedState.fileCount || 0
-                        });
-                    }
-                } else {
-                    dateQueueState.dates.set(dateStr, {
-                        status: 'pending',
-                        fileCount: 0
-                    });
-                }
-                dateQueueState.orderedDates.push(dateStr);
-            }
-            
-            dateQueueState.loadedCount = targetLoadedCount;
-            dateQueueState.hasMore = targetLoadedCount < dateQueueState.allDates.length;
-            
-            // 保存进度（异步）
-            await saveBatchProgress();
-            
-            // 第二遍：分析处理进度
+            // 第二遍：分析处理进度（从日志检测正在处理的日期）
             let processingDate = null;
             lines.forEach(line => {
-                // 查找正在扫描的日期（新格式：📅 【当前处理日期】2024-01-15）
-                const scanMatch = line.match(/【当前处理日期】(\d{4}-\d{2}-\d{2})/);
+                // 查找正在处理的日期（新格式：📅 【正在处理日期】2025-11-08）
+                const scanMatch = line.match(/【正在处理日期】(\d{4}-\d{2}-\d{2})/);
                 if (scanMatch) {
                     processingDate = scanMatch[1];
                     if (dateQueueState.dates.has(processingDate)) {
@@ -2729,23 +2655,27 @@
             // 标记已完成的日期（当前处理日期之前的都标记为完成）
             let justCompletedDate = null;
             if (dateQueueState.currentDate) {
-                const currentIndex = dateQueueState.orderedDates.indexOf(dateQueueState.currentDate);
+                const currentIndex = dateQueueState.allDates.indexOf(dateQueueState.currentDate);
                 for (let i = 0; i < currentIndex; i++) {
-                    const dateStr = dateQueueState.orderedDates[i];
-                    if (dateQueueState.dates.get(dateStr).status === 'pending') {
+                    const dateStr = dateQueueState.allDates[i];
+                    const state = dateQueueState.dates.get(dateStr);
+                    if (state && state.status === 'pending') {
                         dateQueueState.dates.get(dateStr).status = 'completed';
                         justCompletedDate = dateStr;
                     }
                 }
             }
 
+            // 如果检测到正在处理的日期不在已加载列表中，说明需要加载更多
+            if (processingDate && !dateQueueState.dates.has(processingDate)) {
+                console.log(`[AutoLoad] 检测到新日期 ${processingDate} 不在已加载列表`);
+                await loadMoreDates();
+            }
+
             updateDateQueueDisplay();
             
             // 如果刚刚完成了一天，且启用了自动加载，则自动加载下一天
-            if (justCompletedDate && dateQueueState.autoLoadNext && dateQueueState.hasMore) {
-                console.log(`[AutoLoad] 日期 ${justCompletedDate} 处理完成，自动加载下一天`);
-                setTimeout(() => loadMoreDates(), 1000); // 延迟1秒后加载下一天
-            }
+            // 不需要自动加载，因为所有日期都会从 API 获取状态
         }
 
         async function fetchBcLogs() {
@@ -2755,11 +2685,35 @@
                 if (result.logs) {
                     const logEl = document.getElementById('processLogs');
                     const isScrolledToBottom = logEl.scrollHeight - logEl.clientHeight <= logEl.scrollTop + 10;
-                    logEl.textContent = result.logs;
+
+                    // 保存完整日志
+                    window.fullLogs = result.logs;
+
+                    // 如果有选中日期，显示过滤后的日志；否则显示全部
+                    if (dateQueueState.selectedDate) {
+                        const lines = result.logs.split('\n');
+                        const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate));
+                        logEl.textContent = filteredLines.join('\n');
+                    } else {
+                        logEl.textContent = result.logs;
+                    }
+
                     if (isScrolledToBottom) logEl.scrollTop = logEl.scrollHeight;
 
                     // 更新日期队列（异步）
+                    const prevProcessingDate = dateQueueState.currentDate;
                     await parseDateQueueFromLogs(result.logs);
+
+                    // 如果处理日期变更了，自动切换选中的日期
+                    if (dateQueueState.currentDate && dateQueueState.currentDate !== prevProcessingDate) {
+                        dateQueueState.selectedDate = dateQueueState.currentDate;
+                        // 重新过滤日志
+                        const lines = result.logs.split('\n');
+                        const filteredLines = lines.filter(line => line.includes(dateQueueState.currentDate));
+                        logEl.textContent = filteredLines.join('\n');
+                        logEl.scrollTop = logEl.scrollHeight;
+                        updateDateQueueDisplay();
+                    }
 
                     // 如果检测到"分析任务已结束"，自动刷新数据
                     if (result.logs.includes("历史音频重分析任务已结束") || result.logs.includes("任务已手动停止")) {
@@ -2770,7 +2724,7 @@
                             }
                         }
                     }
-                    
+
                     lastLogContent = result.logs;
                 }
             } catch (e) {
@@ -2862,156 +2816,51 @@
             }
         }
 
-        // 生成会话ID（用于跨浏览器识别）
-        function getSessionId() {
-            let sessionId = localStorage.getItem('babyCrySessionId');
-            if (!sessionId) {
-                sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('babyCrySessionId', sessionId);
-            }
-            return sessionId;
-        }
-
-        async function saveBatchProgress() {
-            // 准备进度数据
-            const datesState = {};
-            dateQueueState.dates.forEach((state, date) => {
-                datesState[date] = state;
-            });
-            
-            const progress = {
-                session_id: getSessionId(),
-                all_dates: dateQueueState.allDates,
-                loaded_count: dateQueueState.loadedCount,
-                has_more: dateQueueState.hasMore,
-                current_date: dateQueueState.currentDate,
-                dates_state: datesState
-            };
-            
-            // 同时保存到 localStorage（作为备份）
-            localStorage.setItem('babyCryBatchProgress', JSON.stringify({
-                allDates: dateQueueState.allDates,
-                loadedCount: dateQueueState.loadedCount,
-                hasMore: dateQueueState.hasMore,
-                currentDate: dateQueueState.currentDate,
-                dates: datesState
-            }));
-            
-            // 保存到数据库（主要存储）
-            try {
-                const response = await fetch('/api/babycry/progress', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(progress)
-                });
-                const result = await response.json();
-                if (result.status === 'success') {
-                    console.log('[DB] 进度已保存到数据库');
-                }
-            } catch (e) {
-                console.error('[DB] 保存进度到数据库失败:', e);
-            }
-        }
-
-        async function loadBatchProgress() {
-            const sessionId = getSessionId();
-            
-            // 优先从数据库加载
-            try {
-                const response = await fetch(`/api/babycry/progress?session_id=${sessionId}`);
-                const result = await response.json();
-                
-                if (result.status === 'success' && result.data) {
-                    console.log('[DB] 从数据库加载进度成功');
-                    return {
-                        allDates: result.data.all_dates,
-                        loadedCount: result.data.loaded_count,
-                        hasMore: result.data.has_more,
-                        currentDate: result.data.current_date,
-                        dates: result.data.dates_state
-                    };
-                }
-            } catch (e) {
-                console.error('[DB] 从数据库加载进度失败:', e);
-            }
-            
-            // 数据库加载失败，尝试从 localStorage 加载（降级方案）
-            const saved = localStorage.getItem('babyCryBatchProgress');
-            if (saved) {
-                try {
-                    const data = JSON.parse(saved);
-                    console.log('[LocalStorage] 从本地存储加载进度');
-                    return data;
-                } catch (e) {
-                    console.error('解析本地进度失败:', e);
-                }
-            }
-            
-            return null;
-        }
-
-        async function clearBatchProgress() {
-            const sessionId = getSessionId();
-            
-            // 清除本地存储
-            localStorage.removeItem('babyCryBatchProgress');
+        function clearBatchProgress() {
+            // 清除本地状态
             dateQueueState.allDates = [];
-            dateQueueState.loadedCount = 0;
-            dateQueueState.hasMore = true;
             dateQueueState.dates = new Map();
-            dateQueueState.orderedDates = [];
             dateQueueState.currentDate = null;
+        }
+
+        // 刷新日期列表（清除缓存，重新扫描）
+        async function refreshDateList() {
+            console.log('[刷新] 清除日期缓存，重新扫描...');
             
-            // 清除数据库中的进度
+            // 清空前端状态
+            dateQueueState.allDates = [];
+            dateQueueState.dates = new Map();
+            
+            // 重新获取
             try {
-                const response = await fetch(`/api/babycry/progress?session_id=${sessionId}`, {
-                    method: 'DELETE'
-                });
+                const response = await fetch('/api/scan_dates?refresh=1');
                 const result = await response.json();
-                if (result.status === 'success') {
-                    console.log('[DB] 数据库进度已清除');
+                if (result.status === 'success' && result.dates) {
+                    dateQueueState.allDates = result.dates;
+                    
+                    for (const dateStr of result.dates) {
+                        const info = result.date_info[dateStr];
+                        if (info) {
+                            dateQueueState.dates.set(dateStr, {
+                                status: info.status,
+                                fileCount: info.fileCount,
+                                processedCount: info.processedCount
+                            });
+                        }
+                    }
+                    
+                    console.log('[刷新] 获取到', result.dates.length, '个日期');
+                    updateDateQueueDisplay();
                 }
             } catch (e) {
-                console.error('[DB] 清除数据库进度失败:', e);
+                console.error('[刷新] 失败:', e);
             }
         }
 
-        async function loadMoreDates() {
-            // 加载更多日期
-            if (!dateQueueState.hasMore) return;
-            
-            // 计算下一批要加载的日期范围
-            const startIndex = dateQueueState.loadedCount;
-            const endIndex = Math.min(startIndex + dateQueueState.batchSize, dateQueueState.allDates.length);
-            
-            // 加载下一批日期
-            for (let i = startIndex; i < endIndex; i++) {
-                const dateStr = dateQueueState.allDates[i];
-                if (!dateQueueState.dates.has(dateStr)) {
-                    dateQueueState.dates.set(dateStr, {
-                        status: 'pending',
-                        fileCount: 0
-                    });
-                    dateQueueState.orderedDates.push(dateStr);
-                }
-            }
-            
-            dateQueueState.loadedCount = endIndex;
-            dateQueueState.hasMore = endIndex < dateQueueState.allDates.length;
-            
-            // 保存进度（异步）
-            await saveBatchProgress();
-            
-            // 更新显示
+        function loadMoreDates() {
+            // 显示更多待处理日期（每次多显示3个）
+            dateQueueState.showAllPending = true;
             updateDateQueueDisplay();
-            
-            // 更新状态标签
-            const statusLabel = document.getElementById('triggerStatus');
-            if (statusLabel) {
-                const loaded = dateQueueState.loadedCount;
-                const total = dateQueueState.allDates.length;
-                statusLabel.innerHTML = `<span class="text-purple-400 font-bold"><i class="fa-solid fa-clock mr-2"></i>已加载 ${loaded}/${total} 天</span>`;
-            }
         }
 
         function clearAllFilters() {
@@ -3089,7 +2938,6 @@
         async function triggerReprocess() {
             // 重置日期队列状态
             dateQueueState.dates.clear();
-            dateQueueState.orderedDates = [];
             dateQueueState.currentDate = null;
             updateDateQueueDisplay();
             
@@ -3125,7 +2973,7 @@
             
             statusLabel.innerHTML = '<span class="animate-pulse text-blue-400 font-bold"><i class="fa-solid fa-satellite-dish mr-2"></i>正在拉起独立云端分析引擎...</span>';
             
-            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 1500);
+            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);  // 5 秒一次，减少扫描频率
             
             try {
                 let url = '/api/trigger_reprocess?1=1';

@@ -12,7 +12,7 @@ import datetime
 import requests
 import subprocess
 import argparse
-from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, save_analysis_progress, load_analysis_progress, clear_analysis_progress, fix_recording_time
+from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, fix_recording_time, get_connection, return_connection
 
 # --- 配置 ---
 # 获取脚本自身所在的目录
@@ -24,10 +24,25 @@ if platform.system() == "Darwin":
     # macOS 路径 - 与实际 SMB 挂载路径保持一致
     DEFAULT_SOURCE_DIR = "/Volumes/download/records/Sony-2"
     DEFAULT_LOG_FILE_PATH = os.path.expanduser("~/asr-server/log/asr-server.log")
+    DEBUG_LOG_FILE_PATH = os.path.expanduser("~/asr-server/log/web_viewer_debug.log")
 else:
     # Windows 路径
     DEFAULT_SOURCE_DIR = "V:\\Sony-2"
     DEFAULT_LOG_FILE_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "log", "asr-server.log")
+    DEBUG_LOG_FILE_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "log", "web_viewer_debug.log")
+
+# DEBUG 日志函数
+def debug_log(message):
+    """将 DEBUG 日志写入单独的文件"""
+    try:
+        log_dir = os.path.dirname(DEBUG_LOG_FILE_PATH)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        with open(DEBUG_LOG_FILE_PATH, 'a', encoding='utf-8') as f:
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+            f.write(f"{timestamp} | DEBUG | {message}\n")
+    except Exception as e:
+        print(f"[DEBUG LOG ERROR] {e}")
 
 DEFAULT_ASR_API_URL = "http://localhost:5008/transcribe"
 DEFAULT_WEB_PORT = 5009 
@@ -446,25 +461,167 @@ def proxy_reprocess_logs():
 @app.route('/api/scan_dates', methods=['GET'])
 @login_required
 def api_scan_dates():
-    """扫描文件系统获取所有日期目录"""
+    """扫描文件系统获取所有日期目录及处理状态"""
     try:
-        source_dir = SOURCE_DIR
-        if not os.path.exists(source_dir):
-            return jsonify({"error": f"目录不存在: {source_dir}"}), 400
+        source_dir = CONFIG["SOURCE_DIR"]
+        processed_dir = os.path.join(source_dir, 'processed')
 
-        date_dirs = []
-        for item in os.listdir(source_dir):
-            item_path = os.path.join(source_dir, item)
-            if os.path.isdir(item_path) and re.match(r'\d{4}-\d{2}-\d{2}', item):
-                date_dirs.append(item)
+        # 优先扫描 processed 子目录
+        scan_base = processed_dir if os.path.exists(processed_dir) else source_dir
+
+        if not os.path.exists(scan_base):
+            return jsonify({"error": f"目录不存在: {scan_base}"}), 400
+
+        AUDIO_EXTS = ('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc')
+        date_info = {}
+
+        # 检查是否需要强制刷新缓存
+        force_refresh = request.args.get('refresh') == '1'
+        if force_refresh:
+            debug_log("强制刷新，清除缓存...")
+            try:
+                conn = get_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute('TRUNCATE TABLE babycry_date_cache')
+                    conn.commit()
+                    cursor.close()
+                    return_connection(conn)
+            except Exception as e:
+                debug_log(f"清除缓存失败：{e}")
+
+        # 先尝试从数据库加载缓存的文件数量
+        try:
+            conn = get_connection()
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT date_str, file_count, files FROM babycry_date_cache
+                    WHERE date_str ~ %s
+                ''', (r'^\d{4}-\d{2}-\d{2}$',))
+                for row in cursor:
+                    date_str, file_count, files = row
+                    date_info[date_str] = {
+                        'fileCount': file_count,
+                        'processedCount': 0,
+                        'status': 'pending',
+                        'files': files if files else []  # 文件名列表
+                    }
+                cursor.close()
+                return_connection(conn)
+                debug_log(f"从缓存加载了 {len(date_info)} 个日期")
+        except Exception as e:
+            debug_log(f"从缓存加载失败：{e}")
+
+        # 如果缓存为空，才扫描文件系统
+        if not date_info:
+            debug_log("缓存为空，扫描文件系统...")
+            scan_count = 0
+            for item in os.listdir(scan_base):
+                item_path = os.path.join(scan_base, item)
+                if os.path.isdir(item_path) and re.match(r'\d{4}-\d{2}-\d{2}', item):
+                    file_count = 0
+                    file_list = []
+                    try:
+                        for f in os.listdir(item_path):
+                            if f.lower().endswith(AUDIO_EXTS):
+                                file_count += 1
+                                file_list.append(f)
+                        scan_count += 1
+                    except:
+                        pass
+                    date_info[item] = {
+                        'fileCount': file_count,
+                        'processedCount': 0,
+                        'status': 'pending',
+                        'files': file_list
+                    }
+            
+            debug_log(f"扫描到 {scan_count} 个日期目录")
+            debug_log(f"date_info 内容：{list(date_info.items())[:3]}")
+            
+            # 保存到缓存
+            if date_info:
+                try:
+                    conn = get_connection()
+                    if conn:
+                        cursor = conn.cursor()
+                        for date_str, info in date_info.items():
+                            cursor.execute('''
+                                INSERT INTO babycry_date_cache (date_str, file_count, files, updated_at)
+                                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                                ON CONFLICT (date_str) DO UPDATE SET
+                                    file_count = EXCLUDED.file_count,
+                                    files = EXCLUDED.files,
+                                    updated_at = CURRENT_TIMESTAMP
+                            ''', (date_str, info['fileCount'], json.dumps(info['files'])))
+                        conn.commit()
+                        cursor.close()
+                        return_connection(conn)
+                        debug_log(f"✅ 已缓存 {len(date_info)} 个日期（包含文件列表）")
+                    else:
+                        debug_log("❌ 无法获取数据库连接")
+                except Exception as e:
+                    debug_log(f"❌ 保存缓存失败：{e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                debug_log("❌ date_info 为空，无法保存")
+        else:
+            debug_log(f"使用缓存，不扫描文件系统（共 {len(date_info)} 个日期）")
+
+        # 查询数据库获取已处理的进度
+        try:
+            conn = get_connection()
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT filename FROM processed_files_a')
+                rows = cursor.fetchall()
+                debug_log(f"查询到 {len(rows)} 条处理记录")
+                
+                date_counts = {}
+                # 匹配两种格式：2025-11-07 或 20251115
+                date_pattern = re.compile(r'(\d{4}-\d{2}-\d{2})|(\d{4}\d{2}\d{2})')
+                for row in rows:
+                    filename = row[0]
+                    match = date_pattern.search(filename)
+                    if match:
+                        # 提取日期（优先用带 - 的格式）
+                        d = match.group(1) if match.group(1) else match.group(2)
+                        # 如果是 20251115 格式，转换为 2025-11-15
+                        if len(d) == 8:
+                            d = f"{d[:4]}-{d[4:6]}-{d[6:]}"
+                        date_counts[d] = date_counts.get(d, 0) + 1
+                
+                debug_log(f"统计到 {len(date_counts)} 个日期有处理记录")
+                debug_log(f"示例：{list(date_counts.items())[:3]}")
+                
+                for date_str, cnt in date_counts.items():
+                    if date_str in date_info:
+                        date_info[date_str]['processedCount'] = cnt
+                        debug_log(f"{date_str}: {cnt} 条记录")
+                cursor.close()
+                return_connection(conn)
+        except Exception as db_err:
+            debug_log(f"查询处理进度失败：{db_err}")
+
+        # 更新状态
+        for date_str, info in date_info.items():
+            if info['processedCount'] == 0:
+                info['status'] = 'pending'
+            elif info['processedCount'] >= info['fileCount']:
+                info['status'] = 'completed'
+            else:
+                info['status'] = 'processing'
 
         # 按日期升序排序
-        date_dirs.sort(key=lambda x: datetime.strptime(x, '%Y-%m-%d'))
+        sorted_dates = sorted(date_info.keys(), key=lambda x: datetime.datetime.strptime(x, '%Y-%m-%d'))
 
         return jsonify({
             "status": "success",
-            "dates": date_dirs,
-            "total": len(date_dirs)
+            "dates": sorted_dates,
+            "date_info": date_info,
+            "total": len(sorted_dates)
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -490,7 +647,7 @@ def api_save_babycry_progress():
         has_more = data.get('has_more', True)
         processing_date = data.get('current_date')
         dates_state = data.get('dates_state', {})
-        
+
         success = save_analysis_progress(
             session_id=session_id,
             all_dates=all_dates,

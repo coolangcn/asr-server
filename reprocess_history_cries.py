@@ -8,6 +8,15 @@ import datetime
 import logging
 from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection
 
+# 导入邮件模块
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from email_utils import send_email_async
+    EMAIL_ENABLED = True
+except ImportError:
+    EMAIL_ENABLED = False
+    print("[WARN] email_utils 未找到，邮件功能已禁用")
+
 API_URL = "http://localhost:5008/transcribes"
 SOURCE_DIR = "/Volumes/download/records/Sony-2"
 PROCESSED_DIR = os.path.join(SOURCE_DIR, "processed")
@@ -296,26 +305,23 @@ if __name__ == "__main__":
         
         log_detail(f"", 'info')
         log_detail(f"📅 【当前处理日期详细信息】", 'info')
-        log_detail(f"{'─'*60}", 'info')
         
         if first_date and last_date:
             day_span = (last_date - first_date).days + 1
-            log_detail(f"   � 日期范围: {first_date.strftime('%Y-%m-%d %H:%M')} → {last_date.strftime('%Y-%m-%d %H:%M')}", 'info')
-            log_detail(f"   � 时间跨度: {day_span} 天", 'info')
+            log_detail(f"   📅 日期范围: {first_date.strftime('%Y-%m-%d %H:%M')} → {last_date.strftime('%Y-%m-%d %H:%M')}", 'info')
+            log_detail(f"   📅 时间跨度: {day_span} 天", 'info')
             log_detail(f"   ⏰ 起始时间: {first_date.strftime('%H:%M:%S')}", 'info')
             log_detail(f"   ⏰ 结束时间: {last_date.strftime('%H:%M:%S')}", 'info')
         
-        log_detail(f"   � 首个文件: {first_file}", 'info')
-        log_detail(f"   � 末个文件: {last_file}", 'info')
+        log_detail(f"   📅 首个文件: {first_file}", 'info')
+        log_detail(f"   📅 末个文件: {last_file}", 'info')
         log_detail(f"   📈 文件总数: {len(files_to_process)} 个", 'info')
         
         # 如果是按日期过滤，显示当前日期
         if filter_date:
             log_detail(f"   🎯 指定日期: {filter_date}", 'info')
             log_detail(f"   📝 处理状态: 准备开始哭声识别...", 'info')
-        
-        log_detail(f"{'─'*60}", 'info')
-    log_detail(f"{'='*60}", 'info')
+    
 
     cry_file_paths = []   # 有哭声的文件路径列表（有序）
     success_count = 0
@@ -410,7 +416,7 @@ if __name__ == "__main__":
     log_detail(f"{'─'*60}", 'info')
     log_detail(f"   📁 总文件数：     {len(files_to_process):>6}", 'info')
     log_detail(f"   ✅ 成功处理：     {success_count:>6}", 'info')
-    log_detail(f"   ⏭️  跳过文件：     {skip_count:>6}", 'info')
+    log_detail(f"   ⏭️ 跳过文件：     {skip_count:>6}", 'info')
     log_detail(f"   ❌ 处理错误：     {error_count:>6}", 'info')
     log_detail(f"   🍼 检出哭声文件： {len(cry_file_paths):>6}", 'info')
     log_detail(f"{'─'*60}", 'info')
@@ -449,7 +455,7 @@ if __name__ == "__main__":
     log_detail(f"   🍼 哭声文件: {len(cry_file_paths)} 个", 'info')
     log_detail(f"   🔔 独立事件: {len(events)} 个", 'info')
     log_detail(f"   📁 事件目录: {events_base_dir}", 'info')
-    log_detail(f"   ⏱️  合并阈值: {CRY_MERGE_GAP_SEC//60} 分钟", 'info')
+    log_detail(f"   ⏱️ 合并阈值: {CRY_MERGE_GAP_SEC//60} 分钟", 'info')
     log_detail(f"   📎 上下文扩展: 前后各 {CRY_CONTEXT_EACH_SIDE} 个文件", 'info')
     log_detail(f"{'─'*60}", 'info')
     log_detail(f"{'='*60}", 'info')
@@ -509,15 +515,76 @@ if __name__ == "__main__":
                 },
                 timeout=180
             )
+            event_result = None
             if response.status_code == 200:
                 result = response.json()
                 reason = result.get("reason") or "未知"
                 advice = result.get("advice") or "无"
                 category = result.get("category") or "未分类"
+                event_result = result
                 log_detail(f"    ✨ 分析完成!", 'info')
                 log_detail(f"       分类：{category}", 'info')
                 log_detail(f"       原因：{reason[:100]}{'...' if len(reason) > 100 else ''}", 'info')
                 log_detail(f"       建议：{advice[:80]}{'...' if len(advice) > 80 else ''}", 'info')
+
+                # 发送邮件通知（历史模式也发送）
+                if EMAIL_ENABLED:
+                    try:
+                        # 获取哭声片段时间
+                        cry_start = first_seg.get('start', 0) / 1000.0
+                        cry_end = first_seg.get('end', 60000) / 1000.0
+                        cry_time = parse_file_datetime(rep_filename)
+                        cry_time_str = cry_time.strftime('%Y-%m-%d %H:%M:%S') if cry_time else '未知'
+
+                        # 构建详细邮件内容
+                        subject = f"📋 历史分析报告 | {filter_date or '全量'} | 检测到 {len(events)} 个哭声事件"
+                        content = f"""
+═══════════════════════════════════════════════════════════════
+                     📋 宝宝哭声历史分析报告
+═══════════════════════════════════════════════════════════════
+
+📅 处理日期: {filter_date or '全部日期'}
+⏰ 报告生成时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📂 事件目录: {events_base_dir}
+
+───────────────────────────────────────────────────────────────
+📊 分析统计
+───────────────────────────────────────────────────────────────
+🔔 独立哭声事件: {len(events)} 个
+📁 关联文件总数: {len(cry_file_paths)} 个
+🤖 合并阈值: {CRY_MERGE_GAP_SEC // 60} 分钟
+📎 上下文扩展: 前后各 {CRY_CONTEXT_EACH_SIDE} 个文件
+
+───────────────────────────────────────────────────────────────
+🔔 事件 {idx}/{len(events)} 详情
+───────────────────────────────────────────────────────────────
+📁 事件目录: {event_dir}
+🎵 代表文件: {rep_filename}
+⏰ 哭声时间: {cry_time_str}
+⏱️ 哭声片段: {cry_start:.1f}s - {cry_end:.1f}s
+📊 事件文件数: {len(event_files)} 个
+
+🏷️ 分析结果:
+   • 分类: {category}
+   • 原因: {reason}
+   • 建议: {advice}
+
+📂 事件文件列表:
+"""
+                        for i, f in enumerate(event_files, 1):
+                            ftime = parse_file_datetime(os.path.basename(f))
+                            ftime_str = ftime.strftime('%H:%M:%S') if ftime else ''
+                            is_cry = '🔴' if f in cry_file_paths else '📎'
+                            content += f"   {is_cry} {i:2d}. {os.path.basename(f)} ({ftime_str})\n"
+
+                        content += f"""
+═══════════════════════════════════════════════════════════════
+"""
+
+                        send_email_async(subject, content)
+                        log_detail(f"    📧 邮件已发送", 'info')
+                    except Exception as email_err:
+                        log_detail(f"    ⚠️ 邮件发送失败: {email_err}", 'warning')
             else:
                 log_detail(f"    ⚠️  Gemini 分析接口返回 {response.status_code}，跳过", 'warning')
         except Exception as e:
@@ -537,3 +604,50 @@ if __name__ == "__main__":
     log_detail(f"{'─'*60}", 'info')
     log_detail(f"{'='*60}", 'info')
     log_detail(f"\n请在上方切换到【宝宝分析】标签页查看自动刷新的记录。", 'info')
+
+    # 发送任务完成汇总邮件
+    if EMAIL_ENABLED and events:
+        try:
+            subject = f"✅ 历史分析完成 | {filter_date or '全量'} | 共 {len(events)} 个事件"
+            content = f"""
+═══════════════════════════════════════════════════════════════
+                   📋 历史分析任务完成汇总
+═══════════════════════════════════════════════════════════════
+
+📅 处理日期: {filter_date or '全部日期'}
+⏰ 完成时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📂 事件目录: {events_base_dir}
+
+───────────────────────────────────────────────────────────────
+📊 任务统计
+───────────────────────────────────────────────────────────────
+📁 扫描文件总数: {len(all_files)} 个
+🎯 目标文件数: {len(target_files)} 个
+🔔 检出哭声文件: {len(cry_file_paths)} 个
+🔔 独立哭声事件: {len(events)} 个
+✅ 成功处理: {success_count} 个
+⏭️  跳过文件: {skip_count} 个
+❌ 处理错误: {error_count} 个
+
+───────────────────────────────────────────────────────────────
+📋 各事件概览
+───────────────────────────────────────────────────────────────
+"""
+            for i, event_files_item in enumerate(events, 1):
+                cry_in_event = [f for f in event_files_item if f in cry_file_paths]
+                rep_file = event_files_item[len(event_files_item) // 2]
+                rep_time = parse_file_datetime(os.path.basename(rep_file))
+                rep_time_str = rep_time.strftime('%H:%M:%S') if rep_time else ''
+                content += f"""
+🔔 事件 {i}: {len(event_files_item)} 个文件 (哭声 {len(cry_in_event)} 个)
+   代表: {os.path.basename(rep_file)} ({rep_time_str})
+"""
+            content += f"""
+═══════════════════════════════════════════════════════════════
+请在 BabyCry 分析看板查看详细分析结果。
+═══════════════════════════════════════════════════════════════
+"""
+            send_email_async(subject, content)
+            log_detail(f"📧 任务完成汇总邮件已发送", 'info')
+        except Exception as email_err:
+            log_detail(f"⚠️ 汇总邮件发送失败: {email_err}", 'warning')

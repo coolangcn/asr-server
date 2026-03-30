@@ -112,24 +112,19 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_recording_time ON transcriptions(recording_time DESC NULLS LAST);
         ''')
         
-        # 创建宝宝哭声分析进度表
+        # 创建日期缓存表（存储每个日期的文件数量和文件列表，避免重复扫描）
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS babycry_analysis_progress (
+        CREATE TABLE IF NOT EXISTS babycry_date_cache (
             id SERIAL PRIMARY KEY,
-            session_id VARCHAR(64) NOT NULL UNIQUE,
-            all_dates JSONB NOT NULL,
-            loaded_count INTEGER NOT NULL DEFAULT 0,
-            has_more BOOLEAN NOT NULL DEFAULT TRUE,
-            processing_date VARCHAR(10),
-            dates_state JSONB NOT NULL,
+            date_str VARCHAR(10) NOT NULL UNIQUE,
+            file_count INTEGER NOT NULL DEFAULT 0,
+            files JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         ''')
-        
-        # 创建索引
         cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_babycry_session ON babycry_analysis_progress(session_id);
+        CREATE INDEX IF NOT EXISTS idx_babycry_date ON babycry_date_cache(date_str);
         ''')
         
         conn.commit()
@@ -283,11 +278,11 @@ def fix_recording_time() -> int:
         if conn:
             return_connection(conn)
 
-def save_analysis_progress(session_id: str, all_dates: list, loaded_count: int, 
+def save_analysis_progress(session_id: str, all_dates: list, loaded_count: int,
                            has_more: bool, current_date: str, dates_state: dict) -> bool:
     """
     保存宝宝哭声分析进度到数据库
-    
+
     Args:
         session_id: 会话ID
         all_dates: 所有日期列表
@@ -309,15 +304,15 @@ def save_analysis_progress(session_id: str, all_dates: list, loaded_count: int,
             INSERT INTO babycry_analysis_progress 
             (session_id, all_dates, loaded_count, has_more, processing_date, dates_state, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (session_id) 
-            DO UPDATE SET 
+            ON CONFLICT (session_id)
+            DO UPDATE SET
                 all_dates = EXCLUDED.all_dates,
                 loaded_count = EXCLUDED.loaded_count,
                 has_more = EXCLUDED.has_more,
                 processing_date = EXCLUDED.processing_date,
                 dates_state = EXCLUDED.dates_state,
                 updated_at = CURRENT_TIMESTAMP
-        ''', (session_id, json.dumps(all_dates), loaded_count, has_more, 
+        ''', (session_id, json.dumps(all_dates), loaded_count, has_more,
               current_date, json.dumps(dates_state)))
         
         conn.commit()
@@ -352,14 +347,14 @@ def load_analysis_progress(session_id: str) -> dict:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT all_dates, loaded_count, has_more, processing_date, dates_state 
-            FROM babycry_analysis_progress 
+            SELECT all_dates, loaded_count, has_more, processing_date, dates_state
+            FROM babycry_analysis_progress
             WHERE session_id = %s
         ''', (session_id,))
-        
+
         row = cursor.fetchone()
         cursor.close()
-        
+
         if row:
             return {
                 'all_dates': row[0],
