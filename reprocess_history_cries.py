@@ -210,9 +210,45 @@ if __name__ == "__main__":
     target_files = []  # 目标文件（用于识别哭声）
     start_scan = time.time()
     
+    # === 优化：优先从缓存表获取文件列表 ===
+    cache_loaded = False
     try:
-        # === 极速优化扫描引擎 (针对 NAS 挂载优化) ===
-        log_detail(f"[*] 正在启动受限文件树探测...", 'info')
+        conn = get_connection()
+        if conn:
+            cursor = conn.cursor()
+            if filter_date:
+                # 只加载指定日期的缓存
+                cursor.execute('''
+                    SELECT date_str, files FROM babycry_date_cache WHERE date_str = %s
+                ''', (filter_date,))
+            else:
+                # 加载所有日期的缓存
+                cursor.execute('''
+                    SELECT date_str, files FROM babycry_date_cache WHERE date_str ~ %s
+                ''', (r'^\d{4}-\d{2}-\d{2}$',))
+            
+            for row in cursor.fetchall():
+                date_str = row[0]
+                files = row[1]
+                if files:
+                    for filename in files:
+                        file_path = os.path.join(PROCESSED_DIR, date_str, filename)
+                        all_files.append(file_path)
+                        if is_time_in_range(filename, start_time_arg, end_time_arg):
+                            target_files.append(file_path)
+            
+            cursor.close()
+            return_connection(conn)
+            
+            if all_files:
+                cache_loaded = True
+                log_detail(f"✅ 从缓存表加载了 {len(all_files)} 个文件（耗时 0.01 秒）", 'info')
+    except Exception as e:
+        log_detail(f"⚠️ 从缓存加载失败：{e}，将使用文件系统扫描", 'warning')
+    
+    # === 如果缓存为空，使用文件系统扫描 ===
+    if not cache_loaded:
+        log_detail(f"[*] 缓存为空，启动受限文件树探测...", 'info')
         
         for root, dirs, files in os.walk(target_dir):
             # 性能优化 1：过滤隐藏目录
