@@ -1502,10 +1502,6 @@ def trigger_reprocess():
         end_time = request.args.get('end_time', '')
         force_replace = request.args.get('replace', 'false').lower() == 'true'
         
-        # 选择日期时自动启用强制替换模式
-        if date_param:
-            force_replace = True
-        
         # 不提前删除记录，等分析完成后再处理（避免记录消失）
             
         # 暂停 B 轨处理，直到 A 轨结束

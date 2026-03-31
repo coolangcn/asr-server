@@ -602,13 +602,18 @@ def api_scan_dates():
             debug_log(f"查询处理进度失败：{db_err}")
 
         # 更新状态
+        # 注意：如果需要知道进程是否真的在运行，应该用 babycry_analysis_progress 表的 last_heartbeat 字段
+        # 这里只根据 processedCount 判断，重启后部分完成的日期会显示为"暂停"而非"处理中"
         for date_str, info in date_info.items():
             if info['processedCount'] == 0:
                 info['status'] = 'pending'
             elif info['processedCount'] >= info['fileCount']:
                 info['status'] = 'completed'
             else:
-                info['status'] = 'processing'
+                # 部分完成：区分"处理中"(processing)和"暂停"(paused)
+                # 当前实现只根据 processedCount 判断，缺少进程心跳信息
+                # 重启后无法判断进程是否还在运行，暂时统一用 paused 表示非活跃状态
+                info['status'] = 'paused'
 
         # 按日期升序排序
         sorted_dates = sorted(date_info.keys(), key=lambda x: datetime.datetime.strptime(x, '%Y-%m-%d'))

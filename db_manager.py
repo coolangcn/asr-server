@@ -588,6 +588,77 @@ def mark_file_processed_a(filename: str, status: str = "success") -> bool:
     finally:
         if conn: return_connection(conn)
 
+def get_date_processing_stats() -> dict:
+    """获取每个日期的处理进度统计 {date_str: processed_count}"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return {}
+        cursor = conn.cursor()
+        result = {}
+
+        # 格式1: /path/YYYY-MM-DD/file.m4a (带斜杠)
+        cursor.execute('''
+            SELECT (regexp_matches(filename, '/(\d{4}-\d{2}-\d{2})/'))[1] as date_str, COUNT(*) as cnt
+            FROM processed_files_a
+            WHERE filename ~ '/\d{4}-\d{2}-\d{2}/'
+            GROUP BY date_str
+        ''')
+        for row in cursor.fetchall():
+            if row[0]:
+                result[row[0]] = row[1]
+
+        # 格式2: TermuxAudioRecording_YYYY-MM-DD_HH-MM-SS.acc 或 recording-YYYYMMDD-HHMMSS.m4a
+        # 日期在文件名中，前面是下划线或短横线
+        cursor.execute('''
+            SELECT (regexp_matches(filename, '[_-](\d{4}-\d{2}-\d{2})[_-]'))[1] as date_str, COUNT(*) as cnt
+            FROM processed_files_a
+            WHERE filename ~ '[_-]\d{4}-\d{2}-\d{2}[_-]'
+            GROUP BY date_str
+        ''')
+        for row in cursor.fetchall():
+            if row[0]:
+                result[row[0]] = result.get(row[0], 0) + row[1]
+
+        # 格式3: recording-YYYYMMDD-HHMMSS.m4a (无横杠格式)
+        cursor.execute('''
+            SELECT SUBSTRING(filename FROM '\d{4}\d{2}\d{2}') as date_str, COUNT(*) as cnt
+            FROM processed_files_a
+            WHERE filename ~ '\d{4}\d{2}\d{2}' AND filename NOT LIKE '%-%-%'
+            GROUP BY date_str
+        ''')
+        for row in cursor.fetchall():
+            if row[0] and len(row[0]) == 8:
+                date_str = f"{row[0][:4]}-{row[0][4:6]}-{row[0][6:]}"
+                result[date_str] = result.get(date_str, 0) + row[1]
+
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取日期处理进度失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
+    finally:
+        if conn: return_connection(conn)
+
+def get_date_file_counts() -> dict:
+    """获取每个日期的文件数量（从 babycry_date_cache 表）"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return {}
+        cursor = conn.cursor()
+        cursor.execute('SELECT date_str, file_count FROM babycry_date_cache')
+        result = {row[0]: row[1] for row in cursor.fetchall()}
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取日期文件数量失败: {e}")
+        return {}
+    finally:
+        if conn: return_connection(conn)
+
 def delete_cry_events_by_date(date_str: str) -> int:
     """删除指定日期（YYYY-MM-DD）的哭声分析事件和处理进度"""
     conn = None

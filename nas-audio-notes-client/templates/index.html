@@ -422,6 +422,20 @@
 
 <body class="h-screen flex overflow-hidden selection:bg-primary-500 selection:text-white">
 
+    <!-- 系统启动遮罩层 -->
+    <div id="system-startup-overlay" class="fixed inset-0 z-[9999] bg-gray-900/95 flex flex-col items-center justify-center">
+        <div class="text-center">
+            <div class="text-6xl mb-6">
+                <i class="fa-solid fa-wave-square text-primary-500 fa-spin" style="--fa-animation-duration: 2s;"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white mb-2">NAS 语音识别系统</h2>
+            <p class="text-gray-400 mb-4">系统正在启动中...</p>
+            <div id="startup-status" class="text-sm text-gray-500">
+                <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>正在连接服务...
+            </div>
+        </div>
+    </div>
+
     <!-- 侧边栏 -->
 
     <!-- 移动端汉堡菜单 -->
@@ -572,10 +586,18 @@
                         <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl">
                             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                 <i class="fa-regular fa-clock text-accent-400"></i> 时光对话
+                                <span id="shiguangPausedBadge" class="hidden text-xs font-medium px-2 py-1 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/40 ml-2">
+                                    <i class="fa-solid fa-pause-circle mr-1"></i>已暂停
+                                </span>
                             </h2>
-                            <div id="chat-date-range" class="mt-2 text-sm text-gray-400">
-                                <i class="fa-solid fa-calendar-days text-gray-500 mr-2"></i>
-                                <span id="chat-date-range-text">所有记录</span>
+                            <div class="flex items-center justify-between mt-2">
+                                <div id="chat-date-range" class="text-sm text-gray-400">
+                                    <i class="fa-solid fa-calendar-days text-gray-500 mr-2"></i>
+                                    <span id="chat-date-range-text">所有记录</span>
+                                </div>
+                                <span id="shiguangPausedReason" class="hidden text-xs text-orange-400">
+                                    <i class="fa-solid fa-info-circle mr-1"></i>宝宝检测运行中
+                                </span>
                             </div>
                         </header>
                         <div id="chat-content" class="flex-1 p-6 space-y-8 pb-20 overflow-y-auto">
@@ -707,12 +729,6 @@
                 <!-- Main Header -->
                 <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl flex justify-between items-center">
                     <div class="flex items-center gap-3">
-                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-baby text-yellow-400 mb-1"></i>
-                            <button onclick="fetchBabyCryEvents()" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-500 hover:text-white transition-all active:rotate-180" title="刷新记录">
-                                <i class="fa-solid fa-rotate-right text-xs"></i>
-                            </button>
-                        </h2>
                         <div class="text-[10px] text-gray-400 flex flex-col items-start gap-2">
                             <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse">
                                 <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
@@ -2024,9 +2040,13 @@
                 if (statusData.asr_server === 'online') {
                     asrDot.classList.remove('text-red-500');
                     asrDot.classList.add('text-green-500', 'shadow-[0_0_8px_#22c55e]');
+                    // 系统已启动完成，隐藏遮罩层
+                    hideStartupOverlay();
                 } else {
                     asrDot.classList.remove('text-green-500', 'shadow-[0_0_8px_#22c55e]');
                     asrDot.classList.add('text-red-500');
+                    // 显示启动遮罩层
+                    showStartupOverlay('ASR 服务离线');
                 }
 
                 document.getElementById('status-files').innerText = statusData.pending_files;
@@ -2107,7 +2127,10 @@
                     }
                 }
 
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error('updateLoop error:', e);
+                showStartupOverlay('服务连接失败');
+            }
         }
 
         // 添加滚动监听 - 滚动到底部时加载更多
@@ -2204,6 +2227,25 @@
 
             aside.classList.toggle('mobile-open');
             overlay.classList.toggle('active');
+        }
+
+        // 系统启动遮罩层控制
+        let startupOverlayHidden = false;
+        function showStartupOverlay(reason = '系统正在启动中...') {
+            const overlay = document.getElementById('system-startup-overlay');
+            const status = document.getElementById('startup-status');
+            if (!overlay) return;
+            overlay.classList.remove('hidden');
+            if (status) {
+                status.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-2"></i>${reason}`;
+            }
+            startupOverlayHidden = false;
+        }
+        function hideStartupOverlay() {
+            const overlay = document.getElementById('system-startup-overlay');
+            if (!overlay || startupOverlayHidden) return;
+            overlay.classList.add('hidden');
+            startupOverlayHidden = true;
         }
 
         // 点击导航按钮后自动关闭移动端菜单
@@ -2426,6 +2468,12 @@
                     borderClass = 'border-red-500/40';
                     icon = 'fa-exclamation-circle';
                     break;
+                case 'paused':
+                    bgClass = 'bg-orange-500/20';
+                    textClass = 'text-orange-400';
+                    borderClass = 'border-orange-500/40';
+                    icon = 'fa-pause-circle';
+                    break;
                 default:
                     bgClass = 'bg-gray-500/20';
                     textClass = 'text-gray-400';
@@ -2454,11 +2502,12 @@
             // 如果点击已选中的日期，则取消选中
             if (dateQueueState.selectedDate === dateStr) {
                 dateQueueState.selectedDate = null;
-                // 显示全部日志
+                // 显示全部日志（倒序，最新的在上面）
                 const logEl = document.getElementById('processLogs');
                 if (logEl && window.fullLogs) {
-                    logEl.textContent = window.fullLogs;
-                    logEl.scrollTop = logEl.scrollHeight;
+                    const lines = window.fullLogs.split('\n').filter(line => line.trim());
+                    logEl.textContent = lines.reverse().join('\n');
+                    logEl.scrollTop = 0;  // 滚动到顶部看最新日志
                 }
             } else {
                 dateQueueState.selectedDate = dateStr;
@@ -2473,15 +2522,17 @@
             if (!logEl || !window.fullLogs) return;
 
             if (!dateStr) {
-                logEl.textContent = window.fullLogs;
+                const lines = window.fullLogs.split('\n').filter(line => line.trim());
+                logEl.textContent = lines.reverse().join('\n');
+                logEl.scrollTop = 0;
                 return;
             }
 
-            // 过滤出包含该日期的日志行
+            // 过滤出包含该日期的日志行（倒序）
             const lines = window.fullLogs.split('\n');
-            const filteredLines = lines.filter(line => line.includes(dateStr));
+            const filteredLines = lines.filter(line => line.includes(dateStr)).reverse();
             logEl.textContent = filteredLines.join('\n');
-            logEl.scrollTop = logEl.scrollHeight;
+            logEl.scrollTop = 0;  // 滚动到顶部看最新日志
         }
 
         // 创建折叠按钮（用于待处理日期）
@@ -2515,6 +2566,7 @@
             // 分类日期
             const completedDates = [];
             const processingDates = [];
+            const pausedDates = [];
             const pendingDates = [];
 
             datesToShow.forEach(({ date, state }) => {
@@ -2525,6 +2577,9 @@
                         break;
                     case 'processing':
                         processingDates.push({ date, state });
+                        break;
+                    case 'paused':
+                        pausedDates.push({ date, state });
                         break;
                     default:
                         pendingDates.push({ date, state });
@@ -2543,6 +2598,15 @@
             processingDates.forEach(({ date, state }) => {
                 html += createDateBlock(date, state, 'processing');
             });
+
+            // 显示暂停的日期（橙色，归入待处理但需要用户干预）
+            if (pausedDates.length > 0) {
+                html += `<div class="w-full text-xs text-orange-400 px-2 py-1 flex items-center gap-2">`;
+                html += `<i class="fa-solid fa-pause-circle"></i> 已暂停 ${pausedDates.length} 天（可继续）</div>`;
+                pausedDates.forEach(({ date, state }) => {
+                    html += createDateBlock(date, state, 'paused');
+                });
+            }
 
             // 显示待处理的日期（最多显示3个）
             const visiblePending = pendingDates.slice(0, maxVisible);
@@ -2578,6 +2642,14 @@
                 } else {
                     loadMoreBtn.classList.add('hidden');
                 }
+            }
+
+            // 如果有暂停的日期，在 triggerStatus 显示警告
+            const statusLabel = document.getElementById('triggerStatus');
+            if (pausedDates.length > 0) {
+                const pausedInfo = pausedDates.map(d => d.date).join(', ');
+                statusLabel.innerHTML = `<span class="text-orange-400"><i class="fa-solid fa-pause-circle mr-1"></i>检测到 ${pausedDates.length} 天已暂停</span>`;
+                statusLabel.classList.remove('hidden');
             }
         }
 
@@ -2684,21 +2756,20 @@
                 const result = await response.json();
                 if (result.logs) {
                     const logEl = document.getElementById('processLogs');
-                    const isScrolledToBottom = logEl.scrollHeight - logEl.clientHeight <= logEl.scrollTop + 10;
 
                     // 保存完整日志
                     window.fullLogs = result.logs;
 
-                    // 如果有选中日期，显示过滤后的日志；否则显示全部
+                    // 如果有选中日期，显示过滤后的日志；否则显示全部（倒序）
                     if (dateQueueState.selectedDate) {
                         const lines = result.logs.split('\n');
-                        const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate));
+                        const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate)).reverse();
                         logEl.textContent = filteredLines.join('\n');
                     } else {
-                        logEl.textContent = result.logs;
+                        const lines = result.logs.split('\n').filter(line => line.trim());
+                        logEl.textContent = lines.reverse().join('\n');
                     }
-
-                    if (isScrolledToBottom) logEl.scrollTop = logEl.scrollHeight;
+                    logEl.scrollTop = 0;  // 滚动到顶部看最新日志
 
                     // 更新日期队列（异步）
                     const prevProcessingDate = dateQueueState.currentDate;
@@ -2723,12 +2794,31 @@
                                 fetchBabyCryEvents(true);
                             }
                         }
+                        // B轨停止，取消时光对话的暂停状态
+                        updateShiguangPausedState(false);
+                    } else if (result.logs.includes("正在处理日期") || result.logs.includes("阶段一")) {
+                        // B轨正在运行，时光对话显示暂停状态
+                        updateShiguangPausedState(true);
                     }
 
                     lastLogContent = result.logs;
                 }
             } catch (e) {
                 console.error("Fetch log error:", e);
+            }
+        }
+
+        function updateShiguangPausedState(isPaused) {
+            const badge = document.getElementById('shiguangPausedBadge');
+            const reason = document.getElementById('shiguangPausedReason');
+            if (!badge || !reason) return;
+
+            if (isPaused) {
+                badge.classList.remove('hidden');
+                reason.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+                reason.classList.add('hidden');
             }
         }
 
@@ -2767,6 +2857,9 @@
             // 恢复停止按钮状态
             stopBtn.disabled = false;
             stopBtn.innerHTML = '<i class="fa-solid fa-stop mr-2"></i>马上停止';
+
+            // 取消时光对话的暂停状态
+            updateShiguangPausedState(false);
 
             // 多次刷新，确保图片生成完成后也能获取到
             // 2秒后立即刷新一次（获取分析结果）
@@ -2972,6 +3065,7 @@
             btn.classList.replace('to-indigo-600', 'to-gray-600');
             
             statusLabel.innerHTML = '<span class="animate-pulse text-blue-400 font-bold"><i class="fa-solid fa-satellite-dish mr-2"></i>正在拉起独立云端分析引擎...</span>';
+            updateShiguangPausedState(true);  // 时光对话显示暂停状态
             
             if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);  // 5 秒一次，减少扫描频率
             
@@ -3123,57 +3217,56 @@
                                 </div>
                             </div>
 
-                            <!-- 第一块：图片 + 声纹投票（左右并排） -->
-                            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
-                                <!-- 左侧：插图 -->
-                                <div class="lg:col-span-8">
-                                    ${item.illustration_url ? `
-                                    <div class="relative">
-                                        <img src="${item.illustration_url}" alt="场景插图" class="w-full h-auto rounded-2xl shadow-lg border border-white/10">
-                                        <!-- 置信度进度条覆盖在图片底部 -->
-                                        <div class="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm rounded-b-2xl px-4 py-2">
-                                            <div class="bg-white/20 rounded-full h-1.5 w-full overflow-hidden">
-                                                <div class="h-full bg-gradient-to-r from-${color}-400 to-${color}-300 transition-all duration-1000 ${isAnalyzing ? 'animate-pulse' : ''}" style="width: ${isAnalyzing ? '30' : (item.confidence * 100 || 0)}%"></div>
-                                            </div>
+                            <!-- 第一块：插图 -->
+                            <div class="mb-6">
+                                ${item.illustration_url ? `
+                                <div class="relative">
+                                    <img src="${item.illustration_url}" alt="场景插图" class="w-full h-auto rounded-2xl shadow-lg border border-white/10">
+                                    <!-- 置信度进度条覆盖在图片底部 -->
+                                    <div class="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm rounded-b-2xl px-4 py-2">
+                                        <div class="bg-white/20 rounded-full h-1.5 w-full overflow-hidden">
+                                            <div class="h-full bg-gradient-to-r from-${color}-400 to-${color}-300 transition-all duration-1000 ${isAnalyzing ? 'animate-pulse' : ''}" style="width: ${isAnalyzing ? '30' : (item.confidence * 100 || 0)}%"></div>
                                         </div>
                                     </div>
-                                    ` : (!isAnalyzing && item.reason) ? `
-                                    <div class="flex flex-col items-center justify-center py-12 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-2xl border border-purple-500/20">
-                                        <i class="fa-solid fa-palette fa-spin text-purple-400 text-4xl mb-4"></i>
-                                        <p class="text-purple-300 font-medium text-sm animate-pulse">正在生成场景插图...</p>
-                                        <p class="text-[10px] text-gray-500 mt-2">请稍候，插图正在创作中</p>
-                                    </div>
-                                    ` : ''}
                                 </div>
+                                ` : (!isAnalyzing && item.reason) ? `
+                                <div class="flex flex-col items-center justify-center py-12 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-2xl border border-purple-500/20">
+                                    <i class="fa-solid fa-palette fa-spin text-purple-400 text-4xl mb-4"></i>
+                                    <p class="text-purple-300 font-medium text-sm animate-pulse">正在生成场景插图...</p>
+                                    <p class="text-[10px] text-gray-500 mt-2">请稍候，插图正在创作中</p>
+                                </div>
+                                ` : ''}
+                            </div>
 
-                                <!-- 右侧：声纹投票 -->
-                                <div class="lg:col-span-4">
-                                    <div class="bg-black/30 rounded-2xl p-4 border border-white/5 h-full">
-                                        <h4 class="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center justify-between">
-                                            <span>VOICEPRINT VOTING / 声纹投票</span>
-                                            <i class="fa-solid fa-check-double text-emerald-500"></i>
-                                        </h4>
-                                        <div class="space-y-2">
-                                            ${(item.details || []).filter(detail => !detail.includes('结论:')).map(detail => {
-                                                const isPass = detail.includes('✅ PASS');
-                                                const modelName = detail.split(':')[0].trim();
-                                                const scoreText = detail.split(':')[1]?.replace('✅ PASS', '').replace('❌ FAIL', '').trim() || '';
-                                                return `
-                                                <div class="flex flex-col gap-1">
-                                                    <div class="flex items-center justify-between text-[10px]">
-                                                        <span class="text-gray-400">${modelName}</span>
-                                                        <span class="${isPass ? 'text-emerald-400' : 'text-red-400'} font-bold">${isPass ? 'OK' : 'MIS'}</span>
-                                                    </div>
-                                                    <div class="text-[8px] text-gray-500 font-mono">${scoreText}</div>
-                                                    <div class="w-full bg-gray-700/30 h-1 rounded-full overflow-hidden">
-                                                        <div class="h-full ${isPass ? 'bg-emerald-500' : 'bg-red-500/50'} " style="width: ${detail.includes('=') ? parseFloat(detail.split('=')[1]) * 100 : 0}%"></div>
-                                                    </div>
-                                                </div>`;
-                                            }).join('') || '<div class="text-[10px] text-gray-600 text-center py-4 italic">无比对细节</div>'}
-                                        </div>
+                            <!-- 第二块：声纹投票（独立一块） -->
+                            ${(item.details || []).filter(detail => !detail.includes('结论:')).length > 0 ? `
+                            <div class="mb-6">
+                                <div class="bg-black/30 rounded-2xl p-4 border border-white/5">
+                                    <h4 class="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center justify-between">
+                                        <span>VOICEPRINT VOTING / 声纹投票</span>
+                                        <i class="fa-solid fa-check-double text-emerald-500"></i>
+                                    </h4>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                        ${(item.details || []).filter(detail => !detail.includes('结论:')).map(detail => {
+                                            const isPass = detail.includes('✅ PASS');
+                                            const modelName = detail.split(':')[0].trim();
+                                            const scoreText = detail.split(':')[1]?.replace('✅ PASS', '').replace('❌ FAIL', '').trim() || '';
+                                            return `
+                                            <div class="bg-gray-800/30 rounded-xl p-3 min-w-0">
+                                                <div class="flex items-center gap-2 text-[10px] mb-1 min-w-0">
+                                                    <span class="text-gray-400 truncate flex-1 min-w-0">${modelName}</span>
+                                                    <span class="${isPass ? 'text-emerald-400' : 'text-red-400'} font-bold shrink-0 w-8 text-right">${isPass ? 'OK' : 'MIS'}</span>
+                                                </div>
+                                                <div class="text-[8px] text-gray-500 font-mono mb-1 truncate">${scoreText}</div>
+                                                <div class="w-full bg-gray-700/30 h-1 rounded-full overflow-hidden">
+                                                    <div class="h-full ${isPass ? 'bg-emerald-500' : 'bg-red-500/50'} " style="width: ${detail.includes('=') ? parseFloat(detail.split('=')[1]) * 100 : 0}%"></div>
+                                                </div>
+                                            </div>`;
+                                        }).join('')}
                                     </div>
                                 </div>
                             </div>
+                            ` : ''}
 
                             <!-- 第二块：文字分析（单独一块） -->
                             <div class="bg-gray-800/30 rounded-2xl p-5 border border-white/5 mb-6">
