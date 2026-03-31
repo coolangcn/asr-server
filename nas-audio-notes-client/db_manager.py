@@ -112,13 +112,12 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_recording_time ON transcriptions(recording_time DESC NULLS LAST);
         ''')
         
-        # 创建日期缓存表（存储每个日期的文件数量和文件列表，避免重复扫描）
+        # 创建日期缓存表（存储每个日期的文件数量，避免重复扫描）
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS babycry_date_cache (
             id SERIAL PRIMARY KEY,
             date_str VARCHAR(10) NOT NULL UNIQUE,
             file_count INTEGER NOT NULL DEFAULT 0,
-            files JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );

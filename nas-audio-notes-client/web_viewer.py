@@ -496,16 +496,15 @@ def api_scan_dates():
             if conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT date_str, file_count, files FROM babycry_date_cache
+                    SELECT date_str, file_count FROM babycry_date_cache
                     WHERE date_str ~ %s
                 ''', (r'^\d{4}-\d{2}-\d{2}$',))
                 for row in cursor:
-                    date_str, file_count, files = row
+                    date_str, file_count = row
                     date_info[date_str] = {
                         'fileCount': file_count,
                         'processedCount': 0,
-                        'status': 'pending',
-                        'files': files if files else []  # 文件名列表
+                        'status': 'pending'
                     }
                 cursor.close()
                 return_connection(conn)
@@ -521,20 +520,17 @@ def api_scan_dates():
                 item_path = os.path.join(scan_base, item)
                 if os.path.isdir(item_path) and re.match(r'\d{4}-\d{2}-\d{2}', item):
                     file_count = 0
-                    file_list = []
                     try:
                         for f in os.listdir(item_path):
                             if f.lower().endswith(AUDIO_EXTS):
                                 file_count += 1
-                                file_list.append(f)
                         scan_count += 1
                     except:
                         pass
                     date_info[item] = {
                         'fileCount': file_count,
                         'processedCount': 0,
-                        'status': 'pending',
-                        'files': file_list
+                        'status': 'pending'
                     }
             
             debug_log(f"扫描到 {scan_count} 个日期目录")
@@ -546,19 +542,19 @@ def api_scan_dates():
                     conn = get_connection()
                     if conn:
                         cursor = conn.cursor()
-                        for date_str, info in date_info.items():
+                        values = [(d, info['fileCount']) for d, info in date_info.items()]
+                        for date_str, file_count in values:
                             cursor.execute('''
-                                INSERT INTO babycry_date_cache (date_str, file_count, files, updated_at)
-                                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                                INSERT INTO babycry_date_cache (date_str, file_count, updated_at)
+                                VALUES (%s, %s, CURRENT_TIMESTAMP)
                                 ON CONFLICT (date_str) DO UPDATE SET
                                     file_count = EXCLUDED.file_count,
-                                    files = EXCLUDED.files,
                                     updated_at = CURRENT_TIMESTAMP
-                            ''', (date_str, info['fileCount'], json.dumps(info['files'])))
+                            ''', (date_str, file_count))
                         conn.commit()
                         cursor.close()
                         return_connection(conn)
-                        debug_log(f"✅ 已缓存 {len(date_info)} 个日期（包含文件列表）")
+                        debug_log(f"✅ 已缓存 {len(date_info)} 个日期")
                     else:
                         debug_log("❌ 无法获取数据库连接")
                 except Exception as e:
