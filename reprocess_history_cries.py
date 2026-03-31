@@ -6,7 +6,7 @@ import time
 import sys
 import datetime
 import logging
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_date_file_counts
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_date_file_counts, get_file_cache, get_file_count_from_cache
 
 # 导入邮件模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -213,85 +213,64 @@ if __name__ == "__main__":
     all_files = []  # 所有文件（用于上下文扩展）
     target_files = []  # 目标文件（用于识别哭声）
     start_scan = time.time()
-    
+
     # 初始化数据库连接池（必须在调用数据库函数之前）
     init_pool()
-    
-    try:
-        # === 极速优化扫描引擎 (针对 NAS 挂载优化) ===
-        log_detail(f"[*] 正在启动受限文件树探测...", 'info')
-        
-        # 在扫盘前获取已完成日期的信息
-        date_stats = {}  # {date_str: processed_count}
-        date_file_counts = {}  # {date_str: total_count}
-        if not force_replace and not filter_date:
-            date_stats = get_date_processing_stats()
-            date_file_counts = get_date_file_counts()
-            log_detail(f"[*] 智能续传：已处理统计={dict(list(date_stats.items())[:5])}...", 'info')
-            log_detail(f"[*] 智能续传：文件数量统计={dict(list(date_file_counts.items())[:5])}...", 'info')
 
-        completed_dates = []
-        for d, total in date_file_counts.items():
-            processed = date_stats.get(d, 0)
-            if processed >= total and total > 0:
-                completed_dates.append(d)
-        if completed_dates:
-            print(f"[*] 智能续传：将跳过 {len(completed_dates)} 个已完成日期: {completed_dates}", flush=True)
+    # === 智能续传：先从数据库获取文件列表 ===
+    date_stats = {}  # {date_str: processed_count}
+    if not force_replace:
+        date_stats = get_date_processing_stats()
+        log_detail(f"[*] 智能续传：已处理统计={dict(list(date_stats.items())[:5])}...", 'info')
 
-        for root, dirs, files in os.walk(target_dir):
-            # 性能优化 1：过滤隐藏目录
-            dirs[:] = [d for d in dirs if not d.startswith('.')]
+    # 尝试从 DB 缓存获取文件列表
+    log_detail(f"[*] 正在从数据库缓存获取文件列表...", 'info')
+    cached_count = get_file_count_from_cache()
+    log_detail(f"[*] DB 缓存中有 {cached_count} 个文件", 'info')
 
-            # 性能优化 2：跳过已完成的日期目录（智能续传优化）
-            # 只在根目录进行剪枝
-            if root == target_dir and not force_replace and not filter_date and dirs:
-                dirs_to_skip = [d for d in dirs if d in completed_dates]
-                if dirs_to_skip:
-                    print(f"[*] 智能续传：跳过已完成日期目录 {dirs_to_skip}...", flush=True)
-                    dirs[:] = [d for d in dirs if d not in completed_dates]
-            
-            # 性能优化 4：日期制导剪枝
-            # 如果指定了日期，且当前在搜索根目录，我们只允许进入与日期匹配的子目录
-            if filter_date and root == target_dir:
-                if filter_date in dirs:
-                    # 找到了精准日期目录，剪掉其他所有目录
-                    log_detail(f"[*] 发现精准日期目录 '{filter_date}'，已自动剪枝其他分支以提升速度。", 'info')
-                    dirs[:] = [filter_date]
-                else:
-                    # 没找到对应日期的目录，但根目录下可能还有文件，所以不进入任何子目录
-                    log_detail(f"[*] 未发现日期目录 '{filter_date}'，将仅扫描根目录文件。", 'info')
-                    dirs[:] = []
-            
-            # 进度实时反馈 - 强调当前处理的日期目录
-            current_container = os.path.basename(root) or 'root'
-            if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
-                # 这是一个日期目录，高亮显示
-                log_detail(f"", 'info')
-                log_detail(f"    📅 【当前处理日期】{current_container}", 'info')
-                log_detail(f"       已扫描文件数: {len(all_files):,} 个", 'info')
-                log_detail(f"       目标文件数:   {len(target_files):,} 个", 'info')
-                log_detail(f"       扫描进度:     正在遍历音频文件...", 'info')
-            else:
-                log_detail(f"    - 正在扫描容器：{current_container} (已发现 {len(all_files)} 个待处理项)", 'info')
-            
-            for file in files:
-                if file.startswith('.'): continue
-                if not file.lower().endswith(AUDIO_EXTS): continue
-                
-                # 1. 日期校验 - 所有符合日期的都加入 all_files
-                if filter_date and filter_date not in file: continue
-                
-                file_path = os.path.join(root, file)
-                all_files.append(file_path)
-                
-                # 2. 时间段校验 - 时间范围内的加入 target_files
-                if is_time_in_range(file, start_time_arg, end_time_arg):
-                    target_files.append(file_path)
-                
-        log_detail(f"\n[*] 扫描逻辑执行完毕。", 'info')
-                
-    except Exception as e:
-        log_detail(f"\n错误：扫描目录时遇到问题：{e}", 'error')
+    if cached_count > 0:
+        # DB 缓存命中！直接从 DB 获取文件列表
+        log_detail(f"[*] ✅ DB 缓存命中，使用缓存文件列表（极速模式）", 'info')
+        all_files = get_file_cache()  # 返回 [{filepath, filename, file_size}, ...]
+        all_files = [f['filepath'] for f in all_files]  # 转成路径列表
+
+        # 按日期过滤
+        if filter_date:
+            all_files = [f for f in all_files if filter_date in f]
+
+        # 按时间过滤
+        target_files = [f for f in all_files if is_time_in_range(os.path.basename(f), start_time_arg, end_time_arg)]
+
+        log_detail(f"[*] 从缓存获取文件列表完成", 'info')
+    else:
+        # DB 缓存未命中，回退到磁盘扫描
+        log_detail(f"[*] ⚠️ DB 缓存为空，回退到磁盘扫描（首次可能较慢）", 'info')
+
+        try:
+            log_detail(f"[*] 正在启动文件树扫描...", 'info')
+
+            for root, dirs, files in os.walk(target_dir):
+                dirs[:] = [d for d in dirs if not d.startswith('.')]
+
+                current_container = os.path.basename(root) or 'root'
+                if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
+                    log_detail(f"    📅 【扫描日期】{current_container}", 'info')
+
+                for file in files:
+                    if file.startswith('.'): continue
+                    if not file.lower().endswith(AUDIO_EXTS): continue
+                    if filter_date and filter_date not in file: continue
+
+                    file_path = os.path.join(root, file)
+                    all_files.append(file_path)
+
+                    if is_time_in_range(file, start_time_arg, end_time_arg):
+                        target_files.append(file_path)
+
+            log_detail(f"[*] 磁盘扫描完成，共 {len(all_files)} 个文件", 'info')
+
+        except Exception as e:
+            log_detail(f"\n错误：扫描目录时遇到问题：{e}", 'error')
 
     # 去重并排序，防止重复扫描
     all_files = sorted(list(set(all_files)))
@@ -313,46 +292,37 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # === 智能续传优化：跳过已完成的日期 ===
-    # 注意：定向检索(filter_date)时也要续传！只有强制替换时才跳过
-    if not force_replace:
-        date_stats = get_date_processing_stats()
-        log_detail(f"[*] 智能续传：数据库中已处理的日期统计: {dict(list(date_stats.items())[:10])}", 'info')  # 只打印前10个
-        if date_stats:
-            # 按日期分组统计待处理文件数
-            date_file_counts = {}
-            for f in files_to_process:
-                m = re.search(r'/(\d{4}-\d{2}-\d{2})/', f)
-                if m:
-                    d = m.group(1)
-                    date_file_counts[d] = date_file_counts.get(d, 0) + 1
-            
-            # 找出已完全处理的日期和最后一个部分处理的日期
-            completed_dates = []
-            last_partial_date = None
-            remaining_files = []
-            
-            for f in files_to_process:
-                m = re.search(r'/(\d{4}-\d{2}-\d{2})/', f)
-                if not m:
-                    remaining_files.append(f)
-                    continue
+    if not force_replace and date_stats:
+        # 按日期分组
+        date_file_counts = {}
+        for f in files_to_process:
+            m = re.search(r'/(\d{4}-\d{2}-\d{2})/', f)
+            if m:
                 d = m.group(1)
-                processed = date_stats.get(d, 0)
-                total = date_file_counts.get(d, 0)
-                
-                if processed >= total and total > 0:
-                    if d not in completed_dates:
-                        completed_dates.append(d)
-                else:
-                    remaining_files.append(f)
-                    last_partial_date = d
-            
-            if completed_dates:
-                log_detail(f"\n[*] 智能续传：跳过 {len(completed_dates)} 个已完成日期: {', '.join(completed_dates[:5])}{'...' if len(completed_dates) > 5 else ''}", 'info')
-            if last_partial_date:
-                log_detail(f"[*] 智能续传：从日期 {last_partial_date} 继续处理（部分完成）", 'info')
-            
-            files_to_process = remaining_files
+                date_file_counts[d] = date_file_counts.get(d, 0) + 1
+
+        completed_dates = []
+        remaining_files = []
+
+        for f in files_to_process:
+            m = re.search(r'/(\d{4}-\d{2}-\d{2})/', f)
+            if not m:
+                remaining_files.append(f)
+                continue
+            d = m.group(1)
+            processed = date_stats.get(d, 0)
+            total = date_file_counts.get(d, 0)
+
+            if processed >= total and total > 0:
+                if d not in completed_dates:
+                    completed_dates.append(d)
+            else:
+                remaining_files.append(f)
+
+        if completed_dates:
+            log_detail(f"[*] 智能续传：跳过 {len(completed_dates)} 个已完成日期: {', '.join(completed_dates)}", 'info')
+
+        files_to_process = remaining_files
             log_detail(f"[*] 智能续传：实际需要处理 {len(files_to_process)} 个文件", 'info')
     # ===
 

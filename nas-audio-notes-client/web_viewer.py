@@ -438,6 +438,36 @@ def proxy_stop_reprocess():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/refresh_file_cache', methods=['POST'])
+@login_required
+def proxy_refresh_file_cache():
+    try:
+        url = f"{ASR_SERVER_URL}/api/refresh_file_cache"
+        response = requests.post(url, timeout=30)  # 启动任务很快，不需要长超时
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/refresh_file_cache/status', methods=['GET'])
+@login_required
+def proxy_refresh_file_cache_status():
+    try:
+        url = f"{ASR_SERVER_URL}/api/refresh_file_cache/status"
+        response = requests.get(url, timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/file_cache_status', methods=['GET'])
+@login_required
+def proxy_file_cache_status():
+    try:
+        url = f"{ASR_SERVER_URL}/api/file_cache_status"
+        response = requests.get(url, timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/cry_events', methods=['GET'])
 @login_required
 def proxy_cry_events():

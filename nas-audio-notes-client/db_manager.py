@@ -125,7 +125,22 @@ def init_db():
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_babycry_date ON babycry_date_cache(date_str);
         ''')
-        
+
+        # 创建文件缓存表（存储每个文件的路径，用于避免重复扫描）
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS babycry_file_cache (
+            id SERIAL PRIMARY KEY,
+            date_str VARCHAR(10) NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            filepath TEXT NOT NULL UNIQUE,
+            file_size BIGINT,
+            modified_time TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_cache_date ON babycry_file_cache(date_str)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_cache_filepath ON babycry_file_cache(filepath)')
+
         conn.commit()
         cursor.close()
         print("[DB] 数据库表结构初始化成功")
@@ -424,6 +439,138 @@ def close_pool():
     if connection_pool:
         connection_pool.closeall()
         print("[DB] 连接池已关闭")
+
+def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc')) -> int:
+    """扫描目录并刷新文件缓存表，返回扫描到的文件数量"""
+    import os
+    import re
+    
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return -1
+        cursor = conn.cursor()
+        
+        # 确保表存在
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS babycry_file_cache (
+            id SERIAL PRIMARY KEY,
+            date_str VARCHAR(10) NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            filepath TEXT NOT NULL UNIQUE,
+            file_size BIGINT,
+            modified_time TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # 清空旧缓存
+        cursor.execute('TRUNCATE TABLE babycry_file_cache')
+        
+        # 扫描目录
+        count = 0
+        date_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
+        
+        for root, dirs, files in os.walk(target_dir):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            
+            current_container = os.path.basename(root)
+            is_date_dir = bool(date_pattern.match(current_container))
+            
+            for file in files:
+                if file.startswith('.'):
+                    continue
+                if not file.lower().endswith(audio_exts):
+                    continue
+                
+                filepath = os.path.join(root, file)
+                file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+                
+                if is_date_dir:
+                    date_str = current_container
+                else:
+                    m = re.search(r'/(\d{4}-\d{2}-\d{2})/', filepath)
+                    date_str = m.group(1) if m else 'unknown'
+                
+                try:
+                    cursor.execute('''
+                        INSERT INTO babycry_file_cache (date_str, filename, filepath, file_size)
+                        VALUES (%s, %s, %s, %s)
+                    ''', (date_str, file, filepath, file_size))
+                    count += 1
+                except Exception as e:
+                    print(f"  [DB Error] 插入文件 {filepath} 失败: {e}")
+        
+        conn.commit()
+        
+        # 更新 babycry_date_cache 表
+        cursor.execute('''
+            INSERT INTO babycry_date_cache (date_str, file_count, created_at, updated_at)
+            SELECT date_str, COUNT(*), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM babycry_file_cache
+            GROUP BY date_str
+            ON CONFLICT (date_str) DO UPDATE SET
+                file_count = EXCLUDED.file_count,
+                updated_at = CURRENT_TIMESTAMP
+        ''')
+        conn.commit()
+        
+        cursor.close()
+        print(f"  [DB] 文件缓存刷新完成，共 {count} 个文件")
+        return count
+        
+    except Exception as e:
+        print(f"  [DB Error] 刷新文件缓存失败: {e}")
+        if conn: conn.rollback()
+        return -1
+    finally:
+        if conn: return_connection(conn)
+
+def get_file_cache(date_str: str = None) -> list:
+    """从缓存获取文件列表，可按日期过滤"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        
+        if date_str:
+            cursor.execute('''
+                SELECT filepath, filename, file_size FROM babycry_file_cache
+                WHERE date_str = %s
+                ORDER BY filename
+            ''', (date_str,))
+        else:
+            cursor.execute('''
+                SELECT filepath, filename, file_size FROM babycry_file_cache
+                ORDER BY date_str, filename
+            ''')
+        
+        result = [{'filepath': row[0], 'filename': row[1], 'file_size': row[2]} for row in cursor.fetchall()]
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取文件缓存失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+def get_file_count_from_cache() -> int:
+    """从缓存获取总文件数"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return 0
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM babycry_file_cache')
+        count = cursor.fetchone()[0]
+        cursor.close()
+        return count
+    except Exception as e:
+        print(f"  [DB Error] 获取缓存文件数失败: {e}")
+        return 0
+    finally:
+        if conn: return_connection(conn)
 
 if __name__ == "__main__":
     # 测试代码

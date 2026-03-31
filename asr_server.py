@@ -1562,10 +1562,10 @@ def trigger_reprocess():
 def stop_reprocess():
     """停止正在运行的历史音频处理任务"""
     global _history_reprocess_proc, _history_reprocess_running
-    
+
     if not _history_reprocess_running or _history_reprocess_proc is None:
         return jsonify({"message": "当前没有正在运行的任务", "status": "info"})
-        
+
     try:
         # 终止进程
         if _history_reprocess_proc:
@@ -1578,7 +1578,7 @@ def stop_reprocess():
             logger_a.info("✅ 后台分析任务已停止")
         else:
             logger_a.warning("⚠️ 没有正在运行的分析任务")
-            
+
         return jsonify({"message": "后台分析任务已手动停止", "status": "success"})
     except AttributeError:
         # 进程对象不存在或已释放
@@ -1587,6 +1587,107 @@ def stop_reprocess():
     except Exception as e:
         logger_a.error(f"⚠️ 停止任务时遇到问题：{type(e).__name__}")
         return jsonify({"message": "任务已在后台结束", "status": "success", "note": str(e)}), 200
+
+# 刷盘任务状态存储
+refresh_cache_task = {
+    "running": False,
+    "start_time": None,
+    "count": 0,
+    "status": "idle",  # idle, running, completed, error
+    "message": ""
+}
+
+def update_refresh_progress(count, current_dir):
+    """更新刷盘进度"""
+    global refresh_cache_task
+    refresh_cache_task["count"] = count
+    refresh_cache_task["message"] = f"正在扫描目录: {current_dir}"
+
+def run_refresh_file_cache(target_dir):
+    """后台执行刷盘任务"""
+    global refresh_cache_task
+    refresh_cache_task["running"] = True
+    refresh_cache_task["status"] = "running"
+    refresh_cache_task["count"] = 0
+    refresh_cache_task["start_time"] = time.time()
+    refresh_cache_task["message"] = "正在扫描..."
+    
+    try:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nas-audio-notes-client'))
+        from db_manager import refresh_file_cache as do_refresh, init_pool
+        
+        init_pool()
+        logger_a.info(f"[刷盘] 后台任务开始，扫描目录: {target_dir}")
+        
+        # 使用回调函数实时更新进度
+        count = do_refresh(target_dir, progress_callback=update_refresh_progress)
+        
+        if count >= 0:
+            refresh_cache_task["count"] = count
+            refresh_cache_task["status"] = "completed"
+            refresh_cache_task["message"] = f"完成，共 {count} 个文件"
+            logger_a.info(f"[刷盘] 后台任务完成，共 {count} 个文件")
+        else:
+            refresh_cache_task["status"] = "error"
+            refresh_cache_task["message"] = "刷新失败"
+            logger_a.error(f"[刷盘] 后台任务失败")
+    except Exception as e:
+        refresh_cache_task["status"] = "error"
+        refresh_cache_task["message"] = str(e)
+        logger_a.error(f"[刷盘] 后台任务异常: {e}")
+    finally:
+        refresh_cache_task["running"] = False
+
+@app.route("/api/refresh_file_cache", methods=["POST"])
+def refresh_file_cache():
+    """启动刷盘任务（异步后台执行）"""
+    global refresh_cache_task
+    
+    # 如果已有任务在运行，返回状态
+    if refresh_cache_task["running"]:
+        return jsonify({
+            "message": "刷盘任务已在运行中",
+            "status": "running",
+            "task": refresh_cache_task
+        })
+    
+    # 启动后台线程
+    target_dir = FileMonitorConfig.SOURCE_DIR
+    thread = threading.Thread(target=run_refresh_file_cache, args=(target_dir,))
+    thread.daemon = True
+    thread.start()
+    
+    logger_a.info(f"[刷盘] 启动后台任务，扫描目录: {target_dir}")
+    return jsonify({
+        "message": "刷盘任务已启动",
+        "status": "started",
+        "task": refresh_cache_task
+    })
+
+@app.route("/api/refresh_file_cache/status", methods=["GET"])
+def refresh_file_cache_status():
+    """获取刷盘任务状态"""
+    return jsonify({
+        "status": "success",
+        "task": refresh_cache_task
+    })
+
+@app.route("/api/file_cache_status", methods=["GET"])
+def file_cache_status():
+    """获取文件缓存状态"""
+    try:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nas-audio-notes-client'))
+        from db_manager import get_file_count_from_cache, init_pool
+
+        init_pool()
+        count = get_file_count_from_cache()
+
+        return jsonify({"count": count, "status": "success"})
+    except Exception as e:
+        logger_a.error(f"❌ 获取文件缓存状态失败: {e}")
+        return jsonify({"message": str(e), "status": "error"}), 500
 
 @app.route("/api/reprocess_logs", methods=["GET"])
 def get_reprocess_logs():

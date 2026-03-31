@@ -659,6 +659,227 @@ def get_date_file_counts() -> dict:
     finally:
         if conn: return_connection(conn)
 
+def ensure_file_cache_table():
+    """确保 babycry_file_cache 表存在"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return False
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS babycry_file_cache (
+                id SERIAL PRIMARY KEY,
+                date_str VARCHAR(10) NOT NULL,
+                filename VARCHAR(255) NOT NULL,
+                filepath TEXT NOT NULL UNIQUE,
+                file_size BIGINT,
+                modified_time TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_cache_date ON babycry_file_cache(date_str)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_cache_filepath ON babycry_file_cache(filepath)')
+        conn.commit()
+        cursor.close()
+        return True
+    except Exception as e:
+        print(f"  [DB Error] 创建文件缓存表失败: {e}")
+        if conn: conn.rollback()
+        return False
+    finally:
+        if conn: return_connection(conn)
+
+def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc'), progress_callback=None) -> int:
+    """扫描目录并刷新文件缓存表，返回扫描到的文件数量
+    
+    Args:
+        target_dir: 目标目录
+        audio_exts: 音频文件扩展名
+        progress_callback: 进度回调函数，接收 (count, current_dir) 参数
+    """
+    import os
+    import re
+    import time
+    
+    if not ensure_file_cache_table():
+        return -1
+    
+    print(f"  [刷盘] 开始扫描目录: {target_dir}")
+    start_time = time.time()
+    
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return -1
+        cursor = conn.cursor()
+        
+        # 清空旧缓存
+        cursor.execute('TRUNCATE TABLE babycry_file_cache')
+        print("  [刷盘] 已清空旧缓存")
+        
+        # 扫描目录 - 使用批量插入优化性能
+        count = 0
+        batch = []
+        batch_size = 1000  # 每1000条批量插入一次
+        last_log_time = time.time()
+        last_commit_time = time.time()
+        last_callback_time = time.time()
+        date_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
+        current_container = ""
+        
+        for root, dirs, files in os.walk(target_dir):
+            # 只扫描 processed 目录下的文件，跳过其他所有目录
+            current_container = os.path.basename(root)
+            parent_dir = os.path.basename(os.path.dirname(root))
+            
+            # 跳过非 processed 目录下的内容
+            if parent_dir != 'processed' and current_container != 'processed':
+                # 清空 dirs 停止继续深入此目录
+                dirs[:] = []
+                continue
+            
+            # 在 processed 目录内，只保留日期格式的子目录
+            if current_container == 'processed':
+                dirs[:] = [d for d in dirs if date_pattern.match(d)]
+            else:
+                # 在日期目录内，不再深入子目录
+                dirs[:] = []
+            
+            # 检查是否是日期目录
+            is_date_dir = bool(date_pattern.match(current_container))
+            
+            # 每5秒打印一次进度
+            current_time = time.time()
+            if current_time - last_log_time >= 5:
+                elapsed = current_time - start_time
+                print(f"  [刷盘进度] 已扫描 {count} 个音频文件，当前目录: {current_container}，耗时: {elapsed:.1f}秒")
+                last_log_time = current_time
+            
+            # 每秒回调一次进度
+            if progress_callback and current_time - last_callback_time >= 1:
+                progress_callback(count, current_container)
+                last_callback_time = current_time
+            
+            for file in files:
+                if file.startswith('.'):
+                    continue
+                if not file.lower().endswith(audio_exts):
+                    continue
+                
+                filepath = os.path.join(root, file)
+                file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+                
+                # 提取日期
+                if is_date_dir:
+                    date_str = current_container
+                else:
+                    m = re.search(r'/(\d{4}-\d{2}-\d{2})/', filepath)
+                    date_str = m.group(1) if m else 'unknown'
+                
+                batch.append((date_str, file, filepath, file_size))
+                count += 1
+                
+                # 批量插入
+                if len(batch) >= batch_size:
+                    try:
+                        cursor.executemany('''
+                            INSERT INTO babycry_file_cache (date_str, filename, filepath, file_size)
+                            VALUES (%s, %s, %s, %s)
+                        ''', batch)
+                        batch = []
+                        # 每10秒提交一次，避免事务过大
+                        if current_time - last_commit_time >= 10:
+                            conn.commit()
+                            last_commit_time = current_time
+                    except Exception as e:
+                        print(f"  [DB Error] 批量插入失败: {e}")
+        
+        # 插入剩余的数据
+        if batch:
+            try:
+                cursor.executemany('''
+                    INSERT INTO babycry_file_cache (date_str, filename, filepath, file_size)
+                    VALUES (%s, %s, %s, %s)
+                ''', batch)
+            except Exception as e:
+                print(f"  [DB Error] 最后批量插入失败: {e}")
+        
+        # 最后回调一次
+        if progress_callback:
+            progress_callback(count, current_container)
+        
+        conn.commit()
+        
+        # 更新 babycry_date_cache 表
+        cursor.execute('''
+            INSERT INTO babycry_date_cache (date_str, file_count, created_at, updated_at)
+            SELECT date_str, COUNT(*), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM babycry_file_cache
+            GROUP BY date_str
+            ON CONFLICT (date_str) DO UPDATE SET
+                file_count = EXCLUDED.file_count,
+                updated_at = CURRENT_TIMESTAMP
+        ''')
+        conn.commit()
+        
+        cursor.close()
+        elapsed = time.time() - start_time
+        print(f"  [刷盘完成] 共扫描 {count} 个音频文件，耗时: {elapsed:.1f}秒，平均速度: {count/elapsed:.1f}个/秒" if elapsed > 0 else f"  [刷盘完成] 共扫描 {count} 个音频文件")
+        return count
+        
+    except Exception as e:
+        print(f"  [DB Error] 刷新文件缓存失败: {e}")
+        if conn: conn.rollback()
+        return -1
+    finally:
+        if conn: return_connection(conn)
+
+def get_file_cache(date_str: str = None) -> list:
+    """从缓存获取文件列表，可按日期过滤"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        
+        if date_str:
+            cursor.execute('''
+                SELECT filepath, filename, file_size FROM babycry_file_cache
+                WHERE date_str = %s
+                ORDER BY filename
+            ''', (date_str,))
+        else:
+            cursor.execute('''
+                SELECT filepath, filename, file_size FROM babycry_file_cache
+                ORDER BY date_str, filename
+            ''')
+        
+        result = [{'filepath': row[0], 'filename': row[1], 'file_size': row[2]} for row in cursor.fetchall()]
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取文件缓存失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+def get_file_count_from_cache() -> int:
+    """从缓存获取总文件数"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return 0
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM babycry_file_cache')
+        count = cursor.fetchone()[0]
+        cursor.close()
+        return count
+    except Exception as e:
+        print(f"  [DB Error] 获取缓存文件数失败: {e}")
+        return 0
+    finally:
+        if conn: return_connection(conn)
+
 def delete_cry_events_by_date(date_str: str) -> int:
     """删除指定日期（YYYY-MM-DD）的哭声分析事件和处理进度"""
     conn = None

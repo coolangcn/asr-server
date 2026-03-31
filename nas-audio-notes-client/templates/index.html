@@ -780,7 +780,12 @@
                         <button id="stopReprocessBtn" onclick="stopReprocess()" class="ml-2 px-4 py-2.5 bg-gray-800/80 hover:bg-red-600/90 text-gray-300 hover:text-white active:scale-95 rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg border border-gray-600/50 hover:border-red-500 hover:shadow-red-500/30 relative overflow-hidden flex items-center whitespace-nowrap group" title="随时停止分析">
                             <i class="fa-solid fa-stop mr-2 group-hover:scale-110 transition-transform text-red-400 group-hover:text-white"></i>马上停止
                         </button>
-                        
+
+                        <!-- Refresh Cache Button -->
+                        <button id="refreshCacheBtn" onclick="refreshFileCache()" class="ml-2 px-4 py-2.5 bg-gray-800/80 hover:bg-emerald-600/90 text-gray-300 hover:text-white active:scale-95 rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg border border-gray-600/50 hover:border-emerald-500 hover:shadow-emerald-500/30 relative overflow-hidden flex items-center whitespace-nowrap group" title="刷新文件缓存">
+                            <i class="fa-solid fa-sync mr-2 group-hover:scale-110 transition-transform text-emerald-400 group-hover:text-white"></i>刷盘
+                        </button>
+
                         <!-- Playlist Button -->
                         <button onclick="openPlaylistModal()" class="ml-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 active:scale-95 text-white rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50 border border-purple-500/30 relative overflow-hidden flex items-center whitespace-nowrap group" title="播放列表">
                             <i class="fa-solid fa-list-music mr-2 group-hover:scale-110 transition-transform"></i>播放列表
@@ -2868,6 +2873,92 @@
             setTimeout(() => fetchBabyCryEvents(), 17000);
             setTimeout(() => fetchBabyCryEvents(), 32000);
             setTimeout(() => fetchBabyCryEvents(), 47000);
+        }
+
+        // 刷盘任务轮询定时器
+        let refreshCachePollInterval = null;
+
+        async function refreshFileCache() {
+            const btn = document.getElementById('refreshCacheBtn');
+            const statusLabel = document.getElementById('triggerStatus');
+
+            btn.disabled = true;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>启动中...';
+            statusLabel.innerHTML = '<span class="text-emerald-400"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>正在启动刷盘任务...</span>';
+            statusLabel.classList.remove('hidden');
+
+            try {
+                // 启动后台任务
+                const response = await fetch('/api/refresh_file_cache', { method: 'POST' });
+                const result = await response.json();
+
+                if (result.status === 'started' || result.status === 'running') {
+                    // 开始轮询状态
+                    startRefreshCachePolling(btn, originalHTML, statusLabel);
+                } else {
+                    statusLabel.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-times-circle mr-2"></i>启动失败：${result.message}</span>`;
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                statusLabel.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-times-circle mr-2"></i>启动失败：${e.message}</span>`;
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
+        }
+
+        function startRefreshCachePolling(btn, originalHTML, statusLabel) {
+            // 清除之前的轮询
+            if (refreshCachePollInterval) {
+                clearInterval(refreshCachePollInterval);
+            }
+
+            // 立即查询一次状态
+            pollRefreshCacheStatus(btn, originalHTML, statusLabel);
+
+            // 每2秒轮询一次
+            refreshCachePollInterval = setInterval(() => {
+                pollRefreshCacheStatus(btn, originalHTML, statusLabel);
+            }, 2000);
+        }
+
+        async function pollRefreshCacheStatus(btn, originalHTML, statusLabel) {
+            try {
+                const response = await fetch('/api/refresh_file_cache/status');
+                const result = await response.json();
+                const task = result.task;
+
+                if (task.status === 'running') {
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>扫描中...';
+                    const elapsed = task.start_time ? Math.floor(Date.now()/1000 - task.start_time) : 0;
+                    statusLabel.innerHTML = `<span class="text-emerald-400"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>正在刷盘... 已扫描 ${task.count} 个文件，耗时 ${elapsed} 秒</span>`;
+                } else if (task.status === 'completed') {
+                    // 完成，停止轮询
+                    if (refreshCachePollInterval) {
+                        clearInterval(refreshCachePollInterval);
+                        refreshCachePollInterval = null;
+                    }
+                    statusLabel.innerHTML = `<span class="text-emerald-400"><i class="fa-solid fa-check-circle mr-2"></i>刷盘完成！共 ${task.count} 个文件</span>`;
+                    btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i>完成';
+                    setTimeout(() => {
+                        btn.innerHTML = originalHTML;
+                        btn.disabled = false;
+                        statusLabel.classList.add('hidden');
+                    }, 3000);
+                } else if (task.status === 'error') {
+                    // 出错，停止轮询
+                    if (refreshCachePollInterval) {
+                        clearInterval(refreshCachePollInterval);
+                        refreshCachePollInterval = null;
+                    }
+                    statusLabel.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-times-circle mr-2"></i>刷盘失败：${task.message}</span>`;
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                console.error('轮询刷盘状态失败:', e);
+            }
         }
 
         function setQuickDate(type) {
