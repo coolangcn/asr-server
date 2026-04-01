@@ -2464,6 +2464,8 @@
         // 页面加载时初始化日期队列
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(fetchBcLogs, 500);
+            // 启动定时轮询
+            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 3000);
             checkRefreshCacheStatusOnLoad();
         });
 
@@ -2711,29 +2713,31 @@
             // 将日志分割成行，供后续分析使用
             const lines = logs.split('\n');
 
-            // 从 API 获取日期列表及状态（后端已缓存，不会每次都扫盘）
-            try {
-                const response = await fetch('/api/scan_dates');
-                const result = await response.json();
-                if (result.status === 'success' && result.dates) {
-                    dateQueueState.allDates = result.dates;
+            // 只在第一次调用时从 API 获取日期列表（后端已缓存）
+            if (!dateQueueState.allDates || dateQueueState.allDates.length === 0) {
+                try {
+                    const response = await fetch('/api/scan_dates');
+                    const result = await response.json();
+                    if (result.status === 'success' && result.dates) {
+                        dateQueueState.allDates = result.dates;
 
-                    // 从 API 响应直接获取状态
-                    for (const dateStr of result.dates) {
-                        const info = result.date_info[dateStr];
-                        if (info) {
-                            dateQueueState.dates.set(dateStr, {
-                                status: info.status,
-                                fileCount: info.fileCount,
-                                processedCount: info.processedCount
-                            });
+                        // 从 API 响应直接获取状态
+                        for (const dateStr of result.dates) {
+                            const info = result.date_info[dateStr];
+                            if (info) {
+                                dateQueueState.dates.set(dateStr, {
+                                    status: info.status,
+                                    fileCount: info.fileCount,
+                                    processedCount: info.processedCount
+                                });
+                            }
                         }
-                    }
 
-                    console.log('[API] 获取到', result.dates.length, '个日期');
+                        console.log('[API] 获取到', result.dates.length, '个日期');
+                    }
+                } catch (e) {
+                    console.error('[API] 获取日期失败:', e);
                 }
-            } catch (e) {
-                console.error('[API] 获取日期失败:', e);
             }
 
             // 第二遍：分析处理进度（从日志检测正在处理的日期）
@@ -2811,20 +2815,46 @@
                 if (result.logs) {
                     const logEl = document.getElementById('processLogs');
                     const statusEl = document.getElementById('processStatus');
+                    const btn = document.getElementById('reprocessBtn');
+                    const stopBtn = document.getElementById('stopReprocessBtn');
+                    const triggerStatus = document.getElementById('triggerStatus');
 
                     // 保存完整日志
                     window.fullLogs = result.logs;
 
-                    // 更新运行状态
+                    // 更新运行状态和按钮
                     if (statusEl) {
                         if (result.a_running) {
                             statusEl.innerHTML = '<span class="text-emerald-400"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>处理中</span>';
+                            // 禁用启动按钮，显示停止按钮
+                            if (btn) {
+                                btn.disabled = true;
+                                btn.classList.replace('from-blue-600', 'from-gray-600');
+                                btn.classList.replace('to-indigo-600', 'to-gray-600');
+                            }
+                            if (stopBtn) stopBtn.disabled = false;
                         } else if (window.fullLogs && window.fullLogs.includes('任务已结束')) {
                             statusEl.innerHTML = '<span class="text-gray-400"><i class="fa-solid fa-check-circle mr-2"></i>已完成</span>';
+                            // 恢复按钮状态
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="fa-solid fa-bolt text-yellow-300 mr-2"></i>定向检索';
+                                btn.classList.replace('from-gray-600', 'from-blue-600');
+                                btn.classList.replace('to-gray-600', 'to-indigo-600');
+                            }
+                            if (stopBtn) stopBtn.disabled = true;
                         } else if (window.fullLogs && window.fullLogs.includes('暂停')) {
                             statusEl.innerHTML = '<span class="text-yellow-400"><i class="fa-solid fa-pause-circle mr-2"></i>已暂停</span>';
                         } else {
                             statusEl.innerHTML = '<span class="text-gray-500"><i class="fa-solid fa-stop-circle mr-2"></i>未运行</span>';
+                            // 恢复按钮状态
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="fa-solid fa-bolt text-yellow-300 mr-2"></i>定向检索';
+                                btn.classList.replace('from-gray-600', 'from-blue-600');
+                                btn.classList.replace('to-gray-600', 'to-indigo-600');
+                            }
+                            if (stopBtn) stopBtn.disabled = true;
                         }
                     }
 
@@ -2832,10 +2862,10 @@
                     if (dateQueueState.selectedDate) {
                         const lines = result.logs.split('\n');
                         const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate));
-                        logEl.textContent = filteredLines.join('\n');
+                        logEl.innerHTML = formatLogLines(filteredLines.reverse());
                     } else {
                         const lines = result.logs.split('\n').filter(line => line.trim());
-                        logEl.textContent = lines.join('\n');
+                        logEl.innerHTML = formatLogLines(lines.reverse());
                     }
                     logEl.scrollTop = 0;  // 滚动到顶部看最新日志
 
@@ -2892,6 +2922,58 @@
             } catch (e) {
                 console.error("Fetch live status error:", e);
             }
+        }
+
+        // 格式化日志行（带颜色和图标）
+        function formatLogLines(lines) {
+            return lines.map(line => {
+                let cls = '';
+                let icon = '';
+                
+                // 判断日志类型
+                if (line.includes('成功') || line.includes('✓') || line.includes('✅')) {
+                    cls = 'text-green-400';
+                    icon = '<i class="fa-solid fa-check mr-2 opacity-70"></i>';
+                } else if (line.includes('错误') || line.includes('❌') || line.includes('失败') || line.includes('Error')) {
+                    cls = 'text-red-400';
+                    icon = '<i class="fa-solid fa-times mr-2 opacity-70"></i>';
+                } else if (line.includes('警告') || line.includes('⚠️') || line.includes('Warning')) {
+                    cls = 'text-yellow-400';
+                    icon = '<i class="fa-solid fa-exclamation-triangle mr-2 opacity-70"></i>';
+                } else if (line.includes('🚀') || line.includes('启动') || line.includes('开始')) {
+                    cls = 'text-pink-400';
+                    icon = '<i class="fa-solid fa-rocket mr-2 opacity-70"></i>';
+                } else if (line.includes('📊') || line.includes('统计') || line.includes('进度')) {
+                    cls = 'text-blue-400';
+                    icon = '<i class="fa-solid fa-chart-bar mr-2 opacity-70"></i>';
+                } else if (line.includes('💓') || line.includes('心跳') || line.includes('检测')) {
+                    cls = 'text-purple-400';
+                    icon = '<i class="fa-solid fa-heart mr-2 opacity-70"></i>';
+                } else if (line.includes('🌐') || line.includes('请求') || line.includes('API')) {
+                    cls = 'text-cyan-400';
+                    icon = '<i class="fa-solid fa-globe mr-2 opacity-70"></i>';
+                } else if (line.includes('⏱️') || line.includes('耗时') || line.includes('时间')) {
+                    cls = 'text-orange-400';
+                    icon = '<i class="fa-solid fa-clock mr-2 opacity-70"></i>';
+                } else if (line.includes('[Valkey]')) {
+                    cls = 'text-indigo-400';
+                    icon = '<i class="fa-solid fa-database mr-2 opacity-70"></i>';
+                } else if (line.includes('📁') || line.includes('文件') || line.includes('目录')) {
+                    cls = 'text-teal-400';
+                    icon = '<i class="fa-solid fa-folder mr-2 opacity-70"></i>';
+                } else {
+                    cls = 'text-gray-400';
+                    icon = '<i class="fa-solid fa-circle mr-2 opacity-30"></i>';
+                }
+                
+                return `<div class="${cls}">${icon}${escapeHtml(line)}</div>`;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         async function updateShiguangPausedState(isPaused) {

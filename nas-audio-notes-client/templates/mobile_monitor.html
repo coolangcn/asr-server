@@ -832,7 +832,7 @@
 
         async function fetchData() {
             try {
-                // A轨日志
+                // A轨日志和状态
                 const logsRes = await fetch('/api/reprocess_logs');
                 const logsData = await logsRes.json();
 
@@ -844,7 +844,13 @@
                 const liveLogsRes = await fetch('/api/live_logs');
                 const liveLogsData = await liveLogsRes.json();
 
-                updateTrackA(logsData.logs || '', statusData);
+                // 合并 A/B 轨状态
+                const combinedStatus = {
+                    ...statusData,
+                    a_running: logsData.a_running
+                };
+
+                updateTrackA(logsData.logs || '', combinedStatus);
                 updateTrackB(statusData, liveLogsData.logs || '');
                 updateLogs(currentTrack === 'a' ? (logsData.logs || '') : (liveLogsData.logs || ''));
                 document.getElementById('updateTime').textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
@@ -999,7 +1005,8 @@
             const logContainer = document.getElementById('logContainer');
             // 获取最后 50 行日志（最新）
             const allLines = logs.split('\n').filter(l => l.trim());
-            const lines = allLines.slice(-50);
+            // 反转数组，让最新日志在上面
+            const lines = allLines.slice(-50).reverse();
 
             let html = '';
             for (const line of lines) {
@@ -1019,6 +1026,9 @@
                         time = bMatch[1].split(' ')[1];
                         // 移除时间和 | INFO | 部分
                         content = line.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d+)?\s*\|\s*\w+\s*\|\s*/, '');
+                    } else {
+                        // Valkey 或其他日志（无时间戳），直接显示
+                        content = line;
                     }
                 }
 
@@ -1028,9 +1038,10 @@
                 else if (content.includes('警告') || content.includes('⚠️')) cls = 'warning';
                 else if (content.includes('🚀') || content.includes('📊') || content.includes('💓')) cls = 'heart';
                 else if (content.includes('🌐') || content.includes('⏱️')) cls = 'info';
+                else if (content.includes('[Valkey]')) cls = 'info';
 
                 html += `<div class="log-line">
-                    <span class="log-time">${time || '--:--:--'}</span>
+                    <span class="log-time">${time || ''}</span>
                     <span class="log-content ${cls}">${escapeHtml(content)}</span>
                 </div>`;
             }

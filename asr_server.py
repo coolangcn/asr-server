@@ -1736,7 +1736,7 @@ def get_reprocess_logs():
             logs = logs_bytes.decode('utf-8', errors='replace')
             return jsonify({"logs": logs, "a_running": a_running, "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None})
     except Exception as e:
-        return jsonify({"error": str(e), "running": False}), 500
+        return jsonify({"error": str(e), "a_running": False}), 500
 
 @app.route("/api/live_status", methods=["GET"])
 def get_live_status():
@@ -1762,7 +1762,7 @@ def get_live_logs():
     try:
         log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-b.log")
         if not os.path.exists(log_file):
-            return jsonify({"logs": "暂无日志", "running": False})
+            return jsonify({"logs": "暂无日志", "b_running": False})
 
         global _track_b_running
         with open(log_file, "rb") as f:
@@ -1771,9 +1771,9 @@ def get_live_logs():
             f.seek(max(size - 20000, 0), 0)
             logs_bytes = f.read()
             logs = logs_bytes.decode('utf-8', errors='replace')
-            return jsonify({"logs": logs, "running": _track_b_running})
+            return jsonify({"logs": logs, "b_running": _track_b_running})
     except Exception as e:
-        return jsonify({"error": str(e), "running": False}), 500
+        return jsonify({"error": str(e), "b_running": False}), 500
 
 @app.route("/api/start_live", methods=["POST"])
 def start_live():

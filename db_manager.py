@@ -882,9 +882,13 @@ def get_file_cache_from_redis(date_str: str = None) -> list:
             # 每批打印进度
             processed = min(i + batch_size, total)
             if i % (batch_size * 3) == 0 or processed == total:
-                print(f"  [Valkey] 已获取 {processed}/{total} 个文件信息 ({processed*100//total}%)")
+                from datetime import datetime
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[{now}] [Valkey] 已获取 {processed}/{total} 个文件信息 ({processed*100//total}%)")
 
-        print(f"  [Valkey] 文件列表获取完成，共 {len(result)} 个文件")
+        from datetime import datetime
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{now}] [Valkey] 文件列表获取完成，共 {len(result)} 个文件")
         return result
     except Exception as e:
         print(f"  [Valkey Error] 获取文件缓存失败: {e}")

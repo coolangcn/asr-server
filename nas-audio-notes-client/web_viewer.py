@@ -545,61 +545,61 @@ def proxy_stop_live():
 @app.route('/api/scan_dates', methods=['GET'])
 @login_required
 def api_scan_dates():
-    """扫描文件系统获取所有日期目录及处理状态"""
+    """从刷盘缓存中提取日期统计信息（不重新扫描文件系统）"""
     try:
-        source_dir = CONFIG["SOURCE_DIR"]
-        processed_dir = os.path.join(source_dir, 'processed')
-
-        # 优先扫描 processed 子目录
-        scan_base = processed_dir if os.path.exists(processed_dir) else source_dir
-
-        if not os.path.exists(scan_base):
-            return jsonify({"error": f"目录不存在: {scan_base}"}), 400
-
-        AUDIO_EXTS = ('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc')
-        date_info = {}
-
         # 检查是否需要强制刷新缓存
         force_refresh = request.args.get('refresh') == '1'
         if force_refresh:
             debug_log("强制刷新，清除缓存...")
             clear_date_stats_in_redis()
 
-        # 先尝试从 Valkey 加载缓存的文件数量
+        # 先从 Valkey 加载缓存的日期统计
         date_info = get_date_stats_from_redis()
         if date_info:
             debug_log(f"从 Valkey 缓存加载了 {len(date_info)} 个日期")
         else:
-            debug_log("Valkey 缓存为空，扫描文件系统...")
-            scan_count = 0
-            for item in os.listdir(scan_base):
-                item_path = os.path.join(scan_base, item)
-                if os.path.isdir(item_path) and re.match(r'\d{4}-\d{2}-\d{2}', item):
-                    file_count = 0
-                    try:
-                        for f in os.listdir(item_path):
-                            if f.lower().endswith(AUDIO_EXTS):
-                                file_count += 1
-                        scan_count += 1
-                    except:
-                        pass
-                    date_info[item] = {
-                        'fileCount': file_count,
+            # 缓存为空，从刷盘的文件路径缓存中提取
+            debug_log("Valkey 日期缓存为空，从刷盘缓存中提取...")
+            filepaths = get_file_cache_from_redis()  # 从刷盘缓存获取
+            if filepaths:
+                debug_log(f"从刷盘缓存获取到 {len(filepaths)} 个文件路径")
+                
+                # 统计每个日期的文件数
+                from collections import defaultdict
+                date_counts = defaultdict(int)
+                date_pattern = re.compile(r'(\d{4}-\d{2}-\d{2})')
+                
+                for fp in filepaths:
+                    filepath = fp if isinstance(fp, str) else fp.get('filepath', '')
+                    match = date_pattern.search(filepath)
+                    if match:
+                        date_str = match.group(1)
+                        date_counts[date_str] += 1
+                
+                # 构建 date_info
+                for date_str, count in sorted(date_counts.items()):
+                    date_info[date_str] = {
+                        'fileCount': count,
                         'processedCount': 0,
                         'status': 'pending'
                     }
-            
-            debug_log(f"扫描到 {scan_count} 个日期目录")
-            debug_log(f"date_info 内容：{list(date_info.items())[:3]}")
-            
-            # 保存到 Valkey 缓存
-            if date_info:
-                if save_date_stats_to_redis(date_info):
-                    debug_log(f"✅ 已缓存 {len(date_info)} 个日期到 Valkey")
-                else:
-                    debug_log("❌ 保存缓存到 Valkey 失败")
+                
+                debug_log(f"统计到 {len(date_info)} 个日期")
+                
+                # 保存到 Valkey 缓存
+                if date_info:
+                    if save_date_stats_to_redis(date_info):
+                        debug_log(f"✅ 已缓存 {len(date_info)} 个日期到 Valkey")
+                    else:
+                        debug_log("❌ 保存缓存到 Valkey 失败")
             else:
-                debug_log("❌ date_info 为空，无法保存")
+                debug_log("❌ 刷盘缓存也为空，需要先行刷盘")
+                return jsonify({
+                    "status": "error",
+                    "message": "缓存为空，请先执行文件刷盘",
+                    "dates": [],
+                    "date_info": {}
+                }), 200
 
         # 查询数据库获取已处理的进度
         try:
@@ -625,7 +625,6 @@ def api_scan_dates():
                         date_counts[d] = date_counts.get(d, 0) + 1
                 
                 debug_log(f"统计到 {len(date_counts)} 个日期有处理记录")
-                debug_log(f"示例：{list(date_counts.items())[:3]}")
                 
                 for date_str, cnt in date_counts.items():
                     if date_str in date_info:
@@ -637,8 +636,6 @@ def api_scan_dates():
             debug_log(f"查询处理进度失败：{db_err}")
 
         # 更新状态
-        # 注意：如果需要知道进程是否真的在运行，应该用 babycry_analysis_progress 表的 last_heartbeat 字段
-        # 这里只根据 processedCount 判断，重启后部分完成的日期会显示为"暂停"而非"处理中"
         for date_str, info in date_info.items():
             if info['processedCount'] == 0:
                 info['status'] = 'pending'
