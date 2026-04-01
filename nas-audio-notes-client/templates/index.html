@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Audio Notes | 智能语音笔记</title>
+    <!-- Mobile Redirect -->
+    <script>
+        if (window.innerWidth <= 768 && window.location.pathname === '/') {
+            window.location.href = '/mobile';
+        }
+    </script>
     <!-- Google Fonts -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
@@ -2871,16 +2877,6 @@
 
                 // 更新 LIVE MONITORING 标识
                 const liveBadge = document.querySelector('.animate-pulse');
-                if (liveBadge && liveResult.paused) {
-                    liveBadge.innerHTML = '<i class="fa-solid fa-pause text-[6px] mr-1"></i> PAUSED';
-                    liveBadge.classList.remove('text-red-400');
-                    liveBadge.classList.add('text-yellow-400');
-                } else if (liveBadge) {
-                    liveBadge.innerHTML = '<i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING';
-                    liveBadge.classList.add('text-red-400');
-                    liveBadge.classList.remove('text-yellow-400');
-                }
-
                 // 更新数据概览暂停提示
                 const dashboardBadge = document.getElementById('dashboardPausedBadge');
                 if (dashboardBadge) {

@@ -379,6 +379,7 @@ if __name__ == "__main__":
     success_count = 0
     skip_count = 0
     error_count = 0
+    task_start_time = time.time()
 
     current_processing_date = None
     date_file_count = {}  # 统计每个日期的文件数

@@ -497,6 +497,51 @@ def proxy_live_status():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/live_logs', methods=['GET'])
+@login_required
+def proxy_live_logs():
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/live_logs", timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/reprocess_history', methods=['POST'])
+@login_required
+def proxy_start_reprocess():
+    try:
+        response = requests.post(f"{ASR_SERVER_URL}/api/trigger_reprocess", timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/start_live', methods=['POST'])
+@login_required
+def proxy_start_live():
+    try:
+        response = requests.post(f"{ASR_SERVER_URL}/api/start_live", timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/pause_live', methods=['POST'])
+@login_required
+def proxy_pause_live():
+    try:
+        response = requests.post(f"{ASR_SERVER_URL}/api/pause_live", timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/stop_live', methods=['POST'])
+@login_required
+def proxy_stop_live():
+    try:
+        response = requests.post(f"{ASR_SERVER_URL}/api/stop_live", timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/scan_dates', methods=['GET'])
 @login_required
 def api_scan_dates():
@@ -1132,6 +1177,12 @@ def serve_long_sentence_audio(filename):
         return send_file(full_path, mimetype='audio/wav')
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/mobile')
+def mobile_monitor():
+    if not check_auth():
+        return redirect(url_for('login'))
+    return send_file('templates/mobile_monitor.html')
 
 @app.route('/')
 def index():

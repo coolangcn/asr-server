@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>任务监控</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --primary: #6366f1;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg-dark: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.8);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --track-a: #f472b6;
+            --track-b: #38bdf8;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #1e1b4b 50%, #0f172a 100%);
+            min-height: 100vh;
+            color: var(--text-primary);
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        .bg-animation {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .bg-animation::before, .bg-animation::after {
+            content: '';
+            position: absolute;
+            width: 300px; height: 300px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.3;
+            animation: float 20s ease-in-out infinite;
+        }
+
+        .bg-animation::before {
+            background: var(--primary);
+            top: -100px; left: -100px;
+        }
+
+        .bg-animation::after {
+            background: #ec4899;
+            bottom: -100px; right: -100px;
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(50px, 50px) scale(1.1); }
+            50% { transform: translate(0, 100px) scale(1); }
+            75% { transform: translate(-50px, 50px) scale(0.9); }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 20px;
+            padding-bottom: 100px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 20px 0 24px;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 4px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+        }
+
+        /* 轨道切换 */
+        .track-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .track-tab {
+            flex: 1;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .track-tab.active {
+            border: 2px solid;
+        }
+
+        .track-tab.track-a.active {
+            border-color: var(--track-a);
+            color: var(--track-a);
+            background: rgba(244, 114, 182, 0.1);
+        }
+
+        .track-tab.track-b.active {
+            border-color: var(--track-b);
+            color: var(--track-b);
+            background: rgba(56, 189, 248, 0.1);
+        }
+
+        .track-tab i { font-size: 1.1rem; }
+
+        /* 状态卡片 */
+        .status-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+        }
+
+        .status-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pulse-ring {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .pulse-ring.running {
+            background: rgba(16, 185, 129, 0.2);
+        }
+
+        .pulse-ring.running::before {
+            content: '';
+            position: absolute;
+            width: 100%; height: 100%;
+            border-radius: 50%;
+            border: 2px solid var(--success);
+            animation: pulse-ring 2s ease-out infinite;
+        }
+
+        .pulse-ring.paused {
+            background: rgba(245, 158, 11, 0.2);
+        }
+
+        .pulse-ring.paused::before {
+            content: '';
+            position: absolute;
+            width: 100%; height: 100%;
+            border-radius: 50%;
+            border: 2px solid var(--warning);
+            animation: pulse-ring 2s ease-out infinite;
+        }
+
+        .pulse-ring.stopped {
+            background: rgba(148, 163, 184, 0.2);
+        }
+
+        .pulse-ring.stopped::before { display: none; }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+
+        .pulse-ring i { font-size: 1.1rem; }
+        .pulse-ring.running i { color: var(--success); }
+        .pulse-ring.paused i { color: var(--warning); }
+        .pulse-ring.stopped i { color: var(--text-secondary); }
+
+        .status-label {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.running { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+        .status-badge.paused { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+        .status-badge.stopped { background: rgba(148, 163, 184, 0.2); color: var(--text-secondary); }
+
+        /* 进度条 */
+        .progress-section { margin-bottom: 16px; }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 10px;
+        }
+
+        .progress-percent {
+            font-size: 2.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary) 0%, #a855f7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+        }
+
+        .progress-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .progress-bar-container {
+            height: 10px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary) 0%, #a855f7 50%, #ec4899 100%);
+            border-radius: 5px;
+            transition: width 0.5s ease;
+            position: relative;
+        }
+
+        .progress-bar-fill::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* 统计网格 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 12px 4px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+        }
+
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .stat-value.primary { color: var(--primary); }
+        .stat-value.success { color: var(--success); }
+        .stat-value.warning { color: var(--warning); }
+        .stat-value.danger { color: var(--danger); }
+
+        .stat-label {
+            font-size: 0.55rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        /* 内容卡片 */
+        .content-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .content-card h3 {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .content-card h3 i { font-size: 0.8rem; }
+
+        .current-date {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .current-file {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            word-break: break-all;
+            line-height: 1.4;
+            padding: 10px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+        }
+
+        /* ETA 卡片 */
+        .eta-card {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%);
+            border-radius: 18px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .eta-icon {
+            width: 48px; height: 48px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary) 0%, #a855f7 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .eta-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .eta-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* B轨状态 */
+        .track-b-info {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .info-chip {
+            padding: 10px 14px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 12px;
+            flex: 1;
+            min-width: 45%;
+        }
+
+        .info-chip-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--track-b);
+        }
+
+        .info-chip-label {
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+            text-transform: uppercase;
+        }
+
+        /* 操作按钮 */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn.start {
+            background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+            color: white;
+        }
+
+        .action-btn.stop {
+            background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .action-btn.pause {
+            background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
+            color: white;
+        }
+
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .action-btn i { font-size: 1rem; }
+
+        /* 日志 */
+        .log-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .log-header h3 {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .log-toggle {
+            font-size: 0.7rem;
+            color: var(--primary);
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+
+        .log-container {
+            background: rgba(0,0,0,0.4);
+            border-radius: 14px;
+            padding: 14px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.65rem;
+            line-height: 1.5;
+        }
+
+        .log-container::-webkit-scrollbar { width: 4px; }
+        .log-container::-webkit-scrollbar-track { background: transparent; }
+        .log-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+        .log-line { padding: 2px 0; display: flex; gap: 8px; }
+        .log-time { color: #64748b; flex-shrink: 0; }
+        .log-content { color: #94a3b8; word-break: break-all; }
+        .log-content.success { color: var(--success); }
+        .log-content.error { color: var(--danger); }
+        .log-content.warning { color: var(--warning); }
+        .log-content.info { color: #60a5fa; }
+        .log-content.heart { color: #f472b6; }
+
+        .safe-area { height: env(safe-area-inset-bottom, 20px); }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateX(-50%) translateY(0); }
+            to { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+
+        .track-content { display: none; }
+        .track-content.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1><i class="fa-solid fa-chart-line"></i> 任务监控</h1>
+            <p id="updateTime">正在连接...</p>
+        </div>
+
+        <!-- 轨道切换 -->
+        <div class="track-tabs">
+            <button class="track-tab track-a active" onclick="switchTrack('a')">
+                <i class="fa-solid fa-folder-open"></i>
+                A轨 · 历史
+            </button>
+            <button class="track-tab track-b" onclick="switchTrack('b')">
+                <i class="fa-solid fa-microphone"></i>
+                B轨 · 实时
+            </button>
+        </div>
+
+        <!-- A轨内容 -->
+        <div id="track-a-content" class="track-content active">
+            <!-- 操作按钮 -->
+            <div class="action-buttons">
+                <button class="action-btn start" id="aStartBtn" onclick="startHistoryTask()">
+                    <i class="fa-solid fa-play"></i> 启动
+                </button>
+                <button class="action-btn stop" id="aStopBtn" onclick="stopHistoryTask()" disabled>
+                    <i class="fa-solid fa-stop"></i> 停止
+                </button>
+            </div>
+
+            <div class="status-card">
+                <div class="status-header">
+                    <div class="status-indicator">
+                        <div class="pulse-ring stopped" id="aStatusRing">
+                            <i class="fa-solid fa-folder-open"></i>
+                        </div>
+                        <span class="status-label" id="aStatusLabel">等待任务</span>
+                    </div>
+                    <span class="status-badge stopped" id="aStatusBadge">IDLE</span>
+                </div>
+
+                <div class="progress-section">
+                    <div class="progress-header">
+                        <span class="progress-percent" id="aProgressPercent">0%</span>
+                        <div class="progress-label">
+                            <span id="aProcessedNum">0</span> / <span id="aTotalNum">0</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="aProgressBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value success" id="aSuccessCount">0</div>
+                        <div class="stat-label">成功</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value danger" id="aErrorCount">0</div>
+                        <div class="stat-label">错误</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value warning" id="aSkipCount">0</div>
+                        <div class="stat-label">跳过</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value primary" id="aAvgTime">0s</div>
+                        <div class="stat-label">平均</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="eta-card">
+                <div class="eta-icon">
+                    <i class="fa-solid fa-clock"></i>
+                </div>
+                <div>
+                    <div class="eta-value" id="aEtaValue">--</div>
+                    <div class="eta-label">预计剩余时间</div>
+                </div>
+            </div>
+
+            <div class="content-card">
+                <h3><i class="fa-solid fa-folder-open"></i> 当前处理</h3>
+                <div class="current-date" id="aCurrentDate">--</div>
+                <div class="current-file" id="aCurrentFile">等待任务开始...</div>
+            </div>
+        </div>
+
+        <!-- B轨内容 -->
+        <div id="track-b-content" class="track-content">
+            <!-- 操作按钮 -->
+            <div class="action-buttons">
+                <button class="action-btn start" id="bStartBtn" onclick="startLiveTask()">
+                    <i class="fa-solid fa-play"></i> 启动
+                </button>
+                <button class="action-btn pause" id="bPauseBtn" onclick="pauseLiveTask()">
+                    <i class="fa-solid fa-pause"></i> 暂停
+                </button>
+                <button class="action-btn stop" id="bStopBtn" onclick="stopLiveTask()" disabled>
+                    <i class="fa-solid fa-stop"></i> 停止
+                </button>
+            </div>
+
+            <div class="status-card">
+                <div class="status-header">
+                    <div class="status-indicator">
+                        <div class="pulse-ring stopped" id="bStatusRing">
+                            <i class="fa-solid fa-microphone"></i>
+                        </div>
+                        <span class="status-label" id="bStatusLabel">实时监听中</span>
+                    </div>
+                    <span class="status-badge stopped" id="bStatusBadge">IDLE</span>
+                </div>
+
+                <div class="track-b-info">
+                    <div class="info-chip">
+                        <div class="info-chip-value" id="bCryCount">0</div>
+                        <div class="info-chip-label">今日哭声</div>
+                    </div>
+                    <div class="info-chip">
+                        <div class="info-chip-value" id="bRecordCount">0</div>
+                        <div class="info-chip-label">今日录音</div>
+                    </div>
+                    <div class="info-chip">
+                        <div class="info-chip-value" id="bActiveTime">--</div>
+                        <div class="info-chip-label">运行时长</div>
+                    </div>
+                    <div class="info-chip">
+                        <div class="info-chip-value" id="bLastEvent">--</div>
+                        <div class="info-chip-label">最近事件</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content-card">
+                <h3><i class="fa-solid fa-bell"></i> 最近检测</h3>
+                <div class="current-file" id="bLastCry">暂无检测事件</div>
+            </div>
+
+            <div class="eta-card" style="background: linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%); border-color: rgba(56, 189, 248, 0.3);">
+                <div class="eta-icon" style="background: linear-gradient(135deg, #38bdf8 0%, #3b82f6 100%);">
+                    <i class="fa-solid fa-waveform"></i>
+                </div>
+                <div>
+                    <div class="eta-value" id="bStatusText">实时监测</div>
+                    <div class="eta-label">实时监听文件夹变化</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志 -->
+        <div class="log-card">
+            <div class="log-header">
+                <h3><i class="fa-solid fa-terminal"></i> 实时日志</h3>
+                <button class="log-toggle" onclick="toggleLogs()">
+                    <span id="logToggleText">展开</span> <i class="fa-solid fa-chevron-down"></i>
+                </button>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-line">
+                    <span class="log-time">--:--:--</span>
+                    <span class="log-content">正在获取日志...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="safe-area"></div>
+    </div>
+
+    <script>
+        let currentTrack = 'a';
+        let logsExpanded = false;
+
+        function switchTrack(track) {
+            currentTrack = track;
+            document.querySelectorAll('.track-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.track-tab.track-${track}`).classList.add('active');
+            document.querySelectorAll('.track-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`track-${track}-content`).classList.add('active');
+            // 切换时刷新日志
+            fetchData();
+        }
+
+        // A轨操作
+        async function startHistoryTask() {
+            const btn = document.getElementById('aStartBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 启动中...';
+            try {
+                const response = await fetch('/api/reprocess_history', { method: 'POST' });
+                const data = await response.json();
+                if (data.status === 'started' || data.message?.includes('启动')) {
+                    showToast('A轨历史任务已启动', 'success');
+                } else {
+                    showToast(data.message || '启动失败', 'error');
+                }
+            } catch (e) {
+                showToast('启动失败: ' + e.message, 'error');
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-play"></i> 启动';
+        }
+
+        async function stopHistoryTask() {
+            if (!confirm('确定要停止A轨历史任务吗？')) return;
+            const btn = document.getElementById('aStopBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 停止中...';
+            try {
+                const response = await fetch('/api/stop_reprocess', { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || '已发送停止信号', 'success');
+            } catch (e) {
+                showToast('停止失败: ' + e.message, 'error');
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止';
+        }
+
+        // B轨操作
+        async function startLiveTask() {
+            const btn = document.getElementById('bStartBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 启动中...';
+            try {
+                const response = await fetch('/api/start_live', { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || 'B轨实时任务已启动', 'success');
+            } catch (e) {
+                showToast('启动失败: ' + e.message, 'error');
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-play"></i> 启动';
+        }
+
+        async function pauseLiveTask() {
+            const btn = document.getElementById('bPauseBtn');
+            btn.disabled = true;
+            try {
+                const response = await fetch('/api/pause_live', { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || 'B轨已暂停', 'success');
+            } catch (e) {
+                showToast('暂停失败: ' + e.message, 'error');
+            }
+            btn.disabled = false;
+        }
+
+        async function stopLiveTask() {
+            if (!confirm('确定要停止B轨实时任务吗？')) return;
+            const btn = document.getElementById('bStopBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 停止中...';
+            try {
+                const response = await fetch('/api/stop_live', { method: 'POST' });
+                const data = await response.json();
+                showToast(data.message || 'B轨已停止', 'success');
+            } catch (e) {
+                showToast('停止失败: ' + e.message, 'error');
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止';
+        }
+
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 12px 24px;
+                border-radius: 12px;
+                color: white;
+                font-weight: 600;
+                z-index: 9999;
+                animation: fadeIn 0.3s ease;
+                background: ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--primary)'};
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        async function fetchData() {
+            try {
+                // A轨日志
+                const logsRes = await fetch('/api/reprocess_logs');
+                const logsData = await logsRes.json();
+
+                // B轨状态
+                const statusRes = await fetch('/api/live_status');
+                const statusData = await statusRes.json();
+
+                // B轨日志
+                const liveLogsRes = await fetch('/api/live_logs');
+                const liveLogsData = await liveLogsRes.json();
+
+                updateTrackA(logsData.logs || '', statusData);
+                updateTrackB(statusData, liveLogsData.logs || '');
+                updateLogs(currentTrack === 'a' ? (logsData.logs || '') : (liveLogsData.logs || ''));
+                document.getElementById('updateTime').textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
+            } catch (e) {
+                console.error('获取数据失败:', e);
+            }
+        }
+
+        function updateTrackA(logs, statusData) {
+            const isRunning = statusData.a_running;
+            const aRing = document.getElementById('aStatusRing');
+            const aLabel = document.getElementById('aStatusLabel');
+            const aBadge = document.getElementById('aStatusBadge');
+            const aStartBtn = document.getElementById('aStartBtn');
+            const aStopBtn = document.getElementById('aStopBtn');
+
+            // 更新按钮状态
+            if (aStartBtn) aStartBtn.disabled = isRunning;
+            if (aStopBtn) aStopBtn.disabled = !isRunning;
+
+            if (isRunning) {
+                aRing.className = 'pulse-ring running';
+                aRing.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                aLabel.textContent = '处理中';
+                aBadge.textContent = 'RUNNING';
+                aBadge.className = 'status-badge running';
+            } else if (logs.includes('任务已结束') || logs.includes('已完成')) {
+                aRing.className = 'pulse-ring stopped';
+                aRing.innerHTML = '<i class="fa-solid fa-check"></i>';
+                aLabel.textContent = '已完成';
+                aBadge.textContent = 'DONE';
+                aBadge.className = 'status-badge stopped';
+            } else {
+                aRing.className = 'pulse-ring stopped';
+                aRing.innerHTML = '<i class="fa-solid fa-folder-open"></i>';
+                aLabel.textContent = '等待任务';
+                aBadge.textContent = 'IDLE';
+                aBadge.className = 'status-badge stopped';
+            }
+
+            const countMatch = logs.match(/\[(\d+)\/(\d+)\]/);
+            if (countMatch) {
+                const processed = parseInt(countMatch[1]);
+                const total = parseInt(countMatch[2]);
+                const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+                document.getElementById('aProgressPercent').textContent = percent + '%';
+                document.getElementById('aProcessedNum').textContent = processed.toLocaleString();
+                document.getElementById('aTotalNum').textContent = total.toLocaleString();
+                document.getElementById('aProgressBar').style.width = percent + '%';
+            }
+
+            const successMatch = logs.match(/成功：(\d+)/);
+            const errorMatch = logs.match(/错误：(\d+)/);
+            const skipMatch = logs.match(/跳过：(\d+)/);
+            const avgMatch = logs.match(/平均每个：([\d.]+)s/);
+
+            if (successMatch) document.getElementById('aSuccessCount').textContent = parseInt(successMatch[1]).toLocaleString();
+            if (errorMatch) document.getElementById('aErrorCount').textContent = parseInt(errorMatch[1]).toLocaleString();
+            if (skipMatch) document.getElementById('aSkipCount').textContent = parseInt(skipMatch[1]).toLocaleString();
+            if (avgMatch) document.getElementById('aAvgTime').textContent = avgMatch[1] + 's';
+
+            const etaMatch = logs.match(/预计剩余：?([\d.]+)小时/);
+            if (etaMatch) {
+                const hours = parseFloat(etaMatch[1]);
+                document.getElementById('aEtaValue').textContent = hours < 1 ? Math.round(hours * 60) + ' 分钟' : hours.toFixed(1) + ' 小时';
+            } else if (logs.includes('已完成') || logs.includes('任务已结束')) {
+                document.getElementById('aEtaValue').textContent = '00:00';
+            }
+
+            const dateMatch = logs.match(/【正在处理日期】(\d{4}-\d{2}-\d{2})/);
+            if (dateMatch) {
+                document.getElementById('aCurrentDate').textContent = '📅 ' + dateMatch[1];
+            }
+
+            const fileMatch = logs.match(/正在发起云端分析请求：(.+\.(?:m4a|mp3|wav|acc))/);
+            if (fileMatch) {
+                document.getElementById('aCurrentFile').textContent = fileMatch[1].split('/').pop();
+            }
+        }
+
+        function updateTrackB(statusData, liveLogs) {
+            const isRunning = statusData.b_running;
+            const isPaused = statusData.b_paused;
+            const bRing = document.getElementById('bStatusRing');
+            const bLabel = document.getElementById('bStatusLabel');
+            const bBadge = document.getElementById('bStatusBadge');
+            const bStartBtn = document.getElementById('bStartBtn');
+            const bPauseBtn = document.getElementById('bPauseBtn');
+            const bStopBtn = document.getElementById('bStopBtn');
+
+            // 更新按钮状态
+            if (bStartBtn) bStartBtn.disabled = isRunning;
+            if (bPauseBtn) bPauseBtn.disabled = !isRunning || isPaused;
+            if (bStopBtn) bStopBtn.disabled = !isRunning;
+
+            if (!isRunning) {
+                bRing.className = 'pulse-ring stopped';
+                bRing.innerHTML = '<i class="fa-solid fa-microphone-slash"></i>';
+                bLabel.textContent = '未启动';
+                bBadge.textContent = 'STOPPED';
+                bBadge.className = 'status-badge stopped';
+                document.getElementById('bStatusText').textContent = '点击启动开始监听';
+            } else if (isPaused) {
+                bRing.className = 'pulse-ring paused';
+                bRing.innerHTML = '<i class="fa-solid fa-pause"></i>';
+                bLabel.textContent = '已暂停';
+                bBadge.textContent = 'PAUSED';
+                bBadge.className = 'status-badge paused';
+                document.getElementById('bStatusText').textContent = statusData.reason || '等待A轨完成';
+            } else {
+                bRing.className = 'pulse-ring running';
+                bRing.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+                bLabel.textContent = '实时监听中';
+                bBadge.textContent = 'LIVE';
+                bBadge.className = 'status-badge running';
+                document.getElementById('bStatusText').textContent = '实时监测中';
+            }
+
+            if (statusData.b_reason && !isRunning) {
+                document.getElementById('bLastEvent').textContent = statusData.b_reason.substring(0, 10);
+            }
+        }
+
+        function updateLogs(logs) {
+            const logContainer = document.getElementById('logContainer');
+            const lines = logs.split('\n').filter(l => l.trim()).slice(-30);
+
+            let html = '';
+            for (const line of lines) {
+                // 匹配 A轨格式: [2026-04-01 11:04:17] 或 B轨格式: 2026-04-01 11:04:17,991 | INFO |
+                const timeMatch = line.match(/^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/);
+                const time = timeMatch ? timeMatch[1].split(' ')[1] : '--:--:--';
+                // 移除时间戳部分
+                const content = line.replace(/^\[?\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]?\s*/, '').replace(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^|]*\|\s*/, '');
+
+                let cls = '';
+                if (content.includes('成功') || content.includes('✓')) cls = 'success';
+                else if (content.includes('错误') || content.includes('❌') || content.includes('失败')) cls = 'error';
+                else if (content.includes('警告') || content.includes('⚠️')) cls = 'warning';
+                else if (content.includes('🚀') || content.includes('📊') || content.includes('💓')) cls = 'heart';
+                else if (content.includes('🌐') || content.includes('⏱️')) cls = 'info';
+
+                html += `<div class="log-line">
+                    <span class="log-time">${time}</span>
+                    <span class="log-content ${cls}">${escapeHtml(content)}</span>
+                </div>`;
+            }
+            logContainer.innerHTML = html || '<div class="log-line"><span class="log-time">--:--:--</span><span class="log-content">无日志</span></div>';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function toggleLogs() {
+            logsExpanded = !logsExpanded;
+            const container = document.getElementById('logContainer');
+            document.getElementById('logToggleText').textContent = logsExpanded ? '收起' : '展开';
+            container.style.maxHeight = logsExpanded ? '400px' : '200px';
+        }
+
+        fetchData();
+        setInterval(fetchData, 5000);
+    </script>
+</body>
+</html>

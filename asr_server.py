@@ -253,6 +253,8 @@ _history_reprocess_lock = threading.Lock()
 _history_reprocess_running = False
 _history_reprocess_proc = None # 用于存储当前运行的进程对象
 _track_b_paused = False # 是否暂停 B 轨实时扫描
+_track_b_running = False # B 轨是否正在运行
+_monitor_thread = None # B 轨实时监听线程
 
 # =================【 轨道A: 独立哭声检测配置 】=================
 # 与语音识别参数完全隔离，仅用于原始音频的哭声声纹匹配
@@ -1738,17 +1740,81 @@ def get_reprocess_logs():
 
 @app.route("/api/live_status", methods=["GET"])
 def get_live_status():
-    """获取实时分析状态（B 轨）"""
+    """获取 A/B 轨状态"""
     try:
-        is_paused = _track_b_paused
-        reason = "A 轨历史分析中" if is_paused else None
+        global _track_b_running, _track_b_paused, _history_reprocess_proc
+        # 检查 A 轨进程是否还在运行
+        a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
         return jsonify({
-            "paused": is_paused,
-            "reason": reason,
-            "message": "B 轨已暂停，请稍后重试" if is_paused else "B 轨正常运行中"
+            "a_running": a_running,
+            "b_running": _track_b_running,
+            "b_paused": _track_b_paused if _track_b_running else True,
+            "a_reason": "A 轨历史分析中" if (a_running and _track_b_running and _track_b_paused) else None,
+            "b_reason": "A 轨历史分析中" if (a_running and _track_b_running) else None,
+            "message": "B 轨已暂停" if (_track_b_running and _track_b_paused) else ("B 轨正常运行中" if _track_b_running else "B 轨未启动")
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/live_logs", methods=["GET"])
+def get_live_logs():
+    """获取实时分析（B 轨）的日志"""
+    try:
+        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-b.log")
+        if not os.path.exists(log_file):
+            return jsonify({"logs": "暂无日志", "running": False})
+
+        global _track_b_running
+        with open(log_file, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(size - 20000, 0), 0)
+            logs_bytes = f.read()
+            logs = logs_bytes.decode('utf-8', errors='replace')
+            return jsonify({"logs": logs, "running": _track_b_running})
+    except Exception as e:
+        return jsonify({"error": str(e), "running": False}), 500
+
+@app.route("/api/start_live", methods=["POST"])
+def start_live():
+    """启动实时监听（B 轨）"""
+    try:
+        import threading
+        global _monitor_thread, _track_b_running, _track_b_paused
+        if _track_b_running and _monitor_thread and _monitor_thread.is_alive():
+            return jsonify({"message": "B 轨已在运行中", "status": "already_running"})
+        _track_b_running = True
+        _track_b_paused = False
+        _monitor_thread = threading.Thread(target=audio_processor.start_monitor, daemon=True)
+        _monitor_thread.start()
+        return jsonify({"message": "B 轨实时监听已启动", "status": "started"})
+    except Exception as e:
+        logger.error(f"启动 B 轨失败: {e}")
+        return jsonify({"message": f"启动失败: {e}", "status": "error"}), 500
+
+@app.route("/api/pause_live", methods=["POST"])
+def pause_live():
+    """暂停实时监听（B 轨）"""
+    try:
+        global _track_b_paused
+        if not _track_b_running:
+            return jsonify({"message": "B 轨未启动", "status": "not_running"})
+        _track_b_paused = True
+        return jsonify({"message": "B 轨已暂停", "status": "paused"})
+    except Exception as e:
+        return jsonify({"message": f"暂停失败: {e}", "status": "error"}), 500
+
+@app.route("/api/stop_live", methods=["POST"])
+def stop_live():
+    """停止实时监听（B 轨）"""
+    try:
+        global _track_b_running, _track_b_paused, _monitor_thread
+        _track_b_running = False
+        _track_b_paused = True
+        _monitor_thread = None
+        return jsonify({"message": "B 轨已停止", "status": "stopped"})
+    except Exception as e:
+        return jsonify({"message": f"停止失败: {e}", "status": "error"}), 500
 
 @app.route("/speakers", methods=["GET"])
 def get_speakers():
@@ -2796,6 +2862,7 @@ if __name__ == "__main__":
     logger_sys.info("临时文件清理定时任务已启动")
     
     # 启动文件监控模块 (已解耦)
+    _track_b_running = True
     audio_processor.start_monitor()
     
     print("🎉 服务启动成功！")
