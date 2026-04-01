@@ -953,7 +953,7 @@
                 bLabel.textContent = '已暂停';
                 bBadge.textContent = 'PAUSED';
                 bBadge.className = 'status-badge paused';
-                document.getElementById('bStatusText').textContent = statusData.reason || '等待A轨完成';
+                document.getElementById('bStatusText').textContent = statusData.b_reason || '等待A轨完成';
             } else {
                 bRing.className = 'pulse-ring running';
                 bRing.innerHTML = '<i class="fa-solid fa-microphone"></i>';
@@ -963,22 +963,64 @@
                 document.getElementById('bStatusText').textContent = '实时监测中';
             }
 
-            if (statusData.b_reason && !isRunning) {
-                document.getElementById('bLastEvent').textContent = statusData.b_reason.substring(0, 10);
+            if (statusData.b_reason && isPaused) {
+                document.getElementById('bLastEvent').textContent = statusData.b_reason;
             }
+
+            // 解析 B 轨统计
+            const today = new Date().toISOString().split('T')[0];
+            const todayRecordings = (liveLogs.match(new RegExp(today + '.*收到转录任务', 'g')) || []).length;
+            const todayCry = (liveLogs.match(/哭声|宝宝哭|检测到/g) || []).length;
+
+            // 运行时长
+            const startMatch = liveLogs.match(/开始监控.*?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+            let runtime = '--';
+            if (startMatch) {
+                const startTime = new Date(startMatch[1]);
+                const now = new Date();
+                const diff = Math.floor((now - startTime) / 1000);
+                const hours = Math.floor(diff / 3600);
+                const mins = Math.floor((diff % 3600) / 60);
+                runtime = hours > 0 ? `${hours}小时${mins}分` : `${mins}分钟`;
+            }
+
+            // 最近事件
+            const cryMatch = liveLogs.match(/哭声.*?\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+            const recentEvent = liveLogs.match(/收到转录任务.*?(\d{2}:\d{2}:\d{2})/);
+
+            document.getElementById('bRecordCount').textContent = todayRecordings || liveLogs.includes('收到转录任务') ? '1+' : '0';
+            document.getElementById('bCryCount').textContent = todayCry > 0 ? todayCry : '0';
+            document.getElementById('bActiveTime').textContent = runtime;
+            document.getElementById('bLastEvent').textContent = recentEvent ? recentEvent[1] : '--';
+            document.getElementById('bLastCry').textContent = liveLogs.includes('检测到') ? '最近有哭声' : (liveLogs.includes('哭声') ? '有哭声记录' : '暂无哭声');
         }
 
         function updateLogs(logs) {
             const logContainer = document.getElementById('logContainer');
-            const lines = logs.split('\n').filter(l => l.trim()).slice(-30);
+            // 获取最后 50 行日志（最新）
+            const allLines = logs.split('\n').filter(l => l.trim());
+            const lines = allLines.slice(-50);
 
             let html = '';
             for (const line of lines) {
-                // 匹配 A轨格式: [2026-04-01 11:04:17] 或 B轨格式: 2026-04-01 11:04:17,991 | INFO |
-                const timeMatch = line.match(/^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/);
-                const time = timeMatch ? timeMatch[1].split(' ')[1] : '--:--:--';
-                // 移除时间戳部分
-                const content = line.replace(/^\[?\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]?\s*/, '').replace(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^|]*\|\s*/, '');
+                // 提取时间戳: A轨 [2026-04-01 11:04:17] 或 B轨 2026-04-01 11:04:17,991
+                let time = '';
+                let content = line;
+
+                // 尝试 A轨格式 [...]
+                const aMatch = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/);
+                if (aMatch) {
+                    time = aMatch[1].split(' ')[1];
+                    content = line.substring(line.indexOf(']') + 1).trim();
+                } else {
+                    // 尝试 B轨格式 2026-04-01 11:04:17,991 |
+                    const bMatch = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+                    if (bMatch) {
+                        time = bMatch[1].split(' ')[1];
+                        // 移除时间和 | INFO | 部分
+                        content = line.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d+)?\s*\|\s*\w+\s*\|\s*/, '');
+                    }
+                }
 
                 let cls = '';
                 if (content.includes('成功') || content.includes('✓')) cls = 'success';
@@ -988,7 +1030,7 @@
                 else if (content.includes('🌐') || content.includes('⏱️')) cls = 'info';
 
                 html += `<div class="log-line">
-                    <span class="log-time">${time}</span>
+                    <span class="log-time">${time || '--:--:--'}</span>
                     <span class="log-content ${cls}">${escapeHtml(content)}</span>
                 </div>`;
             }

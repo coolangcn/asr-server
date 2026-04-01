@@ -1723,18 +1723,18 @@ def get_reprocess_logs():
     try:
         log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "history_process.log")
         if not os.path.exists(log_file):
-            return jsonify({"logs": "尚未开始处理，或日志文件不存在...", "running": False})
-        
+            return jsonify({"logs": "尚未开始处理，或日志文件不存在...", "a_running": False})
+
         # 检查进程是否还在运行
-        is_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
-        
+        a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
+
         with open(log_file, "rb") as f:
             f.seek(0, 2)
             size = f.tell()
             f.seek(max(size - 20000, 0), 0) # 读取最后大概 20KB
             logs_bytes = f.read()
             logs = logs_bytes.decode('utf-8', errors='replace')
-            return jsonify({"logs": logs, "running": is_running, "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None})
+            return jsonify({"logs": logs, "a_running": a_running, "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None})
     except Exception as e:
         return jsonify({"error": str(e), "running": False}), 500
 

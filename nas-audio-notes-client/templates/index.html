@@ -2577,14 +2577,14 @@
 
             if (!dateStr) {
                 const lines = window.fullLogs.split('\n').filter(line => line.trim());
-                logEl.textContent = lines.reverse().join('\n');
+                logEl.textContent = lines.join('\n');
                 logEl.scrollTop = 0;
                 return;
             }
 
-            // 过滤出包含该日期的日志行（倒序）
+            // 过滤出包含该日期的日志行（最新在上）
             const lines = window.fullLogs.split('\n');
-            const filteredLines = lines.filter(line => line.includes(dateStr)).reverse();
+            const filteredLines = lines.filter(line => line.includes(dateStr));
             logEl.textContent = filteredLines.join('\n');
             logEl.scrollTop = 0;  // 滚动到顶部看最新日志
         }
@@ -2817,7 +2817,7 @@
 
                     // 更新运行状态
                     if (statusEl) {
-                        if (result.running) {
+                        if (result.a_running) {
                             statusEl.innerHTML = '<span class="text-emerald-400"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>处理中</span>';
                         } else if (window.fullLogs && window.fullLogs.includes('任务已结束')) {
                             statusEl.innerHTML = '<span class="text-gray-400"><i class="fa-solid fa-check-circle mr-2"></i>已完成</span>';
@@ -2828,14 +2828,14 @@
                         }
                     }
 
-                    // 如果有选中日期，显示过滤后的日志；否则显示全部（倒序）
+                    // 如果有选中日期，显示过滤后的日志；否则显示全部（最新在上）
                     if (dateQueueState.selectedDate) {
                         const lines = result.logs.split('\n');
-                        const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate)).reverse();
+                        const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate));
                         logEl.textContent = filteredLines.join('\n');
                     } else {
                         const lines = result.logs.split('\n').filter(line => line.trim());
-                        logEl.textContent = lines.reverse().join('\n');
+                        logEl.textContent = lines.join('\n');
                     }
                     logEl.scrollTop = 0;  // 滚动到顶部看最新日志
 
@@ -2880,7 +2880,7 @@
                 // 更新数据概览暂停提示
                 const dashboardBadge = document.getElementById('dashboardPausedBadge');
                 if (dashboardBadge) {
-                    if (liveResult.paused) {
+                    if (liveResult.b_running && liveResult.b_paused) {
                         dashboardBadge.classList.remove('hidden');
                     } else {
                         dashboardBadge.classList.add('hidden');
@@ -2888,7 +2888,7 @@
                 }
 
                 // 更新时光对话暂停提示
-                updateShiguangPausedState(liveResult.paused);
+                updateShiguangPausedState(liveResult.b_running && liveResult.b_paused);
             } catch (e) {
                 console.error("Fetch live status error:", e);
             }
@@ -2899,17 +2899,17 @@
             const reason = document.getElementById('shiguangPausedReason');
             if (!badge || !reason) return;
 
-            let pauseReason = "宝宝检测运行中";
+            let pauseReason = "A轨分析中";
             if (isPaused) {
                 // 从 API 获取暂停原因
                 try {
                     const response = await fetch('/api/live_status');
                     const result = await response.json();
-                    if (result.reason) {
-                        pauseReason = result.reason;
+                    if (result.b_reason) {
+                        pauseReason = result.b_reason;
                     }
                 } catch (e) {}
-                
+
                 badge.classList.remove('hidden');
                 reason.classList.remove('hidden');
                 reason.innerHTML = `<i class="fa-solid fa-info-circle mr-1"></i>${pauseReason}`;
