@@ -6,7 +6,7 @@ import time
 import sys
 import datetime
 import logging
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_date_file_counts, get_file_cache, get_file_count_from_cache
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_date_file_counts, get_file_cache_from_redis, get_file_count_from_redis
 
 # 导入邮件模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +33,7 @@ reprocess_logger.handlers = []
 
 # 文件处理器
 file_handler = logging.FileHandler(log_path, mode='a', encoding='utf-8')
-file_handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
+file_handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
 reprocess_logger.addHandler(file_handler)
 
 # 控制台处理器
@@ -225,13 +225,13 @@ if __name__ == "__main__":
 
     # 尝试从 DB 缓存获取文件列表
     log_detail(f"[*] 正在从数据库缓存获取文件列表...", 'info')
-    cached_count = get_file_count_from_cache()
+    cached_count = get_file_count_from_redis()
     log_detail(f"[*] DB 缓存中有 {cached_count} 个文件", 'info')
 
     if cached_count > 0:
-        # DB 缓存命中！直接从 DB 获取文件列表
-        log_detail(f"[*] ✅ DB 缓存命中，使用缓存文件列表（极速模式）", 'info')
-        all_files = get_file_cache()  # 返回 [{filepath, filename, file_size}, ...]
+        # DB 缓存命中！直接从 Redis 获取文件列表
+        log_detail(f"[*] ✅ Redis 缓存命中，使用缓存文件列表（极速模式）", 'info')
+        all_files = get_file_cache_from_redis()  # 返回 [{filepath, filename}, ...]
         all_files = [f['filepath'] for f in all_files]  # 转成路径列表
 
         # 按日期过滤
@@ -291,39 +291,48 @@ if __name__ == "__main__":
         log_detail(f"在 {target_dir} 中未找到任何支持的音频文件。", 'warning')
         sys.exit(0)
 
-    # === 智能续传优化：跳过已完成的日期 ===
+    # === 智能续传优化：跳过已完成的日期，对部分处理的日期从断点继续 ===
     if not force_replace and date_stats:
-        # 按日期分组
-        date_file_counts = {}
+        # 按日期分组并排序
+        date_files = {}
         for f in files_to_process:
             m = re.search(r'/(\d{4}-\d{2}-\d{2})/', f)
             if m:
                 d = m.group(1)
-                date_file_counts[d] = date_file_counts.get(d, 0) + 1
+                if d not in date_files:
+                    date_files[d] = []
+                date_files[d].append(f)
+
+        # 对每个日期的文件按文件名排序（确保顺序一致）
+        for d in date_files:
+            date_files[d].sort()
 
         completed_dates = []
-        remaining_files = []
+        files_to_process = []
+        partial_dates = []
 
-        for f in files_to_process:
-            m = re.search(r'/(\d{4}-\d{2}-\d{2})/', f)
-            if not m:
-                remaining_files.append(f)
-                continue
-            d = m.group(1)
+        for d, files in date_files.items():
             processed = date_stats.get(d, 0)
-            total = date_file_counts.get(d, 0)
+            total = len(files)
 
             if processed >= total and total > 0:
-                if d not in completed_dates:
-                    completed_dates.append(d)
+                # 日期完全处理完
+                completed_dates.append(d)
+            elif processed > 0:
+                # 部分处理，从断点继续
+                remaining = files[processed:]
+                files_to_process.extend(remaining)
+                partial_dates.append(f"{d}({processed}/{total})")
             else:
-                remaining_files.append(f)
+                # 未处理过
+                files_to_process.extend(files)
 
         if completed_dates:
-            log_detail(f"[*] 智能续传：跳过 {len(completed_dates)} 个已完成日期: {', '.join(completed_dates)}", 'info')
+            log_detail(f"[*] 智能续传：跳过 {len(completed_dates)} 个已完成日期", 'info')
+        if partial_dates:
+            log_detail(f"[*] 智能续传：{len(partial_dates)} 个日期从断点继续: {', '.join(partial_dates)}", 'info')
 
-        files_to_process = remaining_files
-            log_detail(f"[*] 智能续传：实际需要处理 {len(files_to_process)} 个文件", 'info')
+        log_detail(f"[*] 智能续传：实际需要处理 {len(files_to_process)} 个文件", 'info')
     # ===
 
     # 如果指定了日期，先删除该日期的旧记录（在识别哭声之后、分析之前删除）
@@ -401,63 +410,96 @@ if __name__ == "__main__":
             if idx % 10 == 0 or date_progress == date_total:  # 每10个文件或完成时显示
                 log_detail(f"       该日期进度: {date_progress}/{date_total} ({date_progress*100//date_total}%)", 'info')
 
-        # 【断电续传/跳过逻辑】
-        # 如果指定了具体的日期或时间范围，视为定向重分析，不再跳过已处理文件
+        # 【断点续传已完成过滤，这里不再逐个检查】
+        # 定向检索时仍需检查每个文件（因为 files_to_process 可能包含目标日期的所有文件）
         is_targeted = bool(filter_date or start_time_arg or end_time_arg)
-        if not force_replace and not is_targeted:
-            if is_file_processed_a(filename):
-                log_detail(f"[{idx}/{len(files_to_process)}] [skip] 文件已识别过，跳过：{filename}", 'info')
-                skip_count += 1
-                continue
-        elif not force_replace and is_targeted:
-            # 定向检索时：跳过该日期内已处理的文件（续传）
+        if is_targeted and not force_replace:
             if is_file_processed_a(filename):
                 log_detail(f"[{idx}/{len(files_to_process)}] [skip] 续传跳过：{filename}", 'info')
                 skip_count += 1
                 continue
 
         log_detail(f"\n[{idx}/{len(files_to_process)}] 正在发起云端分析请求：{filepath}", 'info')
-        try:
-            with open(filepath, 'rb') as f:
-                files_data = {'audio_file': (os.path.basename(filepath), f, 'audio/m4a')}
-                data = {
-                    'speaker': 'Baby', 
-                    'skip_cry': 'true',
-                    'is_history': 'true'  # 标记为历史任务，跳过 503 暂停响应
-                }
-                response = requests.post(API_URL, files=files_data, data=data, timeout=300)
+        max_retries = 3
+        retry_count = 0
+        request_success = False
+        
+        while retry_count < max_retries:
+            try:
+                request_start = time.time()
+                with open(filepath, 'rb') as f:
+                    files_data = {'audio_file': (os.path.basename(filepath), f, 'audio/m4a')}
+                    data = {
+                        'speaker': 'Baby', 
+                        'skip_cry': 'true',
+                        'is_history': 'true'
+                    }
+                    log_detail(f"    🌐 发送请求到 {API_URL}...", 'info')
+                    response = requests.post(API_URL, files=files_data, data=data, timeout=300)
+                    request_time = time.time() - request_start
+                    log_detail(f"    ⏱️  请求耗时：{request_time:.1f}s", 'info')
+                    request_success = True
+                    break  # 成功则跳出重试循环
+            except requests.exceptions.Timeout as e:
+                retry_count += 1
+                log_detail(f"    ⚠️  请求超时 ({retry_count}/{max_retries}): {e}", 'warning')
+                if retry_count >= max_retries:
+                    log_detail(f"    ❌ 超时过多，跳过此文件", 'error')
+                    skip_count += 1
+                    break
+                time.sleep(5)  # 等待 5 秒后重试
+            except requests.exceptions.RequestException as e:
+                retry_count += 1
+                log_detail(f"    ⚠️  网络错误 ({retry_count}/{max_retries}): {e}", 'warning')
+                if retry_count >= max_retries:
+                    log_detail(f"    ❌ 网络错误过多，跳过此文件", 'error')
+                    skip_count += 1
+                    break
+                time.sleep(5)
 
-            if response.status_code == 200:
-                result = response.json()
-                cry_segs = [
-                    seg for seg in result.get('segments', [])
-                    if seg.get('is_baby_cry') or seg.get('baby_cry_reason')
-                ]
-                if cry_segs:
-                    cry_file_paths.append(filepath)
-                    log_detail(f"    🍼 检测到 {len(cry_segs)} 段哭声片段", 'info')
-                    for i, seg in enumerate(cry_segs, 1):
-                        start = seg.get('start', 0) / 1000.0
-                        end = seg.get('end', 0) / 1000.0
-                        log_detail(f"       片段{i}: {start:.1f}s - {end:.1f}s", 'info')
-                else:
-                    log_detail(f"    📉 未检出明确的高质量哭闹有效片段", 'info')
-                log_detail(
-                    f"    ✓ 成功 | 原始时长：{result.get('duration', 0):.1f}s "
-                    f"| 耗时：{result.get('process_time', 0):.1f}s "
-                    f"| RTF: {result.get('meta', {}).get('rtf', 0):.3f}",
-                    'info'
-                )
-                success_count += 1
-                # 标记为已处理
-                mark_file_processed_a(filename, status="cry" if cry_segs else "no_cry")
+        # 在 for 循环层级处理响应
+        if not request_success:
+            # 请求失败已经在上面的循环中处理过了
+            pass
+        elif response.status_code == 200:
+            result = response.json()
+            cry_segs = [
+                seg for seg in result.get('segments', [])
+                if seg.get('is_baby_cry') or seg.get('baby_cry_reason')
+            ]
+            if cry_segs:
+                cry_file_paths.append(filepath)
+                log_detail(f"    🍼 检测到 {len(cry_segs)} 段哭声片段", 'info')
+                for i, seg in enumerate(cry_segs, 1):
+                    start = seg.get('start', 0) / 1000.0
+                    end = seg.get('end', 0) / 1000.0
+                    log_detail(f"       片段{i}: {start:.1f}s - {end:.1f}s", 'info')
             else:
-                log_detail(f"    ❌ 失败 (Status {response.status_code}): {response.text}", 'error')
-                error_count += 1
-                mark_file_processed_a(filename, status="error")
-        except Exception as e:
-            log_detail(f"    ❌ 遇到了错误：{e}", 'error')
+                log_detail(f"    📉 未检出明确的高质量哭闹有效片段", 'info')
+            log_detail(
+                f"    ✓ 成功 | 原始时长：{result.get('duration', 0):.1f}s "
+                f"| 耗时：{result.get('process_time', 0):.1f}s "
+                f"| RTF: {result.get('meta', {}).get('rtf', 0):.3f}",
+                'info'
+            )
+            success_count += 1
+            mark_file_processed_a(filename, status="cry" if cry_segs else "no_cry")
+        else:
+            log_detail(f"    ❌ 失败 (Status {response.status_code}): {response.text}", 'error')
             error_count += 1
+            mark_file_processed_a(filename, status="error")
+        
+        # 每 100 个文件打印心跳日志
+        if idx % 100 == 0:
+            elapsed = time.time() - task_start_time
+            avg_time = elapsed / idx if idx > 0 else 0
+            remaining = len(files_to_process) - idx
+            eta_hours = (remaining * avg_time) / 3600
+            log_detail(f"\n{'='*60}", 'info')
+            log_detail(f"💓 心跳 | 已处理：{idx}/{len(files_to_process)} | 成功：{success_count} | 错误：{error_count} | 跳过：{skip_count}", 'info')
+            log_detail(f"   已用时间：{elapsed/3600:.2f}小时 | 平均每个：{avg_time:.1f}s | 预计剩余：{eta_hours:.1f}小时", 'info')
+            log_detail(f"{'='*60}\n", 'info')
+        
         time.sleep(1)
 
     log_detail(f"\n{'='*60}", 'info')

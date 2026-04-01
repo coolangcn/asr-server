@@ -12,7 +12,7 @@ import datetime
 import requests
 import subprocess
 import argparse
-from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, fix_recording_time, get_connection, return_connection
+from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, fix_recording_time, get_connection, return_connection, save_date_stats_to_redis, get_date_stats_from_redis, clear_date_stats_in_redis
 
 # --- 配置 ---
 # 获取脚本自身所在的目录
@@ -488,6 +488,15 @@ def proxy_reprocess_logs():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/live_status', methods=['GET'])
+@login_required
+def proxy_live_status():
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/live_status", timeout=5)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/scan_dates', methods=['GET'])
 @login_required
 def api_scan_dates():
@@ -509,42 +518,14 @@ def api_scan_dates():
         force_refresh = request.args.get('refresh') == '1'
         if force_refresh:
             debug_log("强制刷新，清除缓存...")
-            try:
-                conn = get_connection()
-                if conn:
-                    cursor = conn.cursor()
-                    cursor.execute('TRUNCATE TABLE babycry_date_cache')
-                    conn.commit()
-                    cursor.close()
-                    return_connection(conn)
-            except Exception as e:
-                debug_log(f"清除缓存失败：{e}")
+            clear_date_stats_in_redis()
 
-        # 先尝试从数据库加载缓存的文件数量
-        try:
-            conn = get_connection()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT date_str, file_count FROM babycry_date_cache
-                    WHERE date_str ~ %s
-                ''', (r'^\d{4}-\d{2}-\d{2}$',))
-                for row in cursor:
-                    date_str, file_count = row
-                    date_info[date_str] = {
-                        'fileCount': file_count,
-                        'processedCount': 0,
-                        'status': 'pending'
-                    }
-                cursor.close()
-                return_connection(conn)
-                debug_log(f"从缓存加载了 {len(date_info)} 个日期")
-        except Exception as e:
-            debug_log(f"从缓存加载失败：{e}")
-
-        # 如果缓存为空，才扫描文件系统
-        if not date_info:
-            debug_log("缓存为空，扫描文件系统...")
+        # 先尝试从 Valkey 加载缓存的文件数量
+        date_info = get_date_stats_from_redis()
+        if date_info:
+            debug_log(f"从 Valkey 缓存加载了 {len(date_info)} 个日期")
+        else:
+            debug_log("Valkey 缓存为空，扫描文件系统...")
             scan_count = 0
             for item in os.listdir(scan_base):
                 item_path = os.path.join(scan_base, item)
@@ -566,35 +547,14 @@ def api_scan_dates():
             debug_log(f"扫描到 {scan_count} 个日期目录")
             debug_log(f"date_info 内容：{list(date_info.items())[:3]}")
             
-            # 保存到缓存
+            # 保存到 Valkey 缓存
             if date_info:
-                try:
-                    conn = get_connection()
-                    if conn:
-                        cursor = conn.cursor()
-                        values = [(d, info['fileCount']) for d, info in date_info.items()]
-                        for date_str, file_count in values:
-                            cursor.execute('''
-                                INSERT INTO babycry_date_cache (date_str, file_count, updated_at)
-                                VALUES (%s, %s, CURRENT_TIMESTAMP)
-                                ON CONFLICT (date_str) DO UPDATE SET
-                                    file_count = EXCLUDED.file_count,
-                                    updated_at = CURRENT_TIMESTAMP
-                            ''', (date_str, file_count))
-                        conn.commit()
-                        cursor.close()
-                        return_connection(conn)
-                        debug_log(f"✅ 已缓存 {len(date_info)} 个日期")
-                    else:
-                        debug_log("❌ 无法获取数据库连接")
-                except Exception as e:
-                    debug_log(f"❌ 保存缓存失败：{e}")
-                    import traceback
-                    traceback.print_exc()
+                if save_date_stats_to_redis(date_info):
+                    debug_log(f"✅ 已缓存 {len(date_info)} 个日期到 Valkey")
+                else:
+                    debug_log("❌ 保存缓存到 Valkey 失败")
             else:
                 debug_log("❌ date_info 为空，无法保存")
-        else:
-            debug_log(f"使用缓存，不扫描文件系统（共 {len(date_info)} 个日期）")
 
         # 查询数据库获取已处理的进度
         try:

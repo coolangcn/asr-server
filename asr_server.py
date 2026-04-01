@@ -1603,6 +1603,19 @@ def update_refresh_progress(count, current_dir):
     refresh_cache_task["count"] = count
     refresh_cache_task["message"] = f"正在扫描目录: {current_dir}"
 
+def log_to_process(msg):
+    """写入日志到 process logs"""
+    import time as time_module
+    try:
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "history_process.log")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{time_module.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+            f.flush()  # 立即刷新到磁盘
+    except Exception as e:
+        logger_a.error(f"[刷盘] 写入process log失败: {e}")
+
 def run_refresh_file_cache(target_dir):
     """后台执行刷盘任务"""
     global refresh_cache_task
@@ -1612,6 +1625,15 @@ def run_refresh_file_cache(target_dir):
     refresh_cache_task["start_time"] = time.time()
     refresh_cache_task["message"] = "正在扫描..."
     
+    # 清空并初始化日志文件
+    import time as time_module
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "history_process.log")
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write(f"[{time_module.strftime('%Y-%m-%d %H:%M:%S')}] 🔄 开始刷盘任务，扫描目录: {target_dir}\n")
+        f.flush()
+    
     try:
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nas-audio-notes-client'))
@@ -1619,23 +1641,28 @@ def run_refresh_file_cache(target_dir):
         
         init_pool()
         logger_a.info(f"[刷盘] 后台任务开始，扫描目录: {target_dir}")
+        log_to_process(f"🔄 刷盘任务开始，目标目录: {target_dir}")
         
-        # 使用回调函数实时更新进度
-        count = do_refresh(target_dir, progress_callback=update_refresh_progress)
+        # 使用回调函数实时更新进度和日志
+        count = do_refresh(target_dir, progress_callback=update_refresh_progress, log_callback=log_to_process)
         
         if count >= 0:
             refresh_cache_task["count"] = count
             refresh_cache_task["status"] = "completed"
             refresh_cache_task["message"] = f"完成，共 {count} 个文件"
+            elapsed = time.time() - refresh_cache_task["start_time"]
             logger_a.info(f"[刷盘] 后台任务完成，共 {count} 个文件")
+            log_to_process(f"✅ 刷盘完成！共 {count} 个文件，耗时 {elapsed:.1f}秒")
         else:
             refresh_cache_task["status"] = "error"
             refresh_cache_task["message"] = "刷新失败"
             logger_a.error(f"[刷盘] 后台任务失败")
+            log_to_process("❌ 刷盘失败")
     except Exception as e:
         refresh_cache_task["status"] = "error"
         refresh_cache_task["message"] = str(e)
         logger_a.error(f"[刷盘] 后台任务异常: {e}")
+        log_to_process(f"❌ 刷盘异常: {e}")
     finally:
         refresh_cache_task["running"] = False
 
@@ -1679,10 +1706,9 @@ def file_cache_status():
     try:
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nas-audio-notes-client'))
-        from db_manager import get_file_count_from_cache, init_pool
+        from db_manager import get_file_count_from_redis
 
-        init_pool()
-        count = get_file_count_from_cache()
+        count = get_file_count_from_redis()
 
         return jsonify({"count": count, "status": "success"})
     except Exception as e:
@@ -1695,15 +1721,32 @@ def get_reprocess_logs():
     try:
         log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "history_process.log")
         if not os.path.exists(log_file):
-            return jsonify({"logs": "尚未开始处理，或日志文件不存在..."})
+            return jsonify({"logs": "尚未开始处理，或日志文件不存在...", "running": False})
+        
+        # 检查进程是否还在运行
+        is_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
         
         with open(log_file, "rb") as f:
             f.seek(0, 2)
             size = f.tell()
-            f.seek(max(size - 20000, 0), 0) # 读取最后大概20KB
+            f.seek(max(size - 20000, 0), 0) # 读取最后大概 20KB
             logs_bytes = f.read()
             logs = logs_bytes.decode('utf-8', errors='replace')
-            return jsonify({"logs": logs})
+            return jsonify({"logs": logs, "running": is_running, "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None})
+    except Exception as e:
+        return jsonify({"error": str(e), "running": False}), 500
+
+@app.route("/api/live_status", methods=["GET"])
+def get_live_status():
+    """获取实时分析状态（B 轨）"""
+    try:
+        is_paused = _track_b_paused
+        reason = "A 轨历史分析中" if is_paused else None
+        return jsonify({
+            "paused": is_paused,
+            "reason": reason,
+            "message": "B 轨已暂停，请稍后重试" if is_paused else "B 轨正常运行中"
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

@@ -20,8 +20,9 @@ def init_pool(db_url: str = None):
     target_url = db_url or DATABASE_URL
     try:
         connection_pool = psycopg2.pool.SimpleConnectionPool(
-            1, 10,  # 最小和最大连接数
-            target_url
+            2, 20,  # 最小和最大连接数
+            target_url,
+            connect_timeout=10
         )
         if connection_pool:
             print("[DB] PostgreSQL连接池创建成功")
@@ -112,20 +113,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_recording_time ON transcriptions(recording_time DESC NULLS LAST);
         ''')
         
-        # 创建日期缓存表（存储每个日期的文件数量，避免重复扫描）
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS babycry_date_cache (
-            id SERIAL PRIMARY KEY,
-            date_str VARCHAR(10) NOT NULL UNIQUE,
-            file_count INTEGER NOT NULL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        ''')
-        cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_babycry_date ON babycry_date_cache(date_str);
-        ''')
-
         # 创建文件缓存表（存储每个文件的路径，用于避免重复扫描）
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS babycry_file_cache (
@@ -133,8 +120,6 @@ def init_db():
             date_str VARCHAR(10) NOT NULL,
             filename VARCHAR(255) NOT NULL,
             filepath TEXT NOT NULL UNIQUE,
-            file_size BIGINT,
-            modified_time TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         ''')
@@ -458,8 +443,6 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
             date_str VARCHAR(10) NOT NULL,
             filename VARCHAR(255) NOT NULL,
             filepath TEXT NOT NULL UNIQUE,
-            file_size BIGINT,
-            modified_time TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
@@ -484,7 +467,6 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
                     continue
                 
                 filepath = os.path.join(root, file)
-                file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
                 
                 if is_date_dir:
                     date_str = current_container
@@ -494,25 +476,13 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
                 
                 try:
                     cursor.execute('''
-                        INSERT INTO babycry_file_cache (date_str, filename, filepath, file_size)
-                        VALUES (%s, %s, %s, %s)
-                    ''', (date_str, file, filepath, file_size))
+                        INSERT INTO babycry_file_cache (date_str, filename, filepath, created_at)
+                        VALUES (%s, %s, %s, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))
+                    ''', (date_str, file, filepath))
                     count += 1
                 except Exception as e:
                     print(f"  [DB Error] 插入文件 {filepath} 失败: {e}")
         
-        conn.commit()
-        
-        # 更新 babycry_date_cache 表
-        cursor.execute('''
-            INSERT INTO babycry_date_cache (date_str, file_count, created_at, updated_at)
-            SELECT date_str, COUNT(*), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM babycry_file_cache
-            GROUP BY date_str
-            ON CONFLICT (date_str) DO UPDATE SET
-                file_count = EXCLUDED.file_count,
-                updated_at = CURRENT_TIMESTAMP
-        ''')
         conn.commit()
         
         cursor.close()
@@ -536,17 +506,17 @@ def get_file_cache(date_str: str = None) -> list:
         
         if date_str:
             cursor.execute('''
-                SELECT filepath, filename, file_size FROM babycry_file_cache
+                SELECT filepath, filename FROM babycry_file_cache
                 WHERE date_str = %s
                 ORDER BY filename
             ''', (date_str,))
         else:
             cursor.execute('''
-                SELECT filepath, filename, file_size FROM babycry_file_cache
+                SELECT filepath, filename FROM babycry_file_cache
                 ORDER BY date_str, filename
             ''')
         
-        result = [{'filepath': row[0], 'filename': row[1], 'file_size': row[2]} for row in cursor.fetchall()]
+        result = [{'filepath': row[0], 'filename': row[1]} for row in cursor.fetchall()]
         cursor.close()
         return result
     except Exception as e:
@@ -571,6 +541,66 @@ def get_file_count_from_cache() -> int:
         return 0
     finally:
         if conn: return_connection(conn)
+
+def save_date_stats_to_redis(date_info: dict) -> bool:
+    """保存日期统计到 Valkey"""
+    import os
+    VALKEY_URI = os.environ.get('VALKEY_URI', '')
+    if not VALKEY_URI:
+        print(f"  [Valkey Error] VALKEY_URI 环境变量未设置")
+        return False
+    try:
+        import valkey
+        r = valkey.from_url(VALKEY_URI)
+        pipe = r.pipeline()
+        for date_str, info in date_info.items():
+            pipe.hset('babycry:date_stats', date_str, info.get('fileCount', 0))
+        pipe.execute()
+        return True
+    except Exception as e:
+        print(f"  [Valkey Error] 保存日期统计失败: {e}")
+        return False
+
+def get_date_stats_from_redis() -> dict:
+    """从 Valkey 获取所有日期统计"""
+    import os
+    VALKEY_URI = os.environ.get('VALKEY_URI', '')
+    if not VALKEY_URI:
+        print(f"  [Valkey Error] VALKEY_URI 环境变量未设置")
+        return {}
+    try:
+        import valkey
+        r = valkey.from_url(VALKEY_URI)
+        stats = r.hgetall('babycry:date_stats')
+        result = {}
+        for date_str, file_count in stats.items():
+            date_str = date_str.decode('utf-8') if isinstance(date_str, bytes) else date_str
+            count = int(file_count) if file_count else 0
+            result[date_str] = {
+                'fileCount': count,
+                'processedCount': 0,
+                'status': 'pending'
+            }
+        return result
+    except Exception as e:
+        print(f"  [Valkey Error] 获取日期统计失败: {e}")
+        return {}
+
+def clear_date_stats_in_redis() -> bool:
+    """清空 Valkey 中的日期统计"""
+    import os
+    VALKEY_URI = os.environ.get('VALKEY_URI', '')
+    if not VALKEY_URI:
+        print(f"  [Valkey Error] VALKEY_URI 环境变量未设置")
+        return False
+    try:
+        import valkey
+        r = valkey.from_url(VALKEY_URI)
+        r.delete('babycry:date_stats')
+        return True
+    except Exception as e:
+        print(f"  [Valkey Error] 清空日期统计失败: {e}")
+        return False
 
 if __name__ == "__main__":
     # 测试代码
