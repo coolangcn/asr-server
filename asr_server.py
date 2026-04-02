@@ -1816,6 +1816,56 @@ def stop_live():
     except Exception as e:
         return jsonify({"message": f"停止失败: {e}", "status": "error"}), 500
 
+@app.route("/api/quick_cry_detect", methods=["POST"])
+def quick_cry_detect():
+    """
+    【A轨快速哭声检测】
+    仅进行声纹匹配检测哭声，跳过语音识别，速度提升10倍以上
+    适用于历史文件批量处理场景
+    """
+    try:
+        if 'audio_file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+        
+        file = request.files['audio_file']
+        filename = file.filename
+        
+        # 保存临时文件
+        temp_path = os.path.join(Config.TEMP_DIR, f"quick_cry_{int(time.time())}_{filename}")
+        os.makedirs(Config.TEMP_DIR, exist_ok=True)
+        file.save(temp_path)
+        
+        # 音频预处理
+        proc_temp = os.path.join(Config.TEMP_DIR, f"quick_cry_proc_{int(time.time())}.wav")
+        if not preprocess_audio(temp_path, proc_temp):
+            # 清理临时文件
+            for f in [temp_path, proc_temp]:
+                if os.path.exists(f):
+                    os.remove(f)
+            return jsonify({"error": "Audio preprocessing failed"}), 500
+        
+        # 快速哭声检测（仅声纹匹配，无ASR）
+        start_time = time.time()
+        cry_detected, confidence, details = detect_cry_from_full_audio(proc_temp)
+        detect_time = time.time() - start_time
+        
+        # 清理临时文件
+        for f in [temp_path, proc_temp]:
+            if os.path.exists(f):
+                os.remove(f)
+        
+        return jsonify({
+            "filename": filename,
+            "is_baby_cry": cry_detected,
+            "confidence": round(confidence, 4),
+            "detect_time_ms": round(detect_time * 1000, 2),
+            "details": details
+        })
+        
+    except Exception as e:
+        logger_a.error(f"快速哭声检测失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/speakers", methods=["GET"])
 def get_speakers():
     """获取所有说话人列表"""

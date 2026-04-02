@@ -18,6 +18,7 @@ except ImportError:
     print("[WARN] email_utils 未找到，邮件功能已禁用")
 
 API_URL = "http://localhost:5008/transcribes"
+QUICK_DETECT_URL = "http://localhost:5008/api/quick_cry_detect"  # 快速哭声检测接口（无ASR）
 SOURCE_DIR = "/Volumes/download/records/Sony-2"
 PROCESSED_DIR = os.path.join(SOURCE_DIR, "processed")
 
@@ -425,20 +426,16 @@ if __name__ == "__main__":
         retry_count = 0
         request_success = False
         
+        # 使用快速哭声检测接口（无ASR，仅声纹匹配，速度提升10倍）
         while retry_count < max_retries:
             try:
                 request_start = time.time()
                 with open(filepath, 'rb') as f:
                     files_data = {'audio_file': (os.path.basename(filepath), f, 'audio/m4a')}
-                    data = {
-                        'speaker': 'Baby', 
-                        'skip_cry': 'true',
-                        'is_history': 'true'
-                    }
-                    log_detail(f"    🌐 发送请求到 {API_URL}...", 'info')
-                    response = requests.post(API_URL, files=files_data, data=data, timeout=300)
+                    log_detail(f"    🌐 快速哭声检测 {QUICK_DETECT_URL}...", 'info')
+                    response = requests.post(QUICK_DETECT_URL, files=files_data, timeout=60)
                     request_time = time.time() - request_start
-                    log_detail(f"    ⏱️  请求耗时：{request_time:.1f}s", 'info')
+                    log_detail(f"    ⏱️  检测耗时：{request_time:.1f}s", 'info')
                     request_success = True
                     break  # 成功则跳出重试循环
             except requests.exceptions.Timeout as e:
@@ -448,7 +445,7 @@ if __name__ == "__main__":
                     log_detail(f"    ❌ 超时过多，跳过此文件", 'error')
                     skip_count += 1
                     break
-                time.sleep(5)  # 等待 5 秒后重试
+                time.sleep(2)  # 等待 2 秒后重试
             except requests.exceptions.RequestException as e:
                 retry_count += 1
                 log_detail(f"    ⚠️  网络错误 ({retry_count}/{max_retries}): {e}", 'warning')
@@ -456,7 +453,7 @@ if __name__ == "__main__":
                     log_detail(f"    ❌ 网络错误过多，跳过此文件", 'error')
                     skip_count += 1
                     break
-                time.sleep(5)
+                time.sleep(2)
 
         # 在 for 循环层级处理响应
         if not request_success:
@@ -464,27 +461,22 @@ if __name__ == "__main__":
             pass
         elif response.status_code == 200:
             result = response.json()
-            cry_segs = [
-                seg for seg in result.get('segments', [])
-                if seg.get('is_baby_cry') or seg.get('baby_cry_reason')
-            ]
-            if cry_segs:
+            is_cry = result.get('is_baby_cry', False)
+            confidence = result.get('confidence', 0)
+            detect_time_ms = result.get('detect_time_ms', 0)
+            
+            if is_cry:
                 cry_file_paths.append(filepath)
-                log_detail(f"    🍼 检测到 {len(cry_segs)} 段哭声片段", 'info')
-                for i, seg in enumerate(cry_segs, 1):
-                    start = seg.get('start', 0) / 1000.0
-                    end = seg.get('end', 0) / 1000.0
-                    log_detail(f"       片段{i}: {start:.1f}s - {end:.1f}s", 'info')
+                log_detail(f"    🍼 检测到哭声! 置信度={confidence:.3f}", 'info')
             else:
-                log_detail(f"    📉 未检出明确的高质量哭闹有效片段", 'info')
+                log_detail(f"    📉 未检出哭声 (置信度={confidence:.3f})", 'info')
+            
             log_detail(
-                f"    ✓ 成功 | 原始时长：{result.get('duration', 0):.1f}s "
-                f"| 耗时：{result.get('process_time', 0):.1f}s "
-                f"| RTF: {result.get('meta', {}).get('rtf', 0):.3f}",
+                f"    ✓ 成功 | 检测耗时：{detect_time_ms:.0f}ms | 置信度：{confidence:.3f}",
                 'info'
             )
             success_count += 1
-            mark_file_processed_a(filename, status="cry" if cry_segs else "no_cry")
+            mark_file_processed_a(filename, status="cry" if is_cry else "no_cry")
         else:
             log_detail(f"    ❌ 失败 (Status {response.status_code}): {response.text}", 'error')
             error_count += 1
@@ -501,7 +493,8 @@ if __name__ == "__main__":
             log_detail(f"   已用时间：{elapsed/3600:.2f}小时 | 平均每个：{avg_time:.1f}s | 预计剩余：{eta_hours:.1f}小时", 'info')
             log_detail(f"{'='*60}\n", 'info')
         
-        time.sleep(1)
+        # 快速检测模式：间隔缩短为0.1秒（因为检测很快，不需要等待）
+        time.sleep(0.1)
 
     log_detail(f"\n{'='*60}", 'info')
     log_detail(f"📊 阶段一统计 (日期: {filter_date or current_processing_date or '全部'}):", 'info')
@@ -573,26 +566,23 @@ if __name__ == "__main__":
         log_detail(f"   代表文件：{rep_filename}", 'info')
 
         # 取代表文件中第一个哭声片段的时间范围
+        # 使用快速检测接口验证哭声，然后使用默认时间范围（0-60s）
         first_seg = {'start': 0, 'end': 60000}
         try:
             with open(rep_filepath, 'rb') as f:
                 res = requests.post(
-                    API_URL,
+                    QUICK_DETECT_URL,
                     files={'audio_file': (rep_filename, f, 'audio/m4a')},
-                    data={
-                        'speaker': 'Baby', 
-                        'sync_llm': 'false',
-                        'is_history': 'true'
-                    },
-                    timeout=60
+                    timeout=30
                 )
             if res.status_code == 200:
-                segs = [s for s in res.json().get('segments', []) if s.get('is_baby_cry')]
-                if segs:
-                    first_seg = segs[0]
-                    log_detail(f"   📍 选取哭声片段：{first_seg['start']/1000.0:.1f}s - {first_seg['end']/1000.0:.1f}s", 'info')
+                result = res.json()
+                if result.get('is_baby_cry'):
+                    log_detail(f"   📍 哭声确认：置信度={result.get('confidence', 0):.3f}，使用完整音频片段 (0-60s)", 'info')
+                else:
+                    log_detail(f"   ⚠️ 快速检测未确认哭声，但仍继续分析...", 'warning')
         except Exception as e:
-            log_detail(f"   ⚠️ 获取哭声片段失败：{e}", 'warning')
+            log_detail(f"   ⚠️ 快速检测失败：{e}，使用默认时间范围", 'warning')
 
         try:
             log_detail(f"   🤖 正在调用 Gemini 深度分析...", 'info')

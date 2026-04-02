@@ -902,17 +902,19 @@
                 document.getElementById('aProgressBar').style.width = percent + '%';
             }
 
-            const successMatch = logs.match(/成功：(\d+)/);
-            const errorMatch = logs.match(/错误：(\d+)/);
-            const skipMatch = logs.match(/跳过：(\d+)/);
-            const avgMatch = logs.match(/平均每个：([\d.]+)s/);
+            // 从心跳日志获取统计：💓 心跳 | 已处理：2800/107398 | 成功：2800 | 错误：0 | 跳过：0
+            const heartbeatMatch = logs.match(/💓 心跳.*?成功：(\d+).*?错误：(\d+).*?跳过：(\d+)/);
+            if (heartbeatMatch) {
+                document.getElementById('aSuccessCount').textContent = parseInt(heartbeatMatch[1]).toLocaleString();
+                document.getElementById('aErrorCount').textContent = parseInt(heartbeatMatch[2]).toLocaleString();
+                document.getElementById('aSkipCount').textContent = parseInt(heartbeatMatch[3]).toLocaleString();
+            }
 
-            if (successMatch) document.getElementById('aSuccessCount').textContent = parseInt(successMatch[1]).toLocaleString();
-            if (errorMatch) document.getElementById('aErrorCount').textContent = parseInt(errorMatch[1]).toLocaleString();
-            if (skipMatch) document.getElementById('aSkipCount').textContent = parseInt(skipMatch[1]).toLocaleString();
+            // 从进度日志获取平均时间和预计剩余：已用时间：16.73 小时 | 平均每个：20.8s | 预计剩余：603.0 小时
+            const avgMatch = logs.match(/平均每个：([\d.]+)s/);
             if (avgMatch) document.getElementById('aAvgTime').textContent = avgMatch[1] + 's';
 
-            const etaMatch = logs.match(/预计剩余：?([\d.]+)小时/);
+            const etaMatch = logs.match(/预计剩余：([\d.]+)小时/);
             if (etaMatch) {
                 const hours = parseFloat(etaMatch[1]);
                 document.getElementById('aEtaValue').textContent = hours < 1 ? Math.round(hours * 60) + ' 分钟' : hours.toFixed(1) + ' 小时';
@@ -920,14 +922,18 @@
                 document.getElementById('aEtaValue').textContent = '00:00';
             }
 
-            const dateMatch = logs.match(/【正在处理日期】(\d{4}-\d{2}-\d{2})/);
+            // 解析当前日期：📅【正在处理日期】2025-11-14
+            const dateMatch = logs.match(/📅【正在处理日期】(\d{4}-\d{2}-\d{2})/);
             if (dateMatch) {
                 document.getElementById('aCurrentDate').textContent = '📅 ' + dateMatch[1];
             }
 
-            const fileMatch = logs.match(/正在发起云端分析请求：(.+\.(?:m4a|mp3|wav|acc))/);
+            // 解析当前文件：[2997/107398] 正在发起云端分析请求：/path/to/file
+            const fileMatch = logs.match(/正在发起云端分析请求：(.+\.(?:m4a|mp3|wav|acc|aac))/i);
             if (fileMatch) {
-                document.getElementById('aCurrentFile').textContent = fileMatch[1].split('/').pop();
+                const filepath = fileMatch[1];
+                const filename = filepath.split('/').pop();
+                document.getElementById('aCurrentFile').textContent = filename || filepath;
             }
         }
 

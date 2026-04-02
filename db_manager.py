@@ -23,20 +23,30 @@ connection_pool = None
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 
 def init_pool(db_url: str = None):
-    """初始化数据库连接池"""
+    """初始化数据库连接池，带重试机制"""
     global connection_pool
     target_url = db_url or DATABASE_URL
-    try:
-        connection_pool = psycopg2.pool.SimpleConnectionPool(
-            1, 10,  # 最小和最大连接数
-            target_url
-        )
-        if connection_pool:
-            print("[DB] PostgreSQL连接池创建成功")
-            return True
-    except Exception as e:
-        print(f"[DB Error] 创建连接池失败: {e}")
-        return False
+    
+    for attempt in range(3):
+        try:
+            connection_pool = psycopg2.pool.SimpleConnectionPool(
+                1, 10,  # 最小和最大连接数
+                target_url
+            )
+            if connection_pool:
+                print(f"[DB] PostgreSQL连接池创建成功 (尝试 {attempt + 1}/3)")
+                return True
+        except Exception as e:
+            print(f"[DB Error] 创建连接池失败 (尝试 {attempt + 1}/3): {e}")
+            if attempt < 2:
+                import time
+                wait_time = 2 ** attempt  # 指数退避: 1s, 2s
+                print(f"[DB] {wait_time}秒后重试...")
+                time.sleep(wait_time)
+            else:
+                print(f"[DB Error] 所有重试都失败了")
+                return False
+    return False
 
 def get_connection():
     """从连接池获取连接"""

@@ -467,8 +467,36 @@
     </div>
 
     <script>
+        let eventsInterval = null;
+        
         window.addEventListener('DOMContentLoaded', async () => {
             await loadCryEvents();
+            // 每30秒自动刷新事件列表（低频）
+            eventsInterval = setInterval(loadCryEvents, 30000);
+        });
+        
+        // 页面不可见时暂停轮询，恢复时重启
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // 页面隐藏时暂停轮询
+                if (eventsInterval) {
+                    clearInterval(eventsInterval);
+                    eventsInterval = null;
+                }
+                if (logInterval) {
+                    clearInterval(logInterval);
+                }
+                console.log('[BabyCry] 页面隐藏，暂停轮询');
+            } else {
+                // 页面显示时恢复轮询
+                if (!eventsInterval) {
+                    eventsInterval = setInterval(loadCryEvents, 30000);
+                }
+                if (!logInterval && document.getElementById('logContainer').style.display === 'block') {
+                    logInterval = setInterval(fetchLogs, 2000);
+                }
+                console.log('[BabyCry] 页面显示，恢复轮询');
+            }
         });
 
         async function loadCryEvents() {
@@ -550,6 +578,8 @@
         }
 
         let logInterval = null;
+        let lastLogContent = '';  // 用于检测日志是否有变化
+        let noChangeCount = 0;    // 连续无变化计数
 
         async function fetchLogs() {
             try {
@@ -558,6 +588,26 @@
                 if (result.logs) {
                     const logEl = document.getElementById('processLogs');
                     const isScrolledToBottom = logEl.scrollHeight - logEl.clientHeight <= logEl.scrollTop + 50;
+                    
+                    // 检测日志内容是否有变化
+                    if (result.logs === lastLogContent) {
+                        noChangeCount++;
+                        // 如果连续5次没有变化，降低轮询频率到5秒
+                        if (noChangeCount >= 5 && logInterval) {
+                            clearInterval(logInterval);
+                            logInterval = setInterval(fetchLogs, 5000);
+                            console.log('[BabyCry] 日志无更新，降低轮询频率至5秒');
+                        }
+                    } else {
+                        noChangeCount = 0;
+                        // 如果有变化且当前是低频模式，恢复高频
+                        if (logInterval) {
+                            clearInterval(logInterval);
+                            logInterval = setInterval(fetchLogs, 2000);
+                        }
+                    }
+                    lastLogContent = result.logs;
+                    
                     logEl.textContent = result.logs;
                     if (isScrolledToBottom) {
                         logEl.scrollTop = logEl.scrollHeight;
@@ -565,6 +615,14 @@
                 }
             } catch (e) {
                 console.error("Fetch log error:", e);
+            }
+        }
+
+        function stopLogPolling() {
+            if (logInterval) {
+                clearInterval(logInterval);
+                logInterval = null;
+                console.log('[BabyCry] 日志轮询已停止');
             }
         }
 
@@ -578,7 +636,9 @@
             
             document.getElementById('logContainer').style.display = 'block';
             if (!logInterval) {
-                logInterval = setInterval(fetchLogs, 1500);
+                noChangeCount = 0;
+                lastLogContent = '';
+                logInterval = setInterval(fetchLogs, 2000);  // 初始2秒轮询
             }
             
             try {
@@ -589,15 +649,19 @@
                 if (response.ok) {
                     statusLabel.style.color = 'var(--accent)';
                     statusLabel.textContent = "🟢 分析阵列已上线: " + result.message;
+                    // 5分钟后自动停止日志轮询
+                    setTimeout(stopLogPolling, 5 * 60 * 1000);
                 } else {
                     statusLabel.style.color = 'var(--danger)';
                     statusLabel.textContent = "🔴 阵列启动失败: " + result.error;
                     btn.disabled = false;
+                    stopLogPolling();
                 }
             } catch (e) {
                 statusLabel.style.color = 'var(--danger)';
                 statusLabel.textContent = "🔴 神经网络链路连接超时";
                 btn.disabled = false;
+                stopLogPolling();
             }
         }
     </script>
