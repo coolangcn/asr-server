@@ -123,9 +123,13 @@ FileMonitorConfig = audio_processor.FileMonitorConfig
 # LLM 配置
 class LLMConfig:
     USE_GEMINI_LLM = True
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyABpNzAb90t6EpIsJtbF1UbekDTGlLaKTE")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_API_BASE_URL = os.getenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com")
-    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
+    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+    
+    # 火山引擎通用 3.0 文生图配置
+    VOLCENGINE_ACCESS_KEY = os.getenv("VOLCENGINE_ACCESS_KEY", "")
+    VOLCENGINE_SECRET_KEY = os.getenv("VOLCENGINE_SECRET_KEY", "")
     
     # 批量处理配置
     LLM_BATCH_MODE = True
@@ -494,40 +498,63 @@ def call_gemini_audio_api(audio_paths, prompt):
         }
         
         logger_a.info(f"  [BabyCry LLM] 发送请求到 Gemini API...")
+        logger_a.info(f"  [BabyCry LLM] 请求URL: {url}")
+        logger_a.info(f"  [BabyCry LLM] 请求模型: {LLMConfig.GEMINI_MODEL_NAME}")
+        logger_a.info(f"  [BabyCry LLM] 请求超时: {LLMConfig.LLM_REQUEST_TIMEOUT + 40}秒")
+        logger_a.debug(f"  [BabyCry LLM] 请求数据: {data}")
+        
         response = requests.post(url, headers=headers, json=data, timeout=LLMConfig.LLM_REQUEST_TIMEOUT + 40)
         
         try:
             result = response.json()
         except Exception as e:
-            logger_sys.error(f"  [BabyCry LLM] 返回非JSON数据: {e}, 原始响应: {response.text}")
+            logger_sys.error(f"  [BabyCry LLM] 返回非JSON数据: {e}")
+            logger_sys.error(f"  [BabyCry LLM] 原始响应: {response.text[:2000]}")
             return None
 
         if not response.ok:
-            logger_sys.error(f"  [BabyCry LLM] API HTTP 错误 {response.status_code}: {result}")
+            logger_sys.error(f"  [BabyCry LLM] API HTTP 错误 {response.status_code}")
+            logger_sys.error(f"  [BabyCry LLM] 错误详情: {result}")
             return None
             
         logger_a.info(f"  [BabyCry LLM] 收到 HTTP 响应，状态码: {response.status_code}")
+        logger_a.debug(f"  [BabyCry LLM] 完整响应: {result}")
         
         if 'candidates' in result and len(result['candidates']) > 0:
-            content = result['candidates'][0].get('content', {})
-            logger_a.info(f"  [BabyCry LLM] 响应内容结构: {result}")
+            candidate = result['candidates'][0]
+            content = candidate.get('content', {})
+            finish_reason = candidate.get('finishReason', 'UNKNOWN')
+            
+            logger_a.info(f"  [BabyCry LLM] ✅ API 响应成功")
+            logger_a.info(f"  [BabyCry LLM] finishReason: {finish_reason}")
+            logger_a.info(f"  [BabyCry LLM] content 结构: {json.dumps(content, ensure_ascii=False)[:500]}")
             
             # 即使 finishReason 是 MAX_TOKENS，也尝试提取已有内容
             if 'parts' in content and len(content['parts']) > 0:
                 response_text = content['parts'][0].get('text', '')
-                logger_a.info(f"  [BabyCry LLM] 收到响应，长度: {len(response_text)} 字符")
-                logger_a.info(f"  [BabyCry LLM] 响应内容: {response_text[:300]}...")
+                logger_a.info(f"  [BabyCry LLM] 响应文本长度: {len(response_text)} 字符")
                 if response_text:
+                    logger_a.info(f"  [BabyCry LLM] 响应内容预览: {response_text[:500]}...")
                     return response_text
+                else:
+                    logger_a.warning(f"  [BabyCry LLM] 响应文本为空")
             
             # 如果没有内容但有 MAX_TOKENS，记录警告
-            if result['candidates'][0].get('finishReason') == 'MAX_TOKENS':
+            if finish_reason == 'MAX_TOKENS':
                 logger_a.warning(f"  [BabyCry LLM] 生成 Token 超限，但尝试返回已生成内容")
             
-            logger_a.error(f"  [BabyCry LLM] 安全拦截或空回复: {result}")
+            # 安全拦截检查
+            if 'safetyRatings' in candidate:
+                logger_a.warning(f"  [BabyCry LLM] 安全评级: {candidate['safetyRatings']}")
+            
+            logger_a.error(f"  [BabyCry LLM] 安全拦截或空回复，完整响应: {json.dumps(result, ensure_ascii=False)[:1000]}")
             return None
         else:
-            logger_a.error(f"  [BabyCry LLM] API 返回异常结构: {result}")
+            # 检查是否有其他错误信息
+            if 'error' in result:
+                logger_a.error(f"  [BabyCry LLM] API 返回错误: {result['error']}")
+            else:
+                logger_a.error(f"  [BabyCry LLM] API 返回异常结构，完整响应: {json.dumps(result, ensure_ascii=False)[:1000]}")
             return None
     except Exception as e:
         logger_a.error(f"  [BabyCry LLM] 发送请求异常：{e}")
@@ -535,94 +562,249 @@ def call_gemini_audio_api(audio_paths, prompt):
         logger_a.error(f"  [BabyCry LLM] 异常堆栈: {traceback.format_exc()}")
         return None
 
+def call_volcengine_ai(prompt):
+    """调用火山引擎通用 3.0 文生图 API"""
+    import base64
+    import hashlib
+    import hmac
+    from datetime import datetime
+    
+    try:
+        logger_a.info(f"🎨 [Volcengine] 开始调用火山引擎通用 3.0 插图生成 API")
+        logger_a.info(f"🎨 [Volcengine] Prompt: {prompt[:100]}...")
+        
+        access_key = LLMConfig.VOLCENGINE_ACCESS_KEY
+        secret_key = LLMConfig.VOLCENGINE_SECRET_KEY
+        
+        if not access_key or not secret_key:
+            logger_a.warning("🎨 [Volcengine] API 配置缺失，跳过")
+            return None
+        
+        # 直接使用配置的密钥（火山引擎 Access Key 和 Secret Key 通常不需要额外解码）
+        access_key_decoded = access_key
+        secret_key_decoded = secret_key
+        
+        logger_a.info(f"🎨 [Volcengine] Access Key: {access_key_decoded[:8]}...")
+        logger_a.info(f"🎨 [Volcengine] Secret Key: {secret_key_decoded[:8]}...")
+        
+        # 火山引擎 API 端点
+        host = "visual.volcengineapi.com"
+        service = "cv"
+        region = "cn-north-1"
+        action = "CVSync2AsyncSubmitTask"
+        version = "2022-08-31"
+        
+        # 生成时间戳
+        now = datetime.utcnow()
+        date_str = now.strftime("%Y%m%d")
+        datetime_str = now.strftime("%Y%m%dT%H%M%SZ")
+        
+        # 请求体
+        body_data = {
+            "req_key": "high_aes_general_v30l_zt2i",
+            "prompt": prompt,
+            "seed": -1,
+            "width": 1024,
+            "height": 1024
+        }
+        body = json.dumps(body_data)
+        
+        # 构建签名字符串
+        method = "POST"
+        content_type = "application/json"
+        content_sha256 = hashlib.sha256(body.encode('utf-8')).hexdigest()
+        
+        # Canonical URI
+        canonical_uri = "/"
+        
+        # Canonical Query String
+        canonical_query_string = f"Action={action}&Version={version}"
+        
+        # Canonical Headers
+        canonical_headers = f"content-type:{content_type}\nhost:{host}\nx-date:{datetime_str}"
+        signed_headers = "content-type;host;x-date"
+        
+        # Canonical Request
+        canonical_request = f"{method}\n{canonical_uri}\n{canonical_query_string}\n{canonical_headers}\n\n{signed_headers}\n{content_sha256}"
+        logger_a.info(f"🎨 [Volcengine] Canonical Request: {canonical_request[:200]}...")
+        
+        # String to Sign
+        algorithm = "HMAC-SHA256"
+        credential_scope = f"{date_str}/{region}/{service}/request"
+        string_to_sign = f"{algorithm}\n{datetime_str}\n{credential_scope}\n{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+        
+        # 计算签名
+        def sign(key, msg):
+            return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
+        
+        # 火山引擎签名：使用 Secret Key 作为初始密钥
+        k_date = sign(secret_key_decoded.encode('utf-8'), date_str)
+        k_region = sign(k_date, region)
+        k_service = sign(k_region, service)
+        k_signing = sign(k_service, "request")
+        signature = hmac.new(k_signing, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+        
+        # Authorization Header
+        authorization = f"{algorithm} Credential={access_key_decoded}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
+        
+        # 请求 URL
+        url = f"https://{host}?{canonical_query_string}"
+        
+        # 请求头
+        headers = {
+            "Content-Type": content_type,
+            "Host": host,
+            "X-Date": datetime_str,
+            "Authorization": authorization,
+            "X-Content-Sha256": content_sha256
+        }
+        
+        logger_a.info(f"🎨 [Volcengine] 发送提交任务请求...")
+        response = requests.post(url, headers=headers, data=body, timeout=60)
+        
+        logger_a.info(f"🎨 [Volcengine] HTTP 状态码：{response.status_code}")
+        
+        if response.status_code != 200:
+            logger_a.error(f"🎨 [Volcengine] 请求失败：{response.status_code}")
+            logger_a.error(f"🎨 [Volcengine] 响应：{response.text[:500]}")
+            return None
+        
+        try:
+            result = response.json()
+        except:
+            logger_a.error(f"🎨 [Volcengine] 返回非 JSON 数据：{response.text[:200]}")
+            return None
+        
+        logger_a.info(f"🎨 [Volcengine] 提交响应：{json.dumps(result, ensure_ascii=False)[:200]}...")
+        
+        # 检查提交结果
+        if result.get('code') != 10000:
+            logger_a.error(f"🎨 [Volcengine] 提交失败：{result.get('message')}")
+            return None
+        
+        task_id = result.get('data', {}).get('task_id')
+        if not task_id:
+            logger_a.error(f"🎨 [Volcengine] 未找到 task_id")
+            return None
+        
+        logger_a.info(f"🎨 [Volcengine] 任务 ID: {task_id}，正在查询结果...")
+        
+        # 查询任务结果
+        query_action = "CVSync2AsyncGetResult"
+        query_body = {
+            "req_key": "high_aes_general_v30l_zt2i",
+            "task_id": task_id,
+            "req_json": json.dumps({"return_url": True})
+        }
+        
+        # 重新计算查询请求的签名
+        query_datetime_str = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        query_body_json = json.dumps(query_body)
+        query_content_sha256 = hashlib.sha256(query_body_json.encode('utf-8')).hexdigest()
+        query_canonical_query_string = f"Action={query_action}&Version={version}"
+        query_canonical_headers = f"content-type:{content_type}\nhost:{host}\nx-date:{query_datetime_str}"
+        query_canonical_request = f"{method}\n{canonical_uri}\n{query_canonical_query_string}\n{query_canonical_headers}\n\n{signed_headers}\n{query_content_sha256}"
+        query_string_to_sign = f"{algorithm}\n{query_datetime_str}\n{credential_scope}\n{hashlib.sha256(query_canonical_request.encode('utf-8')).hexdigest()}"
+        query_signature = hmac.new(k_signing, query_string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+        query_authorization = f"{algorithm} Credential={access_key_decoded}/{credential_scope}, SignedHeaders={signed_headers}, Signature={query_signature}"
+        
+        query_url = f"https://{host}?{query_canonical_query_string}"
+        query_headers = {
+            "Content-Type": content_type,
+            "Host": host,
+            "X-Date": query_datetime_str,
+            "Authorization": query_authorization,
+            "X-Content-Sha256": query_content_sha256
+        }
+        
+        # 轮询任务状态（最多 60 秒）
+        for attempt in range(12):
+            logger_a.info(f"🎨 [Volcengine] 第 {attempt + 1}/12 次查询...")
+            query_response = requests.post(query_url, headers=query_headers, json=query_body, timeout=30)
+            
+            if query_response.status_code != 200:
+                logger_a.warning(f"🎨 [Volcengine] 查询失败：{query_response.status_code}")
+                import time
+                time.sleep(5)
+                continue
+            
+            try:
+                query_result = query_response.json()
+            except:
+                logger_a.warning(f"🎨 [Volcengine] 查询返回非 JSON")
+                import time
+                time.sleep(5)
+                continue
+            
+            logger_a.info(f"🎨 [Volcengine] 查询响应：{json.dumps(query_result, ensure_ascii=False)[:300]}...")
+            
+            status = query_result.get('data', {}).get('status', '')
+            
+            if status == 'done':
+                logger_a.info(f"🎨 [Volcengine] 任务完成")
+                # 获取图片 URL 或 base64
+                image_urls = query_result.get('data', {}).get('image_urls', [])
+                binary_data = query_result.get('data', {}).get('binary_data_base64', [])
+                
+                if image_urls:
+                    logger_a.info(f"🎨 [Volcengine] ✅ 图片生成成功，URL: {image_urls[0][:100]}...")
+                    # 下载图片并转换为 base64
+                    img_response = requests.get(image_urls[0], timeout=30)
+                    if img_response.status_code == 200:
+                        image_b64 = base64.b64encode(img_response.content).decode('utf-8')
+                        return f"data:image/jpeg;base64,{image_b64}"
+                    else:
+                        logger_a.error(f"🎨 [Volcengine] 下载图片失败：{img_response.status_code}")
+                        return None
+                elif binary_data:
+                    logger_a.info(f"🎨 [Volcengine] ✅ 图片生成成功，base64 长度：{len(binary_data[0])} 字符")
+                    return f"data:image/jpeg;base64,{binary_data[0]}"
+                else:
+                    logger_a.error(f"🎨 [Volcengine] 响应中没有图片数据")
+                    return None
+            elif status in ['in_queue', 'generating']:
+                logger_a.info(f"🎨 [Volcengine] 任务状态：{status}，等待中...")
+                import time
+                time.sleep(5)
+            else:
+                logger_a.error(f"🎨 [Volcengine] 未知状态：{status}")
+                import time
+                time.sleep(5)
+        
+        logger_a.error(f"🎨 [Volcengine] 任务超时")
+        return None
+        
+    except Exception as e:
+        logger_a.error(f"🎨 [Volcengine] 发送请求异常：{e}")
+        import traceback
+        logger_a.error(f"🎨 [Volcengine] 异常堆栈：{traceback.format_exc()}")
+        return None
+
 def call_gemini_image_api(prompt):
-    """调用 Gemini API 生成插图（文生图）"""
+    """调用火山引擎通用 3.0 文生图 API"""
     if not LLMConfig.USE_GEMINI_LLM:
         logger_a.warning("🎨 [插图生成] LLM 未启用，跳过")
         return None
         
     try:
-        logger_a.info(f"🎨 [插图生成] 开始调用插图生成 API")
-        logger_a.info(f"🎨 [插图生成] Prompt 长度: {len(prompt)} 字符")
-        logger_a.info(f"🎨 [插图生成] Prompt 开头: {prompt[:100]}...")
+        logger_a.info(f"🎨 [插图生成] 开始生成插图")
+        logger_a.info(f"🎨 [插图生成] Prompt 长度：{len(prompt)} 字符")
         
-        # 使用 Gemini 2.5 Flash Image 支持图像生成
-        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/gemini-2.5-flash-image:generateContent"
-        logger_a.info(f"🎨 [插图生成] API URL: {url}")
+        # 使用火山引擎通用 3.0
+        logger_a.info(f"🎨 [插图生成] 使用火山引擎通用 3.0 文生图...")
+        image_data = call_volcengine_ai(prompt)
         
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": LLMConfig.GEMINI_API_KEY
-        }
-        
-        data = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 4096,
-                "responseModalities": ["TEXT", "IMAGE"]  # 请求图像响应
-            }
-        }
-        
-        logger_a.info(f"🎨 [插图生成] 发送请求到 Gemini API...")
-        logger_a.info(f"🎨 [插图生成] 超时设置: 60秒")
-        
-        response = requests.post(url, headers=headers, json=data, timeout=60)
-        
-        logger_a.info(f"🎨 [插图生成] HTTP 状态码: {response.status_code}")
-        
-        try:
-            result = response.json()
-        except Exception as e:
-            logger_a.error(f"🎨 [插图生成] 返回非 JSON 数据: {e}")
-            logger_a.error(f"🎨 [插图生成] 原始响应: {response.text}")
-            return None
-        
-        if not response.ok:
-            logger_a.error(f"🎨 [插图生成] API HTTP 错误 {response.status_code}")
-            logger_a.error(f"🎨 [插图生成] 错误详情: {json.dumps(result, indent=2, ensure_ascii=False)}")
-            return None
-        
-        logger_a.info(f"🎨 [插图生成] 收到响应，正在解析...")
-        logger_a.info(f"🎨 [插图生成] 完整响应结构: {json.dumps(result, indent=2, ensure_ascii=False)}")
-        
-        # 解析图像数据
-        if 'candidates' in result and len(result['candidates']) > 0:
-            logger_a.info(f"🎨 [插图生成] 找到 {len(result['candidates'])} 个 candidates")
-            content = result['candidates'][0].get('content', {})
-            logger_a.info(f"🎨 [插图生成] Content 结构: {content}")
-            
-            if 'parts' in content:
-                logger_a.info(f"🎨 [插图生成] 找到 {len(content['parts'])} 个 parts")
-                for i, part in enumerate(content['parts']):
-                    logger_a.info(f"🎨 [插图生成] Part {i} 类型: {list(part.keys())}")
-                    if 'inlineData' in part:
-                        logger_a.info(f"🎨 [插图生成] 找到图像数据!")
-                        image_data = part['inlineData']
-                        # 返回 base64 编码的图像 URL（数据 URL 格式）
-                        mime_type = image_data.get('mimeType', 'image/png')
-                        data = image_data.get('data', '')
-                        logger_a.info(f"🎨 [插图生成] 图像 MIME 类型: {mime_type}")
-                        logger_a.info(f"🎨 [插图生成] 图像数据长度: {len(data)} 字符")
-                        if data:
-                            logger_a.info(f"🎨 [插图生成] 图像生成成功!")
-                            return f"data:{mime_type};base64,{data}"
-                        else:
-                            logger_a.warning(f"🎨 [插图生成] 图像数据为空")
-            else:
-                logger_a.warning(f"🎨 [插图生成] 响应中没有 parts")
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ 火山引擎成功!")
+            return image_data
         else:
-            logger_a.warning(f"🎨 [插图生成] 响应中没有 candidates")
-        
-        logger_a.warning(f"🎨 [插图生成] 未返回图像数据")
-        return None
+            logger_a.warning(f"🎨 [插图生成] 火山引擎失败，返回 None")
+            return None
         
     except Exception as e:
-        logger_a.error(f"🎨 [插图生成] 发送请求异常: {e}")
+        logger_a.error(f"🎨 [插图生成] 发送请求异常：{e}")
         import traceback
-        logger_a.error(f"🎨 [插图生成] 异常堆栈: {traceback.format_exc()}")
+        logger_a.error(f"🎨 [插图生成] 异常堆栈：{traceback.format_exc()}")
         return None
 
 def process_baby_cry_async(filename, audio_path, start_time, end_time, placeholder_id=None):
@@ -1410,18 +1592,30 @@ def api_analyze_cry():
                 
                 if parse_success:
                     logger_a.info(f"👶 [analyze_cry API] 解析结果 - category: {category}, reason: {reason[:50]}...")
-                    
+
                     from db_manager import save_cry_analysis
                     # 保存分析结果（包含文生图提示和声纹详情）
-                    save_cry_analysis(
-                        filename, start_ms / 1000.0, end_ms / 1000.0,
-                        reason, advice,
-                        reason_category=category,
-                        event_files=valid_paths,
-                        audio_path=audio_path,
-                        confidence=cry_confidence,
-                        details=cry_details
-                    )
+                    save_result = None
+                    try:
+                        save_result = save_cry_analysis(
+                            filename, start_ms / 1000.0, end_ms / 1000.0,
+                            reason, advice,
+                            reason_category=category,
+                            event_files=valid_paths,
+                            audio_path=audio_path,
+                            confidence=cry_confidence,
+                            details=cry_details
+                        )
+                        if save_result:
+                            logger_a.info(f"👶 [analyze_cry API] ✅ 分析结果已保存到数据库，ID={save_result}")
+                        else:
+                            logger_a.error(f"👶 [analyze_cry API] ❌ 保存分析结果失败，返回 None")
+                            return jsonify({"error": "保存分析结果到数据库失败"}), 500
+                    except Exception as save_err:
+                        logger_a.error(f"👶 [analyze_cry API] ❌ 保存分析结果异常: {save_err}")
+                        import traceback
+                        logger_a.error(f"👶 [analyze_cry API] 异常堆栈: {traceback.format_exc()}")
+                        return jsonify({"error": f"保存分析结果异常: {str(save_err)}"}), 500
 
                     # 异步生成插图（不阻塞返回）
                     def generate_illustration():
@@ -1464,7 +1658,7 @@ def api_analyze_cry():
                     threading.Thread(target=generate_illustration, daemon=True).start()
 
                     logger_a.info(f"👶 [analyze_cry API] 分析完成：[{category}] {reason[:50]}...")
-                    return jsonify({"category": category, "reason": reason, "advice": advice})
+                    return jsonify({"category": category, "reason": reason, "advice": advice, "saved_id": save_result})
                 else:
                     logger_a.error(f"👶 [analyze_cry API] 无法解析 JSON 响应")
                     logger_a.info(f"👶 [analyze_cry API] 原始响应: {response_text[:500]}")
@@ -1717,27 +1911,6 @@ def file_cache_status():
         logger_a.error(f"❌ 获取文件缓存状态失败: {e}")
         return jsonify({"message": str(e), "status": "error"}), 500
 
-@app.route("/api/reprocess_logs", methods=["GET"])
-def get_reprocess_logs():
-    """获取历史分析进程的实时日志"""
-    try:
-        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "history_process.log")
-        if not os.path.exists(log_file):
-            return jsonify({"logs": "尚未开始处理，或日志文件不存在...", "a_running": False})
-
-        # 检查进程是否还在运行
-        a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
-
-        with open(log_file, "rb") as f:
-            f.seek(0, 2)
-            size = f.tell()
-            f.seek(max(size - 20000, 0), 0) # 读取最后大概 20KB
-            logs_bytes = f.read()
-            logs = logs_bytes.decode('utf-8', errors='replace')
-            return jsonify({"logs": logs, "a_running": a_running, "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None})
-    except Exception as e:
-        return jsonify({"error": str(e), "a_running": False}), 500
-
 @app.route("/api/live_status", methods=["GET"])
 def get_live_status():
     """获取 A/B 轨状态"""
@@ -1745,16 +1918,33 @@ def get_live_status():
         global _track_b_running, _track_b_paused, _history_reprocess_proc
         # 检查 A 轨进程是否还在运行
         a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
+        
+        # 读取 A 轨日志（与左下角 A 轨日志一致）
+        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-a.log")
+        logs_a = "尚未开始处理，或日志文件不存在..."
+        if os.path.exists(log_file):
+            try:
+                with open(log_file, "rb") as f:
+                    f.seek(0, 2)
+                    size = f.tell()
+                    f.seek(max(size - 20000, 0), 0)  # 读取最后大概 20KB
+                    logs_bytes = f.read()
+                    logs_a = logs_bytes.decode('utf-8', errors='replace')
+            except Exception as e:
+                logs_a = f"读取日志失败: {str(e)}"
+        
         return jsonify({
             "a_running": a_running,
             "b_running": _track_b_running,
             "b_paused": _track_b_paused if _track_b_running else True,
+            "logs_a": logs_a,
+            "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None,
             "a_reason": "A 轨历史分析中" if (a_running and _track_b_running and _track_b_paused) else None,
             "b_reason": "A 轨历史分析中" if (a_running and _track_b_running) else None,
             "message": "B 轨已暂停" if (_track_b_running and _track_b_paused) else ("B 轨正常运行中" if _track_b_running else "B 轨未启动")
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "a_running": False, "logs_a": ""}), 500
 
 @app.route("/api/live_logs", methods=["GET"])
 def get_live_logs():
@@ -2398,9 +2588,7 @@ def transcribe_audio():
                             elapsed = int(now - _last_cry_trigger_time)
                             logger_a.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
                         else:
-                            # ── 正式报警 ──
-                            time_str = datetime.now(UTC_PLUS_8).strftime("%Y-%m-%d %H:%M:%S")
-                            send_cry_alert_email(file.filename, time_str)
+                            # ── 正式报警：先保存占位，后续在分析和插图生成后发送邮件 ──
                             
                             # [即时占位] 立即写入数据库（包含声纹投票详情）
                             from db_manager import save_cry_analysis
@@ -2414,14 +2602,54 @@ def transcribe_audio():
                             )
 
                             # 启动后台延迟分析任务
-                            def start_delayed_analysis(fname, a_path, dur, p_id):
+                            def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det):
                                 logger_a.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
                                 time.sleep(300)
+                                # 先执行分析
                                 process_baby_cry_async(fname, a_path, 0, dur * 1000, placeholder_id=p_id)
+                                # 分析并生成插图，完成后发送邮件
+                                reason, advice, category = None, None, None
+                                try:
+                                    from db_manager import get_baby_cry_event_by_id
+                                    record = get_baby_cry_event_by_id(p_id)
+                                    if record:
+                                        reason = record.get('reason')
+                                        advice = record.get('advice')
+                                        category = record.get('reason_category')
+                                except Exception as e:
+                                    logger_a.warning(f"获取分析结果失败: {e}")
+                                
+                                # 生成插图
+                                image_url = None
+                                try:
+                                    if reason:
+                                        logger_a.info(f"🎨 [邮件插图] 开始生成邮件插图...")
+                                        image_prompt = (
+                                            f"创作一幅温暖治愈的儿童绘本风格卡通插图。"
+                                            f"主角：一个可爱的2岁半中国宝宝（2023年8月出生）。"
+                                            f"场景描述：{reason}。"
+                                            f"展现这个宝宝在此情境下的真实日常生活场景。"
+                                            f"风格：柔和的粉彩色调、柔和的灯光、可爱的卡通形象、情感丰富、表情生动，"
+                                            f"绘本插画风格、温馨氛围、细节丰富的背景。"
+                                            f"重要：请在画面中添加中文文字（如对话框、场景标注等），使用中文。"
+                                        )
+                                        image_url = call_gemini_image_api(image_prompt)
+                                        if image_url:
+                                            logger_a.info(f"🎨 [邮件插图] ✅ 插图生成成功!")
+                                except Exception as e:
+                                    logger_a.error(f"🎨 [邮件插图] 生成失败: {e}")
+                                
+                                # 发送邮件
+                                logger_a.info(f"📧 [邮件] 发送哭声警报邮件...")
+                                send_cry_alert_email(
+                                    fname, cry_conf, cry_det,
+                                    reason=reason, advice=advice, category=category,
+                                    image_data=image_url
+                                )
                             
                             threading.Thread(
                                 target=start_delayed_analysis, 
-                                args=(file.filename, proc_temp, audio_duration, placeholder_id), 
+                                args=(file.filename, proc_temp, audio_duration, placeholder_id, cry_confidence, cry_details), 
                                 daemon=True
                             ).start()
             except Exception as ex:

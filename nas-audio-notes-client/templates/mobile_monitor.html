@@ -832,11 +832,7 @@
 
         async function fetchData() {
             try {
-                // A轨日志和状态
-                const logsRes = await fetch('/api/reprocess_logs');
-                const logsData = await logsRes.json();
-
-                // B轨状态
+                // 获取 A/B 轨状态和 A 轨日志（已合并到 live_status 接口）
                 const statusRes = await fetch('/api/live_status');
                 const statusData = await statusRes.json();
 
@@ -844,15 +840,9 @@
                 const liveLogsRes = await fetch('/api/live_logs');
                 const liveLogsData = await liveLogsRes.json();
 
-                // 合并 A/B 轨状态
-                const combinedStatus = {
-                    ...statusData,
-                    a_running: logsData.a_running
-                };
-
-                updateTrackA(logsData.logs || '', combinedStatus);
+                updateTrackA(statusData.logs_a || '', statusData);
                 updateTrackB(statusData, liveLogsData.logs || '');
-                updateLogs(currentTrack === 'a' ? (logsData.logs || '') : (liveLogsData.logs || ''));
+                updateLogs(currentTrack === 'a' ? (statusData.logs_a || '') : (liveLogsData.logs || ''));
                 document.getElementById('updateTime').textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
             } catch (e) {
                 console.error('获取数据失败:', e);
@@ -1067,8 +1057,44 @@
             container.style.maxHeight = logsExpanded ? '400px' : '200px';
         }
 
-        fetchData();
-        setInterval(fetchData, 5000);
+        // 请求锁，防止请求堆积
+        let isFetchDataRunning = false;
+        
+        async function fetchDataWithLock() {
+            if (isFetchDataRunning) {
+                console.log('[mobile_monitor] 上一次请求未完成，跳过本次');
+                return;
+            }
+            isFetchDataRunning = true;
+            try {
+                await fetchData();
+            } finally {
+                isFetchDataRunning = false;
+            }
+        }
+        
+        // 初始加载
+        fetchDataWithLock();
+        
+        // 定时轮询（5秒一次）
+        let fetchDataInterval = setInterval(fetchDataWithLock, 5000);
+        
+        // 页面不可见时暂停轮询，恢复时重启
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (fetchDataInterval) {
+                    clearInterval(fetchDataInterval);
+                    fetchDataInterval = null;
+                }
+                console.log('[mobile_monitor] 页面隐藏，暂停轮询');
+            } else {
+                if (!fetchDataInterval) {
+                    fetchDataInterval = setInterval(fetchDataWithLock, 5000);
+                    fetchDataWithLock();
+                }
+                console.log('[mobile_monitor] 页面显示，恢复轮询');
+            }
+        });
     </script>
 </body>
 </html>

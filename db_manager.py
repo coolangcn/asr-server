@@ -652,51 +652,6 @@ def get_date_processing_stats() -> dict:
     finally:
         if conn: return_connection(conn)
 
-def get_date_file_counts() -> dict:
-    """获取每个日期的文件数量（从 babycry_file_cache 表）"""
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn: return {}
-        cursor = conn.cursor()
-        cursor.execute('SELECT date_str, COUNT(*) FROM babycry_file_cache GROUP BY date_str')
-        result = {row[0]: row[1] for row in cursor.fetchall()}
-        cursor.close()
-        return result
-    except Exception as e:
-        print(f"  [DB Error] 获取日期文件数量失败: {e}")
-        return {}
-    finally:
-        if conn: return_connection(conn)
-
-def ensure_file_cache_table():
-    """确保 babycry_file_cache 表存在"""
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn: return False
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS babycry_file_cache (
-                id SERIAL PRIMARY KEY,
-                date_str VARCHAR(10) NOT NULL,
-                filename VARCHAR(255) NOT NULL,
-                filepath TEXT NOT NULL UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_cache_date ON babycry_file_cache(date_str)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_file_cache_filepath ON babycry_file_cache(filepath)')
-        conn.commit()
-        cursor.close()
-        return True
-    except Exception as e:
-        print(f"  [DB Error] 创建文件缓存表失败: {e}")
-        if conn: conn.rollback()
-        return False
-    finally:
-        if conn: return_connection(conn)
-
 def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc'), progress_callback=None, log_callback=None) -> int:
     """扫描目录并刷新文件缓存到Redis，返回扫描到的文件数量
 
@@ -1002,52 +957,6 @@ def clear_date_stats_in_redis() -> bool:
     except Exception as e:
         print(f"  [Valkey Error] 清空日期统计失败: {e}")
         return False
-
-def get_file_cache(date_str: str = None) -> list:
-    """从缓存获取文件列表，可按日期过滤"""
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn: return []
-        cursor = conn.cursor()
-        
-        if date_str:
-            cursor.execute('''
-                SELECT filepath, filename FROM babycry_file_cache
-                WHERE date_str = %s
-                ORDER BY filename
-            ''', (date_str,))
-        else:
-            cursor.execute('''
-                SELECT filepath, filename FROM babycry_file_cache
-                ORDER BY date_str, filename
-            ''')
-        
-        result = [{'filepath': row[0], 'filename': row[1]} for row in cursor.fetchall()]
-        cursor.close()
-        return result
-    except Exception as e:
-        print(f"  [DB Error] 获取文件缓存失败: {e}")
-        return []
-    finally:
-        if conn: return_connection(conn)
-
-def get_file_count_from_cache() -> int:
-    """从缓存获取总文件数"""
-    conn = None
-    try:
-        conn = get_connection()
-        if not conn: return 0
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM babycry_file_cache')
-        count = cursor.fetchone()[0]
-        cursor.close()
-        return count
-    except Exception as e:
-        print(f"  [DB Error] 获取缓存文件数失败: {e}")
-        return 0
-    finally:
-        if conn: return_connection(conn)
 
 def delete_cry_events_by_date(date_str: str) -> int:
     """删除指定日期（YYYY-MM-DD）的哭声分析事件和处理进度"""

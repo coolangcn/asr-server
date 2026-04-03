@@ -750,7 +750,7 @@
                         </div>
                     </div>
                     <!-- Beautiful Glassmorphism Range Picker -->
-                    <div class="flex items-center space-x-2 bg-[#1a1f2e]/80 backdrop-blur-xl border border-blue-500/20 rounded-2xl p-1.5 shadow-2xl shadow-blue-900/20">
+                    <div class="flex flex-wrap items-center gap-2 bg-[#1a1f2e]/80 backdrop-blur-xl border border-blue-500/20 rounded-2xl p-1.5 shadow-2xl shadow-blue-900/20">
                         <!-- Quick Date Buttons -->
                         <button onclick="setQuickDate('today')" class="px-3 py-2 text-xs bg-gray-900/60 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 rounded-xl border border-gray-700/50 hover:border-blue-500/50 transition-all duration-200 font-medium">今天</button>
                         <button onclick="setQuickDate('yesterday')" class="px-3 py-2 text-xs bg-gray-900/60 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 rounded-xl border border-gray-700/50 hover:border-blue-500/50 transition-all duration-200 font-medium">昨天</button>
@@ -758,7 +758,7 @@
                         <button onclick="setQuickDate('30days')" class="px-3 py-2 text-xs bg-gray-900/60 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 rounded-xl border border-gray-700/50 hover:border-blue-500/50 transition-all duration-200 font-medium">30天前</button>
                         <button onclick="clearAllFilters()" class="px-3 py-2 text-xs bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl border border-purple-500/50 transition-all duration-200 font-medium shadow-lg shadow-purple-500/20">全量分析</button>
                         
-                        <div class="w-px h-6 bg-gradient-to-b from-transparent via-gray-600 to-transparent"></div>
+                        <div class="hidden sm:block w-px h-6 bg-gradient-to-b from-transparent via-gray-600 to-transparent"></div>
                         
                         <!-- Date Picker -->
                         <div class="relative flex items-center bg-gray-900/60 rounded-xl px-3 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
@@ -766,30 +766,33 @@
                             <input type="date" id="reprocessDate" class="bg-transparent text-sm text-gray-200 outline-none w-[115px] cursor-pointer text-center font-medium font-mono" aria-label="选择过滤日期">
                         </div>
 
-                        <div class="w-px h-6 bg-gradient-to-b from-transparent via-gray-600 to-transparent"></div>
+                        <div class="hidden sm:block w-px h-6 bg-gradient-to-b from-transparent via-gray-600 to-transparent"></div>
 
-                        <!-- Time Range Start -->
-                        <div class="relative flex items-center bg-gray-900/60 rounded-xl px-2 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
-                            <i class="fa-regular fa-clock text-blue-400/70 group-hover:text-blue-400 transition-colors mr-2"></i>
-                            <input type="time" id="reprocessStartTime" class="bg-transparent text-sm text-gray-200 outline-none w-[70px] cursor-pointer text-center font-medium font-mono" aria-label="开始时间">
-                        </div>
+                        <!-- Time Range -->
+                        <div class="flex items-center gap-1">
+                            <!-- Time Range Start -->
+                            <div class="relative flex items-center bg-gray-900/60 rounded-xl px-2 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
+                                <i class="fa-regular fa-clock text-blue-400/70 group-hover:text-blue-400 transition-colors mr-2"></i>
+                                <input type="time" id="reprocessStartTime" class="bg-transparent text-sm text-gray-200 outline-none w-[70px] cursor-pointer text-center font-medium font-mono" aria-label="开始时间">
+                            </div>
 
-                        <span class="text-gray-500 text-sm font-bold animate-pulse px-1">~</span>
+                            <span class="text-gray-500 text-sm font-bold animate-pulse px-1">~</span>
 
-                        <!-- Time Range End -->
-                        <div class="relative flex items-center bg-gray-900/60 rounded-xl px-2 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
-                            <i class="fa-regular fa-clock text-blue-400/70 group-hover:text-blue-400 transition-colors mr-2"></i>
-                            <input type="time" id="reprocessEndTime" class="bg-transparent text-sm text-gray-200 outline-none w-[70px] cursor-pointer text-center font-medium font-mono" aria-label="结束时间">
+                            <!-- Time Range End -->
+                            <div class="relative flex items-center bg-gray-900/60 rounded-xl px-2 py-2 border border-gray-700/50 hover:border-blue-500/50 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 focus-within:bg-gray-800 transition-all duration-300 group">
+                                <i class="fa-regular fa-clock text-blue-400/70 group-hover:text-blue-400 transition-colors mr-2"></i>
+                                <input type="time" id="reprocessEndTime" class="bg-transparent text-sm text-gray-200 outline-none w-[70px] cursor-pointer text-center font-medium font-mono" aria-label="结束时间">
+                            </div>
                         </div>
 
                         <!-- Submit Button -->
-                        <button id="reprocessBtn" onclick="triggerReprocess()" class="ml-1 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 border border-white/10 relative overflow-hidden flex items-center whitespace-nowrap group">
+                        <button id="reprocessBtn" onclick="triggerReprocess()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 border border-white/10 relative overflow-hidden flex items-center whitespace-nowrap group">
                             <i class="fa-solid fa-bolt text-yellow-300 mr-2 group-hover:animate-bounce"></i>定向检索
                         </button>
                         
                         <!-- Stop Button -->
                         <button id="stopReprocessBtn" onclick="stopReprocess()" class="ml-2 px-4 py-2.5 bg-gray-800/80 hover:bg-red-600/90 text-gray-300 hover:text-white active:scale-95 rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg border border-gray-600/50 hover:border-red-500 hover:shadow-red-500/30 relative overflow-hidden flex items-center whitespace-nowrap group" title="随时停止分析">
-                            <i class="fa-solid fa-stop mr-2 group-hover:scale-110 transition-transform text-red-400 group-hover:text-white"></i>马上停止
+                            <i class="fa-solid fa-stop mr-2 group-hover:scale-110 transition-transform text-red-400 group-hover:text-white"></i>停止
                         </button>
 
                         <!-- Refresh Cache Button -->
@@ -2061,7 +2064,18 @@
             }
         }
 
+        // 请求锁，防止请求堆积
+        let isUpdateLoopRunning = false;
+        
         async function updateLoop() {
+            // 如果上一次请求还没完成，跳过本次
+            if (isUpdateLoopRunning) {
+                console.log('[updateLoop] 上一次请求未完成，跳过本次');
+                return;
+            }
+            
+            isUpdateLoopRunning = true;
+            
             try {
                 const statusRes = await fetch('/api/status');
                 const statusData = await statusRes.json();
@@ -2160,6 +2174,8 @@
             } catch (e) {
                 console.error('updateLoop error:', e);
                 showStartupOverlay('服务连接失败');
+            } finally {
+                isUpdateLoopRunning = false;
             }
         }
 
@@ -2247,8 +2263,28 @@
 
         // 初始化 Tab 状态
         setLogTab(currentLogTab);
-        // 定时检查新数据
-        setInterval(updateLoop, 5000);
+        // 定时检查新数据（10秒一次，减少服务器压力）
+        let updateLoopInterval = setInterval(updateLoop, 10000);
+        
+        // 页面不可见时暂停轮询，恢复时重启
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // 页面隐藏时暂停轮询
+                if (updateLoopInterval) {
+                    clearInterval(updateLoopInterval);
+                    updateLoopInterval = null;
+                }
+                console.log('[index] 页面隐藏，暂停轮询');
+            } else {
+                // 页面显示时恢复轮询
+                if (!updateLoopInterval) {
+                    updateLoopInterval = setInterval(updateLoop, 10000);
+                    // 立即执行一次
+                    updateLoop();
+                }
+                console.log('[index] 页面显示，恢复轮询');
+            }
+        });
 
         // 移动端菜单切换
         function toggleMobileMenu() {
@@ -2464,8 +2500,8 @@
         // 页面加载时初始化日期队列
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(fetchBcLogs, 500);
-            // 启动定时轮询
-            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 3000);
+            // 启动定时轮询（5秒一次）
+            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);
             checkRefreshCacheStatusOnLoad();
         });
 
@@ -2562,7 +2598,7 @@
                 const logEl = document.getElementById('processLogs');
                 if (logEl && window.fullLogs) {
                     const lines = window.fullLogs.split('\n').filter(line => line.trim());
-                    logEl.textContent = lines.reverse().join('\n');
+                    logEl.innerHTML = formatLogLines(lines.reverse());
                     logEl.scrollTop = 0;  // 滚动到顶部看最新日志
                 }
             } else {
@@ -2579,7 +2615,7 @@
 
             if (!dateStr) {
                 const lines = window.fullLogs.split('\n').filter(line => line.trim());
-                logEl.textContent = lines.join('\n');
+                logEl.innerHTML = formatLogLines(lines.reverse());
                 logEl.scrollTop = 0;
                 return;
             }
@@ -2587,7 +2623,7 @@
             // 过滤出包含该日期的日志行（最新在上）
             const lines = window.fullLogs.split('\n');
             const filteredLines = lines.filter(line => line.includes(dateStr));
-            logEl.textContent = filteredLines.join('\n');
+            logEl.innerHTML = formatLogLines(filteredLines.reverse());
             logEl.scrollTop = 0;  // 滚动到顶部看最新日志
         }
 
@@ -2643,12 +2679,18 @@
             });
 
             let html = '';
-            const maxVisible = 3; // 待处理最多显示3个
+            const maxVisiblePending = 3; // 待处理最多显示3个
+            const maxVisibleCompleted = 6; // 已完成最多显示6个
 
-            // 显示已完成的日期（全部展开）
-            completedDates.forEach(({ date, state }) => {
+            // 显示已完成的日期（最多显示6个，超过的折叠）
+            const visibleCompleted = completedDates.slice(0, maxVisibleCompleted);
+            visibleCompleted.forEach(({ date, state }) => {
                 html += createDateBlock(date, state, 'completed');
             });
+            if (completedDates.length > maxVisibleCompleted) {
+                const hiddenCount = completedDates.length - maxVisibleCompleted;
+                html += createCollapsedButton(hiddenCount, 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40');
+            }
 
             // 显示处理中的日期（全部显示）
             processingDates.forEach(({ date, state }) => {
@@ -2665,13 +2707,13 @@
             }
 
             // 显示待处理的日期（最多显示3个）
-            const visiblePending = pendingDates.slice(0, maxVisible);
+            const visiblePending = pendingDates.slice(0, maxVisiblePending);
             visiblePending.forEach(({ date, state }) => {
                 html += createDateBlock(date, state, 'pending');
             });
-            if (pendingDates.length > maxVisible) {
-                const hiddenCount = pendingDates.length - maxVisible;
-                html += createCollapsedButton(hiddenCount, 'pending', 'bg-gray-500/20 text-gray-400 border-gray-500/40');
+            if (pendingDates.length > maxVisiblePending) {
+                const hiddenCount = pendingDates.length - maxVisiblePending;
+                html += createCollapsedButton(hiddenCount, 'bg-gray-500/20 text-gray-400 border-gray-500/40');
             }
 
             queueEl.innerHTML = html;
@@ -2692,9 +2734,9 @@
             const loadMoreBtn = document.getElementById('loadMoreBtn');
             if (loadMoreBtn) {
                 const pendingCount = pendingDates.length;
-                if (pendingCount > maxVisible) {
+                if (pendingCount > maxVisiblePending) {
                     loadMoreBtn.classList.remove('hidden');
-                    loadMoreBtn.innerHTML = `<i class="fa-solid fa-forward mr-2"></i>还有 ${pendingCount - maxVisible} 天待处理`;
+                    loadMoreBtn.innerHTML = `<i class="fa-solid fa-forward mr-2"></i>还有 ${pendingCount - maxVisiblePending} 天待处理`;
                 } else {
                     loadMoreBtn.classList.add('hidden');
                 }
@@ -2810,9 +2852,11 @@
 
         async function fetchBcLogs() {
             try {
-                const response = await fetch('/api/reprocess_logs');
+                const response = await fetch('/api/live_status');
                 const result = await response.json();
-                if (result.logs) {
+                
+                // 处理 A 轨日志
+                if (result.logs_a) {
                     const logEl = document.getElementById('processLogs');
                     const statusEl = document.getElementById('processStatus');
                     const btn = document.getElementById('reprocessBtn');
@@ -2820,7 +2864,7 @@
                     const triggerStatus = document.getElementById('triggerStatus');
 
                     // 保存完整日志
-                    window.fullLogs = result.logs;
+                    window.fullLogs = result.logs_a;
 
                     // 更新运行状态和按钮
                     if (statusEl) {
@@ -2860,32 +2904,32 @@
 
                     // 如果有选中日期，显示过滤后的日志；否则显示全部（最新在上）
                     if (dateQueueState.selectedDate) {
-                        const lines = result.logs.split('\n');
+                        const lines = result.logs_a.split('\n');
                         const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate));
                         logEl.innerHTML = formatLogLines(filteredLines.reverse());
                     } else {
-                        const lines = result.logs.split('\n').filter(line => line.trim());
+                        const lines = result.logs_a.split('\n').filter(line => line.trim());
                         logEl.innerHTML = formatLogLines(lines.reverse());
                     }
                     logEl.scrollTop = 0;  // 滚动到顶部看最新日志
 
                     // 更新日期队列（异步）
                     const prevProcessingDate = dateQueueState.currentDate;
-                    await parseDateQueueFromLogs(result.logs);
+                    await parseDateQueueFromLogs(result.logs_a);
 
                     // 如果处理日期变更了，自动切换选中的日期
                     if (dateQueueState.currentDate && dateQueueState.currentDate !== prevProcessingDate) {
                         dateQueueState.selectedDate = dateQueueState.currentDate;
-                        // 重新过滤日志
-                        const lines = result.logs.split('\n');
+                        // 重新过滤日志（使用 formatLogLines 保持样式）
+                        const lines = result.logs_a.split('\n');
                         const filteredLines = lines.filter(line => line.includes(dateQueueState.currentDate));
-                        logEl.textContent = filteredLines.join('\n');
-                        logEl.scrollTop = logEl.scrollHeight;
+                        logEl.innerHTML = formatLogLines(filteredLines.reverse());
+                        logEl.scrollTop = 0;
                         updateDateQueueDisplay();
                     }
 
                     // 如果检测到"分析任务已结束"，自动刷新数据
-                    if (result.logs.includes("历史音频重分析任务已结束") || result.logs.includes("任务已手动停止")) {
+                    if (result.logs_a.includes("历史音频重分析任务已结束") || result.logs_a.includes("任务已手动停止")) {
                         // 只在任务结束时刷新一次
                         if (!lastLogContent.includes("历史音频重分析任务已结束") && !lastLogContent.includes("任务已手动停止")) {
                             if (typeof fetchBabyCryEvents === "function") {
@@ -2894,23 +2938,15 @@
                         }
                     }
 
-                    lastLogContent = result.logs;
+                    lastLogContent = result.logs_a;
                 }
-            } catch (e) {
-                console.error("Fetch log error:", e);
-            }
-            
-            // 轮询实时分析状态
-            try {
-                const liveResponse = await fetch('/api/live_status');
-                const liveResult = await liveResponse.json();
-
+                
                 // 更新 LIVE MONITORING 标识
                 const liveBadge = document.querySelector('.animate-pulse');
                 // 更新数据概览暂停提示
                 const dashboardBadge = document.getElementById('dashboardPausedBadge');
                 if (dashboardBadge) {
-                    if (liveResult.b_running && liveResult.b_paused) {
+                    if (result.b_running && result.b_paused) {
                         dashboardBadge.classList.remove('hidden');
                     } else {
                         dashboardBadge.classList.add('hidden');
@@ -2918,7 +2954,7 @@
                 }
 
                 // 更新时光对话暂停提示
-                updateShiguangPausedState(liveResult.b_running && liveResult.b_paused);
+                updateShiguangPausedState(result.b_running && result.b_paused, result.b_reason);
             } catch (e) {
                 console.error("Fetch live status error:", e);
             }
@@ -2976,22 +3012,13 @@
             return div.innerHTML;
         }
 
-        async function updateShiguangPausedState(isPaused) {
+        async function updateShiguangPausedState(isPaused, bReason = null) {
             const badge = document.getElementById('shiguangPausedBadge');
             const reason = document.getElementById('shiguangPausedReason');
             if (!badge || !reason) return;
 
-            let pauseReason = "A轨分析中";
+            let pauseReason = bReason || "A轨分析中";
             if (isPaused) {
-                // 从 API 获取暂停原因
-                try {
-                    const response = await fetch('/api/live_status');
-                    const result = await response.json();
-                    if (result.b_reason) {
-                        pauseReason = result.b_reason;
-                    }
-                } catch (e) {}
-
                 badge.classList.remove('hidden');
                 reason.classList.remove('hidden');
                 reason.innerHTML = `<i class="fa-solid fa-info-circle mr-1"></i>${pauseReason}`;

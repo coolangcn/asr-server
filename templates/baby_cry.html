@@ -583,32 +583,32 @@
 
         async function fetchLogs() {
             try {
-                const response = await fetch('/api/reprocess_logs');
+                const response = await fetch('/api/live_status');
                 const result = await response.json();
-                if (result.logs) {
+                if (result.logs_a) {
                     const logEl = document.getElementById('processLogs');
                     const isScrolledToBottom = logEl.scrollHeight - logEl.clientHeight <= logEl.scrollTop + 50;
                     
                     // 检测日志内容是否有变化
-                    if (result.logs === lastLogContent) {
+                    if (result.logs_a === lastLogContent) {
                         noChangeCount++;
-                        // 如果连续5次没有变化，降低轮询频率到5秒
+                        // 如果连续5次没有变化，降低轮询频率到10秒
                         if (noChangeCount >= 5 && logInterval) {
                             clearInterval(logInterval);
-                            logInterval = setInterval(fetchLogs, 5000);
-                            console.log('[BabyCry] 日志无更新，降低轮询频率至5秒');
+                            logInterval = setInterval(fetchLogs, 10000);
+                            console.log('[BabyCry] 日志无更新，降低轮询频率至10秒');
                         }
                     } else {
                         noChangeCount = 0;
                         // 如果有变化且当前是低频模式，恢复高频
                         if (logInterval) {
                             clearInterval(logInterval);
-                            logInterval = setInterval(fetchLogs, 2000);
+                            logInterval = setInterval(fetchLogs, 3000);
                         }
                     }
-                    lastLogContent = result.logs;
+                    lastLogContent = result.logs_a;
                     
-                    logEl.textContent = result.logs;
+                    logEl.textContent = result.logs_a;
                     if (isScrolledToBottom) {
                         logEl.scrollTop = logEl.scrollHeight;
                     }
@@ -638,7 +638,7 @@
             if (!logInterval) {
                 noChangeCount = 0;
                 lastLogContent = '';
-                logInterval = setInterval(fetchLogs, 2000);  // 初始2秒轮询
+                logInterval = setInterval(fetchLogs, 3000);  // 初始3秒轮询
             }
             
             try {

@@ -479,15 +479,6 @@ def proxy_cry_events():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/reprocess_logs', methods=['GET'])
-@login_required
-def proxy_reprocess_logs():
-    try:
-        response = requests.get(f"{ASR_SERVER_URL}/api/reprocess_logs", timeout=5)
-        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/api/live_status', methods=['GET'])
 @login_required
 def proxy_live_status():
