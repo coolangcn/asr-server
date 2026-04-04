@@ -740,14 +740,7 @@
                 <!-- Main Header -->
                 <header class="p-6 border-b border-gray-800/50 glass sticky top-0 z-10 backdrop-blur-xl flex justify-between items-center">
                     <div class="flex items-center gap-3">
-                        <div class="text-[10px] text-gray-400 flex flex-col items-start gap-2">
-                            <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse">
-                                <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
-                            </span>
-                            <span id="triggerStatus" class="text-xs font-bold text-purple-400 px-2 py-1 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-fade-in">
-                                <i class="fa-solid fa-clock mr-1"></i>等待分析任务...
-                            </span>
-                        </div>
+                        <!-- 移除了 LIVE MONITORING 和 triggerStatus，移到 PROCESS LOGS 标题旁边 -->
                     </div>
                     <!-- Beautiful Glassmorphism Range Picker -->
                     <div class="flex flex-wrap items-center gap-2 bg-[#1a1f2e]/80 backdrop-blur-xl border border-blue-500/20 rounded-2xl p-1.5 shadow-2xl shadow-blue-900/20">
@@ -856,12 +849,20 @@
                             </button>
                         </div>
                         <!-- 日志标题 -->
-                        <div class="p-3 bg-gray-900/80 border-b border-gray-700/50 flex items-center gap-2">
+                        <div class="p-3 bg-gray-900/80 border-b border-gray-700/50 flex items-center gap-2 flex-wrap">
                             <div class="w-2.5 h-2.5 rounded-full bg-red-500"></div>
                             <div class="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
                             <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
                             <span class="text-xs text-gray-400 ml-2 font-mono">PROCESS LOGS</span>
                             <span class="text-xs text-gray-500 ml-auto font-mono" id="processStatus"><i class="fa-solid fa-stop-circle mr-1"></i>未运行</span>
+                            
+                            <!-- LIVE MONITORING 和状态标签 -->
+                            <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse text-[10px]">
+                                <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
+                            </span>
+                            <span id="triggerStatus" class="text-xs font-bold text-purple-400 px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-fade-in">
+                                <i class="fa-solid fa-clock mr-1"></i>等待分析任务...
+                            </span>
                         </div>
                         <div class="flex-1 bg-[#020617] p-4 overflow-y-auto" id="processLogs" style="color: #10b981; font-family: 'Fira Code', monospace; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;">等待分析任务启动...</div>
                     </div>
@@ -2646,9 +2647,13 @@
             dateQueueState.dates.forEach((state, dateStr) => {
                 datesToShow.push({ date: dateStr, state });
             });
+            
+            console.log('[DateQueue] 更新显示，所有日期状态:', Array.from(dateQueueState.dates.entries()));
 
             // 按日期排序
             datesToShow.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            console.log('[DateQueue] 排序后的日期列表:', datesToShow.map(d => d.date));
 
             if (datesToShow.length === 0) {
                 queueEl.innerHTML = '<div class="text-xs text-gray-500 py-2">等待分析任务...</div>';
@@ -2677,6 +2682,10 @@
                         pendingDates.push({ date, state });
                 }
             });
+            
+            console.log('[DateQueue] 分类结果 - 处理中:', processingDates.length, '个日期:', processingDates.map(d => d.date));
+            console.log('[DateQueue] 分类结果 - 已完成:', completedDates.length, '个日期');
+            console.log('[DateQueue] 分类结果 - 待处理:', pendingDates.length, '个日期');
 
             let html = '';
             const maxVisiblePending = 3; // 待处理最多显示3个
@@ -2754,14 +2763,25 @@
         async function parseDateQueueFromLogs(logs) {
             // 将日志分割成行，供后续分析使用
             const lines = logs.split('\n');
+            
+            // 记录刚完成的日期，用于触发刷新
+            let newlyCompletedDates = new Set();
 
-            // 只在第一次调用时从 API 获取日期列表（后端已缓存）
-            if (!dateQueueState.allDates || dateQueueState.allDates.length === 0) {
+            // 检查是否需要刷新日期列表：
+            // 1. 第一次调用时
+            // 2. 或者日期列表为空时
+            // 3. 或者检测到任务启动信号时（清空日志后重新开始）
+            const hasTaskStartSignal = lines.some(line => line.includes('开始执行历史音频重分析'));
+            const needRefreshDates = !dateQueueState.allDates || dateQueueState.allDates.length === 0 || hasTaskStartSignal;
+            if (needRefreshDates) {
                 try {
                     const response = await fetch('/api/scan_dates');
                     const result = await response.json();
                     if (result.status === 'success' && result.dates) {
                         dateQueueState.allDates = result.dates;
+
+                        console.log('[API] 从 API 获取到日期列表:', result.dates);
+                        console.log('[API] date_info:', result.date_info);
 
                         // 从 API 响应直接获取状态
                         for (const dateStr of result.dates) {
@@ -2775,6 +2795,7 @@
                             }
                         }
 
+                        console.log('[API] 从 API 设置完状态后的 dates Map:', Array.from(dateQueueState.dates.entries()));
                         console.log('[API] 获取到', result.dates.length, '个日期');
                     }
                 } catch (e) {
@@ -2784,14 +2805,20 @@
 
             // 第二遍：分析处理进度（从日志检测正在处理的日期）
             let processingDate = null;
+            console.log('[DateQueue] 开始从日志中检测正在处理的日期...');
             lines.forEach(line => {
                 // 查找正在处理的日期（新格式：📅 【正在处理日期】2025-11-08）
                 const scanMatch = line.match(/【正在处理日期】(\d{4}-\d{2}-\d{2})/);
                 if (scanMatch) {
                     processingDate = scanMatch[1];
+                    console.log('[DateQueue] 从日志中检测到正在处理日期:', processingDate);
                     if (dateQueueState.dates.has(processingDate)) {
                         dateQueueState.dates.get(processingDate).status = 'processing';
                         dateQueueState.currentDate = processingDate;
+                        console.log('[DateQueue] 已设置日期状态为 processing:', processingDate);
+                        console.log('[DateQueue] 设置后该日期的完整状态:', dateQueueState.dates.get(processingDate));
+                    } else {
+                        console.log('[DateQueue] 日期不在 dates Map 中:', processingDate, '可用日期:', Array.from(dateQueueState.dates.keys()));
                     }
                 }
 
@@ -2806,6 +2833,10 @@
                 if (completedMatch) {
                     const completedDate = completedMatch[1];
                     if (dateQueueState.dates.has(completedDate)) {
+                        const currentState = dateQueueState.dates.get(completedDate).status;
+                        if (currentState !== 'completed') {
+                            newlyCompletedDates.add(completedDate);
+                        }
                         dateQueueState.dates.get(completedDate).status = 'completed';
                     }
                 }
@@ -2818,7 +2849,24 @@
                         // 检查是否已经有哭声文件在处理，如果没有则标记为完成
                         const hasCryProcessing = lines.some(l => l.includes('阶段二') && l.includes(completedDate));
                         if (!hasCryProcessing) {
+                            const currentState = dateQueueState.dates.get(completedDate).status;
+                            if (currentState !== 'completed') {
+                                newlyCompletedDates.add(completedDate);
+                            }
                             dateQueueState.dates.get(completedDate).status = 'completed';
+                        }
+                    }
+                }
+                
+                // 备选方案：从文件名中推断正在处理的日期（格式：[1/123] 正在发起云端分析请求：/path/2024-01-15_12-34-56.m4a）
+                if (!processingDate) {
+                    const fileMatchFromPath = line.match(/正在发起云端分析请求：.*[\/\\](\d{4}-\d{2}-\d{2})_/);
+                    if (fileMatchFromPath) {
+                        const inferredDate = fileMatchFromPath[1];
+                        if (dateQueueState.dates.has(inferredDate)) {
+                            processingDate = inferredDate;
+                            dateQueueState.dates.get(inferredDate).status = 'processing';
+                            dateQueueState.currentDate = inferredDate;
                         }
                     }
                 }
@@ -2834,17 +2882,52 @@
                     if (state && state.status === 'pending') {
                         dateQueueState.dates.get(dateStr).status = 'completed';
                         justCompletedDate = dateStr;
+                        newlyCompletedDates.add(dateStr);
                     }
                 }
             }
 
-            // 如果检测到正在处理的日期不在已加载列表中，说明需要加载更多
+            // 如果检测到正在处理的日期不在已加载列表中，重新从 API 加载所有日期
             if (processingDate && !dateQueueState.dates.has(processingDate)) {
-                console.log(`[AutoLoad] 检测到新日期 ${processingDate} 不在已加载列表`);
-                await loadMoreDates();
+                console.log(`[AutoLoad] 检测到新日期 ${processingDate} 不在已加载列表，重新加载所有日期`);
+                try {
+                    const response = await fetch('/api/scan_dates');
+                    const result = await response.json();
+                    if (result.status === 'success' && result.dates) {
+                        dateQueueState.allDates = result.dates;
+                        
+                        // 从 API 响应直接获取状态
+                        for (const dateStr of result.dates) {
+                            const info = result.date_info[dateStr];
+                            if (info) {
+                                dateQueueState.dates.set(dateStr, {
+                                    status: info.status,
+                                    fileCount: info.fileCount,
+                                    processedCount: info.processedCount
+                                });
+                            }
+                        }
+                        
+                        // 确保正在处理的日期状态正确
+                        if (dateQueueState.dates.has(processingDate)) {
+                            dateQueueState.dates.get(processingDate).status = 'processing';
+                            dateQueueState.currentDate = processingDate;
+                        }
+                        
+                        console.log('[AutoLoad] 重新加载完成，获取到', result.dates.length, '个日期');
+                    }
+                } catch (e) {
+                    console.error('[AutoLoad] 重新加载日期失败:', e);
+                }
             }
 
             updateDateQueueDisplay();
+            
+            // 如果有新完成的日期，立即刷新结果
+            if (newlyCompletedDates.size > 0 && typeof fetchBabyCryEvents === "function") {
+                console.log(`[AutoRefresh] 检测到 ${newlyCompletedDates.size} 个日期完成，刷新结果:`, Array.from(newlyCompletedDates));
+                fetchBabyCryEvents(true);
+            }
             
             // 如果刚刚完成了一天，且启用了自动加载，则自动加载下一天
             // 不需要自动加载，因为所有日期都会从 API 获取状态
@@ -2905,7 +2988,7 @@
                     // 如果有选中日期，显示过滤后的日志；否则显示全部（最新在上）
                     if (dateQueueState.selectedDate) {
                         const lines = result.logs_a.split('\n');
-                        const filteredLines = lines.filter(line => line.includes(dateQueueState.selectedDate));
+                        const filteredLines = lines.filter(line => line.trim() && line.includes(dateQueueState.selectedDate));
                         logEl.innerHTML = formatLogLines(filteredLines.reverse());
                     } else {
                         const lines = result.logs_a.split('\n').filter(line => line.trim());
@@ -2922,7 +3005,7 @@
                         dateQueueState.selectedDate = dateQueueState.currentDate;
                         // 重新过滤日志（使用 formatLogLines 保持样式）
                         const lines = result.logs_a.split('\n');
-                        const filteredLines = lines.filter(line => line.includes(dateQueueState.currentDate));
+                        const filteredLines = lines.filter(line => line.trim() && line.includes(dateQueueState.currentDate));
                         logEl.innerHTML = formatLogLines(filteredLines.reverse());
                         logEl.scrollTop = 0;
                         updateDateQueueDisplay();
@@ -2932,6 +3015,16 @@
                     if (result.logs_a.includes("历史音频重分析任务已结束") || result.logs_a.includes("任务已手动停止")) {
                         // 只在任务结束时刷新一次
                         if (!lastLogContent.includes("历史音频重分析任务已结束") && !lastLogContent.includes("任务已手动停止")) {
+                            if (typeof fetchBabyCryEvents === "function") {
+                                fetchBabyCryEvents(true);
+                            }
+                        }
+                    }
+                    
+                    // 如果检测到新哭声已入库，自动刷新宝宝分析页面
+                    if (result.logs_a.includes("[DB] 已保存宝宝哭声分析占位")) {
+                        // 只在新入库时刷新一次
+                        if (!lastLogContent.includes("[DB] 已保存宝宝哭声分析占位")) {
                             if (typeof fetchBabyCryEvents === "function") {
                                 fetchBabyCryEvents(true);
                             }
@@ -3376,6 +3469,15 @@
                 if (response.ok) {
                     statusLabel.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-check-double mr-2"></i>任务拉起成功</span> `;
                     // 按钮保持禁用，直到手动停止或检测到结束
+                    // 注意：不要清空 dateQueueState，让 parseDateQueueFromLogs 自己处理
+                    // 我们只需要确保下次调用时会重新从 API 获取日期
+                    dateQueueState.allDates = []; // 清空 allDates，触发重新获取
+                    // 立即调用一次 fetchBcLogs 来刷新日期队列
+                    setTimeout(() => {
+                        if (typeof fetchBcLogs === "function") {
+                            fetchBcLogs();
+                        }
+                    }, 500);
                 } else {
                     statusLabel.innerHTML = `<span class="text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation mr-2"></i>触发失败: ${result.error}</span>`;
                     btn.disabled = false;

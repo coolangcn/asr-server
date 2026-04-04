@@ -6,6 +6,8 @@ import time
 import sys
 import datetime
 import logging
+import functools
+from logging.handlers import TimedRotatingFileHandler
 from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_file_cache_from_redis, get_file_count_from_redis
 
 # 导入邮件模块
@@ -22,7 +24,7 @@ QUICK_DETECT_URL = "http://localhost:5008/api/quick_cry_detect"  # 快速哭声�
 SOURCE_DIR = "/Volumes/download/records/Sony-2"
 PROCESSED_DIR = os.path.join(SOURCE_DIR, "processed")
 
-# 配置详细日志记录器（同时输出到 asr-a.log 和 history_process.log）
+# 配置详细日志记录器（只输出到 asr-a.log）
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
 os.makedirs(log_dir, exist_ok=True)
 
@@ -31,15 +33,16 @@ reprocess_logger = logging.getLogger('reprocess_history')
 reprocess_logger.setLevel(logging.INFO)
 reprocess_logger.handlers = []
 
-# 输出到 asr-a.log（与主服务日志合并）
-file_handler_a = logging.FileHandler(os.path.join(log_dir, "asr-a.log"), mode='a', encoding='utf-8')
+# 输出到 asr-a.log（与主服务日志合并，使用相同的轮转配置）
+file_handler_a = TimedRotatingFileHandler(
+    os.path.join(log_dir, "asr-a.log"), 
+    when='midnight', 
+    interval=1, 
+    backupCount=30, 
+    encoding='utf-8'
+)
 file_handler_a.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
 reprocess_logger.addHandler(file_handler_a)
-
-# 输出到 history_process.log（供前端 PROCESS LOGS 读取）
-file_handler_history = logging.FileHandler(os.path.join(log_dir, "history_process.log"), mode='a', encoding='utf-8')
-file_handler_history.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-reprocess_logger.addHandler(file_handler_history)
 
 # 控制台处理器
 console_handler = logging.StreamHandler()
@@ -56,6 +59,95 @@ def log_detail(message, level='info'):
         reprocess_logger.error(message)
     elif level == 'debug':
         reprocess_logger.debug(message)
+
+
+def retry_on_error(max_retries=5, initial_delay=2, backoff_factor=2, allowed_exceptions=(Exception,)):
+    """
+    通用重试装饰器
+    
+    Args:
+        max_retries: 最大重试次数
+        initial_delay: 初始延迟（秒）
+        backoff_factor: 延迟增长因子
+        allowed_exceptions: 允许重试的异常类型
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            retry_count = 0
+            current_delay = initial_delay
+            
+            while retry_count <= max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except allowed_exceptions as e:
+                    retry_count += 1
+                    
+                    if retry_count > max_retries:
+                        log_detail(f"    ❌ 重试次数耗尽 ({max_retries}次)，放弃操作: {e}", 'error')
+                        raise
+                    
+                    log_detail(f"    ⚠️  操作失败 ({retry_count}/{max_retries}): {e}", 'warning')
+                    
+                    # 指数退避等待
+                    time.sleep(current_delay)
+                    current_delay *= backoff_factor
+            
+            return None
+        return wrapper
+    return decorator
+
+
+def safe_file_operation(operation, *args, **kwargs):
+    """
+    安全的文件系统操作，带有自动重试
+    
+    Args:
+        operation: 文件操作函数
+        *args: 位置参数
+        **kwargs: 关键字参数
+    """
+    @retry_on_error(
+        max_retries=10,
+        initial_delay=5,
+        backoff_factor=1.5,
+        allowed_exceptions=(OSError, IOError)
+    )
+    def _perform_operation():
+        return operation(*args, **kwargs)
+    
+    return _perform_operation()
+
+
+def wait_for_network_mount(mount_path, max_wait=600, check_interval=10):
+    """
+    等待网络挂载恢复
+    
+    Args:
+        mount_path: 挂载点路径
+        max_wait: 最大等待时间（秒）
+        check_interval: 检查间隔（秒）
+    
+    Returns:
+        bool: 挂载是否恢复
+    """
+    start_time = time.time()
+    
+    while time.time() - start_time < max_wait:
+        try:
+            if os.path.exists(mount_path):
+                log_detail(f"    ✅ 网络挂载 {mount_path} 已恢复", 'info')
+                # 额外等待几秒确保挂载稳定
+                time.sleep(3)
+                return True
+        except Exception as e:
+            log_detail(f"    ⏳ 等待网络挂载恢复... ({e})", 'warning')
+        
+        time.sleep(check_interval)
+    
+    log_detail(f"    ❌ 网络挂载 {mount_path} 未在 {max_wait} 秒内恢复", 'error')
+    return False
+
 
 # 合并阈值：同一事件内两个哭声文件最大时间间隔（秒）
 CRY_MERGE_GAP_SEC = 600   # 10 分钟
@@ -136,14 +228,47 @@ def build_event_dir(base_dir, event_id, event_files):
     返回事件目录路径。
     """
     event_dir = os.path.join(base_dir, f"cry_event_{event_id:02d}")
-    os.makedirs(event_dir, exist_ok=True)
+    
+    @retry_on_error(
+        max_retries=5,
+        initial_delay=3,
+        backoff_factor=2,
+        allowed_exceptions=(OSError, IOError)
+    )
+    def create_event_directory():
+        os.makedirs(event_dir, exist_ok=True)
+    
+    create_event_directory()
 
     for fpath in event_files:
         dest = os.path.join(event_dir, os.path.basename(fpath))
-        if os.path.exists(dest) or os.path.islink(dest):
-            os.remove(dest)
+        
+        @retry_on_error(
+            max_retries=5,
+            initial_delay=2,
+            backoff_factor=2,
+            allowed_exceptions=(OSError, IOError)
+        )
+        def remove_existing_file():
+            if os.path.exists(dest) or os.path.islink(dest):
+                os.remove(dest)
+        
         try:
-            shutil.copy2(fpath, dest)
+            remove_existing_file()
+        except Exception as e:
+            log_detail(f"    [!] 删除现有文件失败：{e}", 'warning')
+        
+        try:
+            @retry_on_error(
+                max_retries=5,
+                initial_delay=3,
+                backoff_factor=2,
+                allowed_exceptions=(OSError, IOError)
+            )
+            def copy_audio_file():
+                shutil.copy2(fpath, dest)
+            
+            copy_audio_file()
             log_detail(f"    [复制] {os.path.basename(fpath)}", 'info')
         except Exception as e:
             log_detail(f"    [!] 复制失败：{e}", 'error')
@@ -255,25 +380,39 @@ if __name__ == "__main__":
 
         try:
             log_detail(f"[*] 正在启动文件树扫描...", 'info')
-
-            for root, dirs, files in os.walk(target_dir):
-                dirs[:] = [d for d in dirs if not d.startswith('.')]
-
-                current_container = os.path.basename(root) or 'root'
-                if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
-                    log_detail(f"    📅 【扫描日期】{current_container}", 'info')
-
-                for file in files:
-                    if file.startswith('.'): continue
-                    if not file.lower().endswith(AUDIO_EXTS): continue
-                    if filter_date and filter_date not in file: continue
-
-                    file_path = os.path.join(root, file)
-                    all_files.append(file_path)
-
-                    if is_time_in_range(file, start_time_arg, end_time_arg):
-                        target_files.append(file_path)
-
+            
+            @retry_on_error(
+                max_retries=10,
+                initial_delay=5,
+                backoff_factor=1.5,
+                allowed_exceptions=(OSError, IOError)
+            )
+            def scan_directory():
+                files_scanned = []
+                targets_scanned = []
+                
+                for root, dirs, files in os.walk(target_dir):
+                    dirs[:] = [d for d in dirs if not d.startswith('.')]
+                    
+                    current_container = os.path.basename(root) or 'root'
+                    if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
+                        log_detail(f"    📅 【扫描日期】{current_container}", 'info')
+                    
+                    for file in files:
+                        if file.startswith('.'): continue
+                        if not file.lower().endswith(AUDIO_EXTS): continue
+                        if filter_date and filter_date not in file: continue
+                        
+                        file_path = os.path.join(root, file)
+                        files_scanned.append(file_path)
+                        
+                        if is_time_in_range(file, start_time_arg, end_time_arg):
+                            targets_scanned.append(file_path)
+                
+                return files_scanned, targets_scanned
+            
+            all_files, target_files = scan_directory()
+            
             log_detail(f"[*] 磁盘扫描完成，共 {len(all_files)} 个文件", 'info')
 
         except Exception as e:
@@ -422,7 +561,14 @@ if __name__ == "__main__":
         # 注意：定向检索时不跳过已处理文件，强制重新分析
 
         log_detail(f"\n[{idx}/{len(files_to_process)}] 正在发起云端分析请求：{filepath}", 'info')
-        max_retries = 3
+        
+        # 首先检查网络挂载是否可用
+        if not wait_for_network_mount(SOURCE_DIR, max_wait=300, check_interval=5):
+            log_detail(f"    ❌ 网络挂载不可用，跳过此文件", 'error')
+            skip_count += 1
+            continue
+        
+        max_retries = 5
         retry_count = 0
         request_success = False
         
@@ -430,14 +576,34 @@ if __name__ == "__main__":
         while retry_count < max_retries:
             try:
                 request_start = time.time()
-                with open(filepath, 'rb') as f:
+                
+                # 使用安全文件操作打开文件
+                @retry_on_error(
+                    max_retries=5,
+                    initial_delay=3,
+                    backoff_factor=2,
+                    allowed_exceptions=(OSError, IOError)
+                )
+                def open_audio_file():
+                    return open(filepath, 'rb')
+                
+                with open_audio_file() as f:
                     files_data = {'audio_file': (os.path.basename(filepath), f, 'audio/m4a')}
                     log_detail(f"    🌐 快速哭声检测 {QUICK_DETECT_URL}...", 'info')
                     response = requests.post(QUICK_DETECT_URL, files=files_data, timeout=60)
-                    request_time = time.time() - request_start
-                    log_detail(f"    ⏱️  检测耗时：{request_time:.1f}s", 'info')
-                    request_success = True
-                    break  # 成功则跳出重试循环
+                request_time = time.time() - request_start
+                log_detail(f"    ⏱️  检测耗时：{request_time:.1f}s", 'info')
+                request_success = True
+                break  # 成功则跳出重试循环
+            except (OSError, IOError) as e:
+                retry_count += 1
+                log_detail(f"    ⚠️  文件访问失败 ({retry_count}/{max_retries}): {e}", 'warning')
+                if retry_count >= max_retries:
+                    log_detail(f"    ❌ 文件访问失败次数过多，跳过此文件", 'error')
+                    skip_count += 1
+                    break
+                # 等待网络挂载恢复
+                wait_for_network_mount(SOURCE_DIR, max_wait=120, check_interval=10)
             except requests.exceptions.Timeout as e:
                 retry_count += 1
                 log_detail(f"    ⚠️  请求超时 ({retry_count}/{max_retries}): {e}", 'warning')
@@ -552,6 +718,11 @@ if __name__ == "__main__":
     log_detail(f"{'='*60}", 'info')
 
     for idx, event_files in enumerate(events, 1):
+        # 首先检查网络挂载是否可用
+        if not wait_for_network_mount(SOURCE_DIR, max_wait=300, check_interval=5):
+            log_detail(f"    ❌ 网络挂载不可用，跳过此事件", 'error')
+            continue
+        
         event_dir = build_event_dir(events_base_dir, idx, event_files)
         rep_filepath = event_files[len(event_files) // 2]   # 取中间文件作代表
         rep_filename = os.path.basename(rep_filepath)
@@ -575,12 +746,21 @@ if __name__ == "__main__":
         # 使用快速检测接口验证哭声，然后使用默认时间范围（0-60s）
         first_seg = {'start': 0, 'end': 60000}
         try:
-            with open(rep_filepath, 'rb') as f:
-                res = requests.post(
-                    QUICK_DETECT_URL,
-                    files={'audio_file': (rep_filename, f, 'audio/m4a')},
-                    timeout=30
-                )
+            @retry_on_error(
+                max_retries=5,
+                initial_delay=3,
+                backoff_factor=2,
+                allowed_exceptions=(OSError, IOError)
+            )
+            def open_and_detect():
+                with open(rep_filepath, 'rb') as f:
+                    return requests.post(
+                        QUICK_DETECT_URL,
+                        files={'audio_file': (rep_filename, f, 'audio/m4a')},
+                        timeout=30
+                    )
+            
+            res = open_and_detect()
             if res.status_code == 200:
                 result = res.json()
                 if result.get('is_baby_cry'):

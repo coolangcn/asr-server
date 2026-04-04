@@ -215,8 +215,9 @@ def create_sub_logger(name, filename, level=logging.INFO):
     l = logging.getLogger(name)
     l.setLevel(level)
     l.handlers = [] # 清除可能存在的旧处理器
+    # 改为每天轮转一次，保留 30 天的日志
     handler = TimedRotatingFileHandler(
-        filename, when='M', interval=10, backupCount=144, encoding='utf-8'
+        filename, when='midnight', interval=1, backupCount=30, encoding='utf-8'
     )
     handler.setFormatter(log_formatter)
     l.addHandler(handler)
@@ -1359,8 +1360,8 @@ def detect_cry_from_full_audio(audio_path):
     if not CryDetectionConfig.ENABLED or not speaker_db:
         return False, 0.0, []
     
-    logger_a.info(f"🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...")
-    logger_a.info(f"   参数: threshold={CryDetectionConfig.VOICEPRINT_THRESHOLD}, gap={CryDetectionConfig.VOICEPRINT_GAP}, min_votes={CryDetectionConfig.MIN_VOTES}")
+    logger_b.info(f"🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...")
+    logger_b.info(f"   参数: threshold={CryDetectionConfig.VOICEPRINT_THRESHOLD}, gap={CryDetectionConfig.VOICEPRINT_GAP}, min_votes={CryDetectionConfig.MIN_VOTES}")
     
     target_speakers = CryDetectionConfig.TARGET_SPEAKERS
     cry_threshold = CryDetectionConfig.VOICEPRINT_THRESHOLD
@@ -1397,7 +1398,7 @@ def detect_cry_from_full_audio(audio_path):
         
         # 日志：输出所有说话人得分供调试
         scores_str = ", ".join([f"{n}={s:.3f}" for n, s in all_scores])
-        logger_a.info(f"   {model_name}: [{scores_str}]")
+        logger_b.info(f"   {model_name}: [{scores_str}]")
         
         if target_hits:
             best_target_name, best_target_score = target_hits[0]
@@ -1420,7 +1421,7 @@ def detect_cry_from_full_audio(audio_path):
     if is_cry:
         avg_conf = np.mean([v[1] for v in model_results.values()])
         winner_name = list(model_results.values())[0][0]
-        logger_a.info(f"   🍼 [轨道A 结论] 检出哭声! 说话人={winner_name}, 票数={vote_count}/{len(sv_pipelines)}, 平均置信度={avg_conf:.3f}")
+        logger_b.info(f"   🍼 [轨道A 结论] 检出哭声! 说话人={winner_name}, 票数={vote_count}/{len(sv_pipelines)}, 平均置信度={avg_conf:.3f}")
         all_details.append(f"结论: 哭声检出 ({winner_name}, {vote_count}票, conf={avg_conf:.3f})")
         return True, avg_conf, all_details
     else:
@@ -1558,29 +1559,32 @@ def api_analyze_cry():
                     cleaned_text = cleaned_text[:-3]
                 cleaned_text = cleaned_text.strip()
                 
+                # 移除控制字符（换行、制表符等），只保留可打印字符
+                cleaned_text = ''.join(char for char in cleaned_text if char.isprintable() or char in '\n\r\t')
+                
                 # 尝试解析 JSON（可能不完整）
                 category = "未知"
                 reason = "未知"
                 advice = "无"
                 parse_success = False
                 
-                # 方法1：直接尝试解析整个清理后的文本
+                # 方法1：直接尝试解析整个清理后的文本（允许控制字符）
                 try:
-                    result = _json.loads(cleaned_text)
+                    result = _json.loads(cleaned_text, strict=False)
                     category = result.get("category", "未知")
                     reason = result.get("reason", "未知")
                     advice = result.get("advice", "无")
                     parse_success = True
                     logger_a.info(f"👶 [analyze_cry API] 直接解析成功")
                 except Exception as e1:
-                    # 方法2：尝试找到 JSON 对象
+                    # 方法2：尝试找到 JSON 对象（允许控制字符）
                     try:
                         # 找到第一个 { 和最后一个 }
                         start_idx = cleaned_text.find('{')
                         end_idx = cleaned_text.rfind('}') + 1
                         if start_idx != -1 and end_idx > start_idx:
                             json_str = cleaned_text[start_idx:end_idx]
-                            result = _json.loads(json_str)
+                            result = _json.loads(json_str, strict=False)
                             category = result.get("category", "未知")
                             reason = result.get("reason", "未知")
                             advice = result.get("advice", "无")
@@ -1708,13 +1712,15 @@ def trigger_reprocess():
         script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reprocess_history_cries.py")
         log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
         os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, "history_process.log")
+        asr_a_log_file = os.path.join(log_dir, "asr-a.log")
         
-        # 写入一条启动信息
+        # 写入启动信息到 asr-a.log
         is_targeted = bool(date_param or start_time or end_time)
         display_replace = "True (Targeted)" if is_targeted else force_replace
-        with open(log_file, "w", encoding="utf-8") as f:
-            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 开始执行历史音频重分析(过滤={date_param} {start_time}~{end_time}, 替换={display_replace})...\n")
+        start_msg = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 开始执行历史音频重分析(过滤={date_param} {start_time}~{end_time}, 替换={display_replace})...\n"
+        # 清空并写入 asr-a.log（前端读取这个文件）
+        with open(asr_a_log_file, "w", encoding="utf-8") as f:
+            f.write(start_msg)
             
         args = [sys.executable, "-u", script_path]
         args.append(date_param if date_param else "")
@@ -1726,14 +1732,11 @@ def trigger_reprocess():
         def run_and_cleanup():
             global _history_reprocess_running, _history_reprocess_proc
             try:
-                with open(log_file, "a", encoding="utf-8") as f:
-                    _history_reprocess_proc = subprocess.Popen(
-                        args, 
-                        stdout=f, 
-                        stderr=subprocess.STDOUT,
-                        cwd=os.path.dirname(os.path.abspath(__file__))
-                    )
-                    _history_reprocess_proc.wait()
+                _history_reprocess_proc = subprocess.Popen(
+                    args, 
+                    cwd=os.path.dirname(os.path.abspath(__file__))
+                )
+                _history_reprocess_proc.wait()
             finally:
                 global _track_b_paused
                 _history_reprocess_running = False
@@ -1741,12 +1744,13 @@ def trigger_reprocess():
                 _track_b_paused = False
                 _history_reprocess_lock.release()
                 logger_sys.info("✅ A 轨任务结束，B 轨分析已恢复。")
-                with open(log_file, "a", encoding="utf-8") as f:
-                    f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ 历史音频重分析任务已结束。\n")
+                end_msg = f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ 历史音频重分析任务已结束。\n"
+                with open(asr_a_log_file, "a", encoding="utf-8") as f:
+                    f.write(end_msg)
 
         threading.Thread(target=run_and_cleanup, daemon=True).start()
         
-        logger_a.info(f"✅ 历史音频重分析线程已启动，输出重定向至: {log_file}")
+        logger_a.info(f"✅ 历史音频重分析线程已启动，输出至: {asr_a_log_file}")
         return jsonify({"message": "任务已在后台启动，请查看下方实时日志。"})
     except Exception as e:
         _history_reprocess_running = False
@@ -1927,7 +1931,7 @@ def get_live_status():
                 with open(log_file, "rb") as f:
                     f.seek(0, 2)
                     size = f.tell()
-                    f.seek(max(size - 20000, 0), 0)  # 读取最后大概 20KB
+                    f.seek(max(size - 200000, 0), 0)  # 读取最后大概 200KB（增加到 200KB）
                     logs_bytes = f.read()
                     logs_a = logs_bytes.decode('utf-8', errors='replace')
             except Exception as e:
@@ -2571,10 +2575,10 @@ def transcribe_audio():
                 cry_detected, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp)
                 
                 if cry_detected:
-                    logger_a.info(f"  🍼 [轨道A] 哭声确认! 置信度={cry_confidence:.3f}, 启动报警流程...")
+                    logger_b.info(f"  🍼 [轨道A] 哭声确认! 置信度={cry_confidence:.3f}, 启动报警流程...")
                     
                     if skip_cry_flag:
-                        logger_a.info(f"      [skip_cry] 哭声已标记，历史模式不发送即时邮件")
+                        logger_b.info(f"      [skip_cry] 哭声已标记，历史模式不发送即时邮件")
                     else:
                         # 冷却机制
                         global _last_cry_trigger_time
@@ -2586,7 +2590,7 @@ def transcribe_audio():
                         
                         if in_cooldown:
                             elapsed = int(now - _last_cry_trigger_time)
-                            logger_a.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
+                            logger_b.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
                         else:
                             # ── 正式报警：先保存占位，后续在分析和插图生成后发送邮件 ──
                             
@@ -2603,7 +2607,7 @@ def transcribe_audio():
 
                             # 启动后台延迟分析任务
                             def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det):
-                                logger_a.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
+                                logger_b.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
                                 time.sleep(300)
                                 # 先执行分析
                                 process_baby_cry_async(fname, a_path, 0, dur * 1000, placeholder_id=p_id)
@@ -2617,7 +2621,7 @@ def transcribe_audio():
                                         advice = record.get('advice')
                                         category = record.get('reason_category')
                                 except Exception as e:
-                                    logger_a.warning(f"获取分析结果失败: {e}")
+                                    logger_b.warning(f"获取分析结果失败: {e}")
                                 
                                 # 生成插图
                                 image_url = None
@@ -2915,7 +2919,7 @@ def transcribe_audio():
                 # 【强力补充】如果轨道A检出哭声但轨道B(VAD)没有任何分段，则手动补入一个全局哭声片段
                 # 这样可以确保重分析脚本(reprocess_history_cries.py)能正确感知并进入详情分析阶段
                 if cry_detected and not segments:
-                    logger_a.info("  🍼 [轨道A] 补偿机制启动: VAD未命中，手动添加全局哭声片段。")
+                    logger_b.info("  🍼 [轨道A] 补偿机制启动: VAD未命中，手动添加全局哭声片段。")
                     segments = [{
                         "text": "[Baby Cry Detected]",
                         "start": 0,
