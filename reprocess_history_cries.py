@@ -157,12 +157,24 @@ CRY_CONTEXT_EACH_SIDE = 5  # 前 5 + 后 5 = 最多 10 个上下文文件
 
 
 def parse_file_datetime(filename):
-    """从文件名解析 datetime"""
+    """从文件名解析 datetime - 支持两种格式：YYYY-MM-DD_HH-MM-SS 和 YYYYMMDD-HHMMSS"""
+    # 尝试第一种格式：YYYY-MM-DD_HH-MM-SS
     match = re.search(r'(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})', filename)
     if match:
         try:
             return datetime.datetime.strptime(
                 f"{match.group(1)} {match.group(2).replace('-', ':')}",
+                "%Y-%m-%d %H:%M:%S"
+            )
+        except Exception:
+            pass
+    # 尝试第二种格式：YYYYMMDD-HHMMSS（连字符或无连字符
+    match = re.search(r'(\d{4})[-\s]?(\d{2})[-\s]?(\d{2})[-\s_]?(\d{2})[-\s]?(\d{2})[-\s]?(\d{2})', filename)
+    if match:
+        try:
+            year, month, day, hour, minute, second = match.group(1), match.group(2), match.group(3), match.group(4), match.group(5), match.group(6)
+            return datetime.datetime.strptime(
+                f"{year}-{month}-{day} {hour}:{minute}:{second}",
                 "%Y-%m-%d %H:%M:%S"
             )
         except Exception:
@@ -534,18 +546,24 @@ if __name__ == "__main__":
     # 先统计每个日期的文件数量
     for filepath in files_to_process:
         filename = os.path.basename(filepath)
-        file_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        # 支持两种格式：YYYY-MM-DD 和 YYYYMMDD
+        file_date_match = re.search(r'(\d{4})[-\s]?(\d{2})[-\s]?(\d{2})', filename)
         if file_date_match:
-            file_date = file_date_match.group(1)
+            # 统一格式化为 YYYY-MM-DD
+            year, month, day = file_date_match.group(1), file_date_match.group(2), file_date_match.group(3)
+            file_date = f"{year}-{month}-{day}"
             date_file_count[file_date] = date_file_count.get(file_date, 0) + 1
 
     for idx, filepath in enumerate(files_to_process, 1):
         filename = os.path.basename(filepath)
 
         # 提取当前文件的日期并显示
-        file_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        # 支持两种格式：YYYY-MM-DD 和 YYYYMMDD
+        file_date_match = re.search(r'(\d{4})[-\s]?(\d{2})[-\s]?(\d{2})', filename)
         if file_date_match:
-            file_date = file_date_match.group(1)
+            # 统一格式化为 YYYY-MM-DD
+            year, month, day = file_date_match.group(1), file_date_match.group(2), file_date_match.group(3)
+            file_date = f"{year}-{month}-{day}"
             date_processed_count[file_date] = date_processed_count.get(file_date, 0) + 1
             if file_date != current_processing_date:
                 current_processing_date = file_date
