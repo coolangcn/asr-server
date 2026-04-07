@@ -652,6 +652,30 @@ def get_date_processing_stats() -> dict:
     finally:
         if conn: return_connection(conn)
 
+def get_processed_files_for_date(date_str: str) -> set:
+    """获取特定日期已处理的文件路径集合（用于精确断点续传）"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return set()
+        cursor = conn.cursor()
+        result = set()
+
+        cursor.execute(
+            "SELECT filename FROM processed_files_a WHERE filename LIKE %s",
+            (f'%{date_str}%',)
+        )
+        for row in cursor.fetchall():
+            result.add(row[0])
+
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取日期已处理文件列表失败: {e}")
+        return set()
+    finally:
+        if conn: return_connection(conn)
+
 def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc'), progress_callback=None, log_callback=None) -> int:
     """扫描目录并刷新文件缓存到Redis，返回扫描到的文件数量
 

@@ -826,6 +826,10 @@
                                     <span id="currentDateText" class="text-sm font-bold text-yellow-300 font-mono">--</span>
                                 </div>
                             </div>
+                            <!-- A 轨状态消息 -->
+                            <div id="aTrackStatusMsg" class="hidden mb-3 px-3 py-2 bg-gray-800/50 border border-gray-700/50 rounded-xl">
+                                <div id="aTrackStatusContent" class="text-xs"></div>
+                            </div>
                             <div id="dateQueue" class="flex flex-wrap gap-2">
                                 <!-- 日期方块将动态生成 -->
                                 <div class="text-xs text-gray-500 py-2">等待分析任务...</div>
@@ -855,14 +859,6 @@
                             <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
                             <span class="text-xs text-gray-400 ml-2 font-mono">PROCESS LOGS</span>
                             <span class="text-xs text-gray-500 ml-auto font-mono" id="processStatus"><i class="fa-solid fa-stop-circle mr-1"></i>未运行</span>
-                            
-                            <!-- LIVE MONITORING 和状态标签 -->
-                            <span class="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 animate-pulse text-[10px]">
-                                <i class="fa-solid fa-circle text-[6px] mr-1"></i> LIVE MONITORING
-                            </span>
-                            <span id="triggerStatus" class="text-xs font-bold text-purple-400 px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-fade-in">
-                                <i class="fa-solid fa-clock mr-1"></i>等待分析任务...
-                            </span>
                         </div>
                         <div class="flex-1 bg-[#020617] p-4 overflow-y-auto" id="processLogs" style="color: #10b981; font-family: 'Fira Code', monospace; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;">等待分析任务启动...</div>
                     </div>
@@ -2591,6 +2587,23 @@
         }
 
         // 选择日期方块
+        // 显示 A 轨状态消息（替代原来的 triggerStatus）
+        function showATrackStatus(html, autoHide = false) {
+            const msgEl = document.getElementById('aTrackStatusMsg');
+            const contentEl = document.getElementById('aTrackStatusContent');
+            if (msgEl && contentEl) {
+                if (html) {
+                    contentEl.innerHTML = html;
+                    msgEl.classList.remove('hidden');
+                    if (autoHide) {
+                        setTimeout(() => { msgEl.classList.add('hidden'); }, 5000);
+                    }
+                } else {
+                    msgEl.classList.add('hidden');
+                }
+            }
+        }
+
         function selectDateBlock(dateStr) {
             // 如果点击已选中的日期，则取消选中
             if (dateQueueState.selectedDate === dateStr) {
@@ -2602,9 +2615,17 @@
                     logEl.innerHTML = formatLogLines(lines.reverse());
                     logEl.scrollTop = 0;  // 滚动到顶部看最新日志
                 }
+                // 显示所有宝宝分析结果
+                if (typeof fetchBabyCryEvents === "function") {
+                    fetchBabyCryEvents(true);
+                }
             } else {
                 dateQueueState.selectedDate = dateStr;
                 filterLogsByDate(dateStr);
+                // 只显示该日期的宝宝分析结果
+                if (typeof fetchBabyCryEvents === "function") {
+                    fetchBabyCryEvents(false, dateStr);
+                }
             }
             updateDateQueueDisplay();
         }
@@ -2751,12 +2772,11 @@
                 }
             }
 
-            // 如果有暂停的日期，在 triggerStatus 显示警告
-            const statusLabel = document.getElementById('triggerStatus');
+            // 如果有暂停的日期，显示警告
             if (pausedDates.length > 0) {
-                const pausedInfo = pausedDates.map(d => d.date).join(', ');
-                statusLabel.innerHTML = `<span class="text-orange-400"><i class="fa-solid fa-pause-circle mr-1"></i>检测到 ${pausedDates.length} 天已暂停</span>`;
-                statusLabel.classList.remove('hidden');
+                showATrackStatus(`<span class="text-orange-400"><i class="fa-solid fa-pause-circle mr-1"></i>检测到 ${pausedDates.length} 天已暂停</span>`);
+            } else {
+                showATrackStatus(null);
             }
         }
 
@@ -2768,11 +2788,11 @@
             let newlyCompletedDates = new Set();
 
             // 检查是否需要刷新日期列表：
-            // 1. 第一次调用时
-            // 2. 或者日期列表为空时
-            // 3. 或者检测到任务启动信号时（清空日志后重新开始）
+            // 1. 第一次调用时（allDates 为空）
+            // 2. 只有日期列表为空时才刷新，避免覆盖从日志中设置的 processing 状态
             const hasTaskStartSignal = lines.some(line => line.includes('开始执行历史音频重分析'));
-            const needRefreshDates = !dateQueueState.allDates || dateQueueState.allDates.length === 0 || hasTaskStartSignal;
+            // 只有当日期列表为空时才刷新，其他情况都不刷新
+            let needRefreshDates = !dateQueueState.allDates || dateQueueState.allDates.length === 0;
             if (needRefreshDates) {
                 try {
                     const response = await fetch('/api/scan_dates');
@@ -2787,11 +2807,20 @@
                         for (const dateStr of result.dates) {
                             const info = result.date_info[dateStr];
                             if (info) {
-                                dateQueueState.dates.set(dateStr, {
-                                    status: info.status,
-                                    fileCount: info.fileCount,
-                                    processedCount: info.processedCount
-                                });
+                                // 如果该日期已经在 dates Map 中，并且状态是 'processing'，则保留 processing 状态
+                                const existingState = dateQueueState.dates.get(dateStr);
+                                if (existingState && existingState.status === 'processing') {
+                                    // 保留 processing 状态，只更新其他信息
+                                    existingState.fileCount = info.fileCount;
+                                    existingState.processedCount = info.processedCount;
+                                } else {
+                                    // 否则使用 API 返回的状态
+                                    dateQueueState.dates.set(dateStr, {
+                                        status: info.status,
+                                        fileCount: info.fileCount,
+                                        processedCount: info.processedCount
+                                    });
+                                }
                             }
                         }
 
@@ -2805,6 +2834,7 @@
 
             // 第二遍：分析处理进度（从日志检测正在处理的日期）
             let processingDate = null;
+            let previousProcessingDate = dateQueueState.currentDate; // 保存前一个正在处理的日期
             console.log('[DateQueue] 开始从日志中检测正在处理的日期...');
             lines.forEach(line => {
                 // 查找正在处理的日期（新格式：📅 【正在处理日期】2025-11-08）
@@ -2813,12 +2843,43 @@
                     processingDate = scanMatch[1];
                     console.log('[DateQueue] 从日志中检测到正在处理日期:', processingDate);
                     if (dateQueueState.dates.has(processingDate)) {
+                        // 如果日期切换了，把前一个日期标记为已完成
+                        if (previousProcessingDate && previousProcessingDate !== processingDate) {
+                            console.log('[DateQueue] 检测到日期切换，将前一个日期标记为完成:', previousProcessingDate);
+                            if (dateQueueState.dates.has(previousProcessingDate)) {
+                                const prevState = dateQueueState.dates.get(previousProcessingDate);
+                                if (prevState.status !== 'completed') {
+                                    prevState.status = 'completed';
+                                    newlyCompletedDates.add(previousProcessingDate);
+                                }
+                            }
+                        }
                         dateQueueState.dates.get(processingDate).status = 'processing';
                         dateQueueState.currentDate = processingDate;
                         console.log('[DateQueue] 已设置日期状态为 processing:', processingDate);
                         console.log('[DateQueue] 设置后该日期的完整状态:', dateQueueState.dates.get(processingDate));
                     } else {
                         console.log('[DateQueue] 日期不在 dates Map 中:', processingDate, '可用日期:', Array.from(dateQueueState.dates.keys()));
+                    }
+                }
+
+                // 从文件序号中提取已处理数量（格式：[1/101353]）
+                const fileIndexMatch = line.match(/\[(\d+)\/\d+\]/);
+                if (fileIndexMatch && processingDate && dateQueueState.dates.has(processingDate)) {
+                    const processedCount = parseInt(fileIndexMatch[1]);
+                    const currentState = dateQueueState.dates.get(processingDate);
+                    if (processedCount > currentState.processedCount) {
+                        currentState.processedCount = processedCount;
+                    }
+                }
+
+                // 从心跳日志中提取成功数量（格式：💓 心跳 | 已处理：100/101353 | 成功：95 | 错误：3 | 跳过：2）
+                const heartbeatMatch = line.match(/💓 心跳.*成功：(\d+)/);
+                if (heartbeatMatch && processingDate && dateQueueState.dates.has(processingDate)) {
+                    const successCount = parseInt(heartbeatMatch[1]);
+                    const currentState = dateQueueState.dates.get(processingDate);
+                    if (successCount > currentState.processedCount) {
+                        currentState.processedCount = successCount;
                     }
                 }
 
@@ -2944,7 +3005,6 @@
                     const statusEl = document.getElementById('processStatus');
                     const btn = document.getElementById('reprocessBtn');
                     const stopBtn = document.getElementById('stopReprocessBtn');
-                    const triggerStatus = document.getElementById('triggerStatus');
 
                     // 保存完整日志
                     window.fullLogs = result.logs_a;
@@ -2985,18 +3045,38 @@
                         }
                     }
 
+                    // 快速更新当前处理日期（从日志中立即提取，不等待完整解析）
+                    const lines = result.logs_a.split('\n');
+                    for (const line of lines) {
+                        const scanMatch = line.match(/【正在处理日期】(\d{4}-\d{2}-\d{2})/);
+                        if (scanMatch) {
+                            const quickDate = scanMatch[1];
+                            if (quickDate !== dateQueueState.currentDate) {
+                                dateQueueState.currentDate = quickDate;
+                                // 立即更新当前处理日期显示
+                                const currentProcessingEl = document.getElementById('currentProcessingDate');
+                                const currentDateTextEl = document.getElementById('currentDateText');
+                                if (currentProcessingEl && currentDateTextEl) {
+                                    currentProcessingEl.classList.remove('hidden');
+                                    currentDateTextEl.textContent = quickDate;
+                                }
+                            }
+                            break;
+                        }
+                    }
+
                     // 如果有选中日期，显示过滤后的日志；否则显示全部（最新在上）
                     if (dateQueueState.selectedDate) {
-                        const lines = result.logs_a.split('\n');
-                        const filteredLines = lines.filter(line => line.trim() && line.includes(dateQueueState.selectedDate));
+                        const linesLog = result.logs_a.split('\n');
+                        const filteredLines = linesLog.filter(line => line.trim() && line.includes(dateQueueState.selectedDate));
                         logEl.innerHTML = formatLogLines(filteredLines.reverse());
                     } else {
-                        const lines = result.logs_a.split('\n').filter(line => line.trim());
-                        logEl.innerHTML = formatLogLines(lines.reverse());
+                        const linesLog = result.logs_a.split('\n').filter(line => line.trim());
+                        logEl.innerHTML = formatLogLines(linesLog.reverse());
                     }
                     logEl.scrollTop = 0;  // 滚动到顶部看最新日志
 
-                    // 更新日期队列（异步）
+                    // 更新日期队列（异步，完整解析）
                     const prevProcessingDate = dateQueueState.currentDate;
                     await parseDateQueueFromLogs(result.logs_a);
 
@@ -3009,6 +3089,10 @@
                         logEl.innerHTML = formatLogLines(filteredLines.reverse());
                         logEl.scrollTop = 0;
                         updateDateQueueDisplay();
+                        // 刷新宝宝分析结果，只显示当前日期的结果
+                        if (typeof fetchBabyCryEvents === "function") {
+                            fetchBabyCryEvents(false, dateQueueState.currentDate);
+                        }
                     }
 
                     // 如果检测到"分析任务已结束"，自动刷新数据
@@ -3124,7 +3208,6 @@
         async function stopReprocess(silent = false) {
             const btn = document.getElementById('reprocessBtn');
             const stopBtn = document.getElementById('stopReprocessBtn');
-            const statusLabel = document.getElementById('triggerStatus');
             
             if (!silent) {
                 stopBtn.disabled = true;
@@ -3134,7 +3217,7 @@
                     const response = await fetch('/api/stop_reprocess', { method: 'POST' });
                     const result = await response.json();
                     if (response.ok) {
-                        statusLabel.innerHTML = '<span class="text-gray-400"><i class="fa-solid fa-hand mr-2"></i>分析任务已中止</span>';
+                        showATrackStatus('<span class="text-gray-400"><i class="fa-solid fa-hand mr-2"></i>分析任务已中止</span>');
                     }
                 } catch (e) {
                     console.error("Stop process error:", e);
@@ -3287,11 +3370,7 @@
         }
 
         function clearStatusLabel() {
-            // 清空状态标签（清除"已切换到全量分析模式"）
-            const statusLabel = document.getElementById('triggerStatus');
-            if (statusLabel) {
-                statusLabel.innerHTML = '';
-            }
+            showATrackStatus(null);
         }
 
         function clearBatchProgress() {
@@ -3358,10 +3437,7 @@
             clearBatchProgress();
             
             // 显示全量分析状态
-            const statusLabel = document.getElementById('triggerStatus');
-            if (statusLabel) {
-                statusLabel.innerHTML = '<span class="text-purple-400 font-bold"><i class="fa-solid fa-check mr-2"></i>已切换到全量分析模式</span>';
-            }
+            showATrackStatus('<span class="text-purple-400 font-bold"><i class="fa-solid fa-check mr-2"></i>已切换到全量分析模式</span>');
         }
 
         function saveLastTimeRange() {
@@ -3424,8 +3500,7 @@
             const endTimeInput = document.getElementById('reprocessEndTime').value;
             
             if (startTimeInput && endTimeInput && startTimeInput > endTimeInput) {
-                const statusLabel = document.getElementById('triggerStatus');
-                statusLabel.innerHTML = '<span class="text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation mr-2"></i>开始时间不能晚于结束时间！</span>';
+                showATrackStatus('<span class="text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation mr-2"></i>开始时间不能晚于结束时间！</span>');
                 return;
             }
             
@@ -3441,15 +3516,13 @@
             if (startTime) startTime = startTime.replace(/:/g, '-');
             if (endTime) endTime = endTime.replace(/:/g, '-');
             
-            const statusLabel = document.getElementById('triggerStatus');
-            
             // UI 状态切换
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i>拉起中...';
             btn.classList.replace('from-blue-600', 'from-gray-600');
             btn.classList.replace('to-indigo-600', 'to-gray-600');
             
-            statusLabel.innerHTML = '<span class="animate-pulse text-blue-400 font-bold"><i class="fa-solid fa-satellite-dish mr-2"></i>正在拉起独立云端分析引擎...</span>';
+            showATrackStatus('<span class="animate-pulse text-blue-400 font-bold"><i class="fa-solid fa-satellite-dish mr-2"></i>正在拉起独立云端分析引擎...</span>');
             if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);  // 5 秒一次，减少扫描频率
             
             try {
@@ -3467,7 +3540,7 @@
                 const result = await response.json();
                 
                 if (response.ok) {
-                    statusLabel.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-check-double mr-2"></i>任务拉起成功</span> `;
+                    showATrackStatus(`<span class="text-emerald-400 font-bold"><i class="fa-solid fa-check-double mr-2"></i>任务拉起成功</span> `);
                     // 按钮保持禁用，直到手动停止或检测到结束
                     // 注意：不要清空 dateQueueState，让 parseDateQueueFromLogs 自己处理
                     // 我们只需要确保下次调用时会重新从 API 获取日期
@@ -3479,14 +3552,14 @@
                         }
                     }, 500);
                 } else {
-                    statusLabel.innerHTML = `<span class="text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation mr-2"></i>触发失败: ${result.error}</span>`;
+                    showATrackStatus(`<span class="text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation mr-2"></i>触发失败: ${result.error}</span>`);
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fa-solid fa-bolt text-yellow-300 mr-2"></i>重新重定向';
                     btn.classList.replace('from-gray-600', 'from-blue-600');
                     btn.classList.replace('to-gray-600', 'to-indigo-600');
                 }
             } catch (e) {
-                statusLabel.innerHTML = '<span class="text-red-400 font-bold"><i class="fa-solid fa-wifi-slash mr-2"></i>网络连接失败</span>';
+                showATrackStatus('<span class="text-red-400 font-bold"><i class="fa-solid fa-wifi-slash mr-2"></i>网络连接失败</span>');
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fa-solid fa-bolt text-yellow-300 mr-2"></i>定向检索';
             }
@@ -3495,7 +3568,6 @@
         async function stopReprocess() {
             const stopBtn = document.getElementById('stopReprocessBtn');
             const startBtn = document.getElementById('reprocessBtn');
-            const statusLabel = document.getElementById('triggerStatus');
             
             if (!stopBtn || !startBtn) return;
             
@@ -3513,7 +3585,7 @@
                         bcLogInterval = null;
                     }
                     
-                    statusLabel.innerHTML = `<span class="text-orange-400 font-bold"><i class="fa-solid fa-hand mr-2"></i>${result.message || '分析任务已手动停止'}</span>`;
+                    showATrackStatus(`<span class="text-orange-400 font-bold"><i class="fa-solid fa-hand mr-2"></i>${result.message || '分析任务已手动停止'}</span>`);
                     
                     // 恢复主按钮状态
                     startBtn.disabled = false;
@@ -3522,7 +3594,7 @@
                     startBtn.classList.replace('to-gray-600', 'to-indigo-600');
                 }
             } catch (e) {
-                statusLabel.innerHTML = '<span class="text-red-400 font-bold">停止请求失败</span>';
+                showATrackStatus('<span class="text-red-400 font-bold">停止请求失败</span>');
             } finally {
                 stopBtn.disabled = false;
                 stopBtn.innerHTML = '<i class="fa-solid fa-stop mr-2"></i>马上停止';
@@ -3714,17 +3786,17 @@
             container.innerHTML = html;
         }
 
-        async function fetchBabyCryEvents(silent = false) {
+        async function fetchBabyCryEvents(silent = false, targetDate = null) {
             try {
-                const dateVal = document.getElementById('reprocessDate')?.value;
+                const dateVal = targetDate || document.getElementById('reprocessDate')?.value;
                 const startTimeVal = document.getElementById('reprocessStartTime')?.value;
                 const endTimeVal = document.getElementById('reprocessEndTime')?.value;
                 
                 let url = '/api/cry_events?1=1';
                 // silent=true 时不应用日期筛选，显示所有记录
                 if (!silent && dateVal) url += `&date=${encodeURIComponent(dateVal)}`;
-                if (!silent && startTimeVal) url += `&start_time=${encodeURIComponent(startTimeVal.replace(':', '-'))}`;
-                if (!silent && endTimeVal) url += `&end_time=${encodeURIComponent(endTimeVal.replace(':', '-'))}`;
+                if (!silent && startTimeVal && !targetDate) url += `&start_time=${encodeURIComponent(startTimeVal.replace(':', '-'))}`;
+                if (!silent && endTimeVal && !targetDate) url += `&end_time=${encodeURIComponent(endTimeVal.replace(':', '-'))}`;
 
                 const response = await fetch(url);
                 const data = await response.json();

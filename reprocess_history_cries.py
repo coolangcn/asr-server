@@ -8,7 +8,7 @@ import datetime
 import logging
 import functools
 from logging.handlers import TimedRotatingFileHandler
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_file_cache_from_redis, get_file_count_from_redis
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis
 
 # 导入邮件模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -158,7 +158,7 @@ CRY_CONTEXT_EACH_SIDE = 5  # 前 5 + 后 5 = 最多 10 个上下文文件
 
 def parse_file_datetime(filename):
     """从文件名解析 datetime - 支持两种格式：YYYY-MM-DD_HH-MM-SS 和 YYYYMMDD-HHMMSS"""
-    # 尝试第一种格式：YYYY-MM-DD_HH-MM-SS
+    # 先尝试原来的格式：YYYY-MM-DD_HH-MM-SS
     match = re.search(r'(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})', filename)
     if match:
         try:
@@ -168,13 +168,12 @@ def parse_file_datetime(filename):
             )
         except Exception:
             pass
-    # 尝试第二种格式：YYYYMMDD-HHMMSS（连字符或无连字符
-    match = re.search(r'(\d{4})[-\s]?(\d{2})[-\s]?(\d{2})[-\s_]?(\d{2})[-\s]?(\d{2})[-\s]?(\d{2})', filename)
+    # 再尝试 YYYYMMDD-HHMMSS 格式
+    match = re.search(r'(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})', filename)
     if match:
         try:
-            year, month, day, hour, minute, second = match.group(1), match.group(2), match.group(3), match.group(4), match.group(5), match.group(6)
             return datetime.datetime.strptime(
-                f"{year}-{month}-{day} {hour}:{minute}:{second}",
+                f"{match.group(1)}-{match.group(2)}-{match.group(3)} {match.group(4)}:{match.group(5)}:{match.group(6)}",
                 "%Y-%m-%d %H:%M:%S"
             )
         except Exception:
@@ -451,19 +450,41 @@ if __name__ == "__main__":
 
     # === 智能续传优化：跳过已完成的日期，对部分处理的日期从断点继续 ===
     if not force_replace and date_stats:
+        def extract_date_from_filepath(filepath):
+            """从文件路径中提取日期，支持多种格式（与 get_date_processing_stats 保持一致）"""
+            # 格式1: 路径中 /YYYY-MM-DD/
+            m = re.search(r'/(\d{4}-\d{2}-\d{2})/', filepath)
+            if m:
+                return m.group(1)
+            # 格式2: 文件名中 _-YYYY-MM-DD_-_ 或 -YYYY-MM-DD_-
+            basename = os.path.basename(filepath)
+            m = re.search(r'[_-](\d{4}-\d{2}-\d{2})[_-]', basename)
+            if m:
+                return m.group(1)
+            # 格式3: 文件名中 YYYYMMDD (无横杠，如 recording-20251115-125844.m4a)
+            m = re.search(r'(\d{4})(\d{2})(\d{2})[-_.]', basename)
+            if m and len(m.group(0)) >= 10:
+                return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+            return None
+
         # 按日期分组并排序
         date_files = {}
+        unmatched_files = []  # 无法识别日期的文件
         for f in files_to_process:
-            m = re.search(r'/(\d{4}-\d{2}-\d{2})/', f)
-            if m:
-                d = m.group(1)
+            d = extract_date_from_filepath(f)
+            if d:
                 if d not in date_files:
                     date_files[d] = []
                 date_files[d].append(f)
+            else:
+                unmatched_files.append(f)
+
+        if unmatched_files:
+            log_detail(f"[!] 智能续传：有 {len(unmatched_files)} 个文件无法识别日期，将重新处理", 'warning')
 
         # 对每个日期的文件按文件名排序（确保顺序一致）
         for d in date_files:
-            date_files[d].sort()
+            date_files[d].sort(key=os.path.basename)
 
         completed_dates = []
         files_to_process = []
@@ -477,10 +498,12 @@ if __name__ == "__main__":
                 # 日期完全处理完
                 completed_dates.append(d)
             elif processed > 0:
-                # 部分处理，从断点继续
-                remaining = files[processed:]
+                # 部分处理，用精确文件匹配确定断点（避免排序不一致导致错位）
+                processed_set = get_processed_files_for_date(d)
+                remaining = [f for f in files if f not in processed_set]
+                actual_skip = total - len(remaining)
                 files_to_process.extend(remaining)
-                partial_dates.append(f"{d}({processed}/{total})")
+                partial_dates.append(f"{d}({actual_skip}/{total})")
             else:
                 # 未处理过
                 files_to_process.extend(files)
@@ -489,6 +512,10 @@ if __name__ == "__main__":
             log_detail(f"[*] 智能续传：跳过 {len(completed_dates)} 个已完成日期", 'info')
         if partial_dates:
             log_detail(f"[*] 智能续传：{len(partial_dates)} 个日期从断点继续: {', '.join(partial_dates)}", 'info')
+
+        # 无法识别日期的文件也加入待处理列表
+        if unmatched_files:
+            files_to_process.extend(unmatched_files)
 
         log_detail(f"[*] 智能续传：实际需要处理 {len(files_to_process)} 个文件", 'info')
     # ===
@@ -558,12 +585,17 @@ if __name__ == "__main__":
         filename = os.path.basename(filepath)
 
         # 提取当前文件的日期并显示
-        # 支持两种格式：YYYY-MM-DD 和 YYYYMMDD
-        file_date_match = re.search(r'(\d{4})[-\s]?(\d{2})[-\s]?(\d{2})', filename)
+        # 先尝试原来的格式：YYYY-MM-DD
+        file_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
         if file_date_match:
-            # 统一格式化为 YYYY-MM-DD
-            year, month, day = file_date_match.group(1), file_date_match.group(2), file_date_match.group(3)
-            file_date = f"{year}-{month}-{day}"
+            file_date = file_date_match.group(1)
+        else:
+            # 再尝试 YYYYMMDD 格式
+            file_date_match = re.search(r'(\d{4})(\d{2})(\d{2})', filename)
+            if file_date_match:
+                file_date = f"{file_date_match.group(1)}-{file_date_match.group(2)}-{file_date_match.group(3)}"
+        
+        if file_date_match:
             date_processed_count[file_date] = date_processed_count.get(file_date, 0) + 1
             if file_date != current_processing_date:
                 current_processing_date = file_date

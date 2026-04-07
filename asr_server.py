@@ -808,12 +808,12 @@ def call_gemini_image_api(prompt):
         logger_a.error(f"🎨 [插图生成] 异常堆栈：{traceback.format_exc()}")
         return None
 
-def process_baby_cry_async(filename, audio_path, start_time, end_time, placeholder_id=None):
+def process_baby_cry_async(filename, audio_path, start_time, end_time, placeholder_id=None, cry_conf=None, cry_det=None):
     """异步处理宝宝哭声分析，支持加载前后5分钟录音作为上下文"""
     import time, re, json
     time.sleep(1) # 等待文件落盘
     if not os.path.exists(audio_path):
-        return None, None
+        return None, None, None
         
     logger_a.info(f"👶 [BabyCry] 开始收集上下文音频并发送分析... ({start_time}ms - {end_time}ms)")
     
@@ -837,9 +837,9 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
     
     prompt = "以下是多段连续的录音（时间顺序排列），其中包含了两岁半宝宝的哭泣声（位于中间的某段）。请结合完整的上下文音频（前后高达5分钟的情境），综合推理宝宝在这段时间哭泣的真正原因（如困倦Sleepy、饥饿Hungry、情绪发泄Frustration、疼痛Pain、要求未被满足等），并给出针对此时情境的安抚建议。请严格按如下JSON格式返回：{\"category\": \"核心原因简短分类(如：困倦/饥饿/疼痛/情绪等)\", \"reason\": \"结合上下文的深度分析原因\", \"advice\": \"针对此时情境的安抚建议\"}"
     response_text = call_gemini_audio_api(audio_paths_to_send, prompt)
-    
+
     if not response_text:
-        return None, None
+        return None, None, None
         
     try:
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
@@ -856,17 +856,18 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
                 rel_audio_path = "/" + os.path.relpath(audio_path, FileMonitorConfig.SOURCE_DIR)
             
             if placeholder_id:
-                update_cry_analysis(placeholder_id, reason, advice, 
-                                  reason_category=category, event_files=audio_paths_to_send)
+                update_cry_analysis(placeholder_id, reason, advice,
+                                  reason_category=category, event_files=audio_paths_to_send,
+                                  confidence=cry_conf, details=cry_det)
             else:
                 save_cry_analysis(filename, start_time/1000.0, end_time/1000.0, reason, advice, 
                                   reason_category=category, event_files=audio_paths_to_send, 
                                   audio_path=rel_audio_path)
             logger_a.info(f"👶 [宝宝哭声深度分析] 分类: {category}, 原因: {reason[:50]}..., 路径: {rel_audio_path}")
-            return reason, advice
+            return reason, advice, category
     except Exception as e:
         logger_a.error(f"  [BabyCry 解析错误] {e}")
-    return None, None
+    return None, None, None
 
 def extract_conversation_topics(full_text, segments):
     """提取对话主题"""
@@ -2607,12 +2608,24 @@ def transcribe_audio():
 
                             # 启动后台延迟分析任务
                             def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det):
+                                # ── 第1封邮件: 即时报警 (立即发送) ──
+                                logger_a.info(f"📧 [邮件] 发送即时报警邮件...")
+                                send_cry_alert_email(
+                                    fname, cry_conf, cry_det,
+                                    reason="正在深度分析中，请稍候...",
+                                    advice="系统正在收集完整上下文音频，5 分钟后将发送详细分析报告",
+                                    category="analyzing",
+                                    image_data=None
+                                )
+                                
                                 logger_b.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
                                 time.sleep(300)
-                                # 先执行分析
-                                process_baby_cry_async(fname, a_path, 0, dur * 1000, placeholder_id=p_id)
-                                # 分析并生成插图，完成后发送邮件
-                                reason, advice, category = None, None, None
+                                
+                                # 执行分析并获取结果
+                                logger_b.info(f"🔍 [BabyCry] 开始执行深度分析...")
+                                reason, advice, category = process_baby_cry_async(fname, a_path, 0, dur * 1000, placeholder_id=p_id, cry_conf=cry_conf, cry_det=cry_det)
+                                
+                                # 验证数据库更新是否成功
                                 try:
                                     from db_manager import get_baby_cry_event_by_id
                                     record = get_baby_cry_event_by_id(p_id)
@@ -2620,13 +2633,16 @@ def transcribe_audio():
                                         reason = record.get('reason')
                                         advice = record.get('advice')
                                         category = record.get('reason_category')
+                                        logger_b.info(f"✅ [BabyCry] 数据库记录已更新: category={category}, reason={reason[:50] if reason else 'None'}...")
+                                    else:
+                                        logger_b.error(f"❌ [BabyCry] 数据库记录未找到 (ID={p_id})")
                                 except Exception as e:
-                                    logger_b.warning(f"获取分析结果失败: {e}")
-                                
+                                    logger_b.error(f"❌ [BabyCry] 验证数据库更新失败: {e}")
+
                                 # 生成插图
                                 image_url = None
                                 try:
-                                    if reason:
+                                    if reason and reason != "未知":
                                         logger_a.info(f"🎨 [邮件插图] 开始生成邮件插图...")
                                         image_prompt = (
                                             f"创作一幅温暖治愈的儿童绘本风格卡通插图。"
@@ -2640,11 +2656,17 @@ def transcribe_audio():
                                         image_url = call_gemini_image_api(image_prompt)
                                         if image_url:
                                             logger_a.info(f"🎨 [邮件插图] ✅ 插图生成成功!")
+                                        else:
+                                            logger_a.warning(f"🎨 [邮件插图] 生成返回 None")
+                                    else:
+                                        logger_a.warning(f"🎨 [邮件插图] 跳过生成：reason 为空 (reason={reason})")
                                 except Exception as e:
                                     logger_a.error(f"🎨 [邮件插图] 生成失败: {e}")
-                                
-                                # 发送邮件
-                                logger_a.info(f"📧 [邮件] 发送哭声警报邮件...")
+                                    import traceback
+                                    logger_a.error(f"🎨 [邮件插图] 异常堆栈: {traceback.format_exc()}")
+
+                                # ── 第2封邮件: 完整深度分析报告 ──
+                                logger_a.info(f"📧 [邮件] 发送深度分析完整报告邮件...")
                                 send_cry_alert_email(
                                     fname, cry_conf, cry_det,
                                     reason=reason, advice=advice, category=category,
