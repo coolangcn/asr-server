@@ -451,20 +451,37 @@ if __name__ == "__main__":
     # === 智能续传优化：跳过已完成的日期，对部分处理的日期从断点继续 ===
     if not force_replace and date_stats:
         def extract_date_from_filepath(filepath):
-            """从文件路径中提取日期，支持多种格式（与 get_date_processing_stats 保持一致）"""
+            """从文件路径中提取日期，支持多种格式（与 get_date_processing_stats 保持一致）
+            
+            支持的格式:
+                1. /path/2025-11-15/file.m4a (日期文件夹)
+                2. TermuxAudioRecording_2025-11-15_12-56-54.m4a (有横杠)
+                3. recording-20251115-125944.m4a (无横杠 YYYYMMDD)
+                4. recording-2025-11-15-125944.m4a (混合格式)
+            """
             # 格式1: 路径中 /YYYY-MM-DD/
             m = re.search(r'/(\d{4}-\d{2}-\d{2})/', filepath)
             if m:
                 return m.group(1)
-            # 格式2: 文件名中 _-YYYY-MM-DD_-_ 或 -YYYY-MM-DD_-
+            
             basename = os.path.basename(filepath)
+            
+            # 格式2: 文件名中 _-YYYY-MM-DD_-_ 或 -YYYY-MM-DD_-
             m = re.search(r'[_-](\d{4}-\d{2}-\d{2})[_-]', basename)
             if m:
                 return m.group(1)
+            
             # 格式3: 文件名中 YYYYMMDD (无横杠，如 recording-20251115-125844.m4a)
             m = re.search(r'(\d{4})(\d{2})(\d{2})[-_.]', basename)
             if m and len(m.group(0)) >= 10:
                 return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+            
+            # 格式4: 文件名中包含 YYYY-MM-DD 但分隔符不固定 (混合格式)
+            # 示例: recording-2025-11-15-125944.m4a
+            m = re.search(r'(\d{4}-\d{2}-\d{2})', basename)
+            if m:
+                return m.group(1)
+            
             return None
 
         # 按日期分组并排序
@@ -494,16 +511,21 @@ if __name__ == "__main__":
             processed = date_stats.get(d, 0)
             total = len(files)
 
-            if processed >= total and total > 0:
-                # 日期完全处理完
+            # 【修复】始终使用精确文件匹配，而非依赖数量比较
+            # 原因：Redis 缓存和数据库可能不同步，数量比较会导致误判
+            processed_set = get_processed_files_for_date(d)
+            # 关键修复：files 中是完整路径，processed_set 中是文件名
+            # 必须提取文件名后再比较！
+            remaining = [f for f in files if os.path.basename(f) not in processed_set]
+            actual_processed = total - len(remaining)
+
+            if actual_processed >= total and total > 0:
+                # 日期完全处理完（所有文件都在 processed_set 中）
                 completed_dates.append(d)
-            elif processed > 0:
-                # 部分处理，用精确文件匹配确定断点（避免排序不一致导致错位）
-                processed_set = get_processed_files_for_date(d)
-                remaining = [f for f in files if f not in processed_set]
-                actual_skip = total - len(remaining)
+            elif actual_processed > 0:
+                # 部分处理，只处理剩余文件
                 files_to_process.extend(remaining)
-                partial_dates.append(f"{d}({actual_skip}/{total})")
+                partial_dates.append(f"{d}({actual_processed}/{total})")
             else:
                 # 未处理过
                 files_to_process.extend(files)

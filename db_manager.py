@@ -653,7 +653,20 @@ def get_date_processing_stats() -> dict:
         if conn: return_connection(conn)
 
 def get_processed_files_for_date(date_str: str) -> set:
-    """获取特定日期已处理的文件路径集合（用于精确断点续传）"""
+    """获取特定日期已处理的文件路径集合（用于精确断点续传）
+    
+    Args:
+        date_str: 日期字符串，格式: YYYY-MM-DD
+    
+    Returns:
+        已处理文件的完整路径集合
+    
+    支持的文件名格式:
+        1. /path/2025-11-15/file.m4a (日期文件夹)
+        2. TermuxAudioRecording_2025-11-15_12-56-54.m4a (有横杠)
+        3. recording-20251115-125944.m4a (无横杠 YYYYMMDD)
+        4. recording-2025-11-15-125944.m4a (混合格式)
+    """
     conn = None
     try:
         conn = get_connection()
@@ -661,9 +674,40 @@ def get_processed_files_for_date(date_str: str) -> set:
         cursor = conn.cursor()
         result = set()
 
+        # 格式1: 路径中包含 /YYYY-MM-DD/ (日期文件夹)
+        # 示例: /Volumes/download/records/Sony-2/processed/2025-11-15/file.m4a
         cursor.execute(
             "SELECT filename FROM processed_files_a WHERE filename LIKE %s",
-            (f'%{date_str}%',)
+            (f'%/{date_str}/%',)
+        )
+        for row in cursor.fetchall():
+            result.add(row[0])
+
+        # 格式2: 文件名中包含 _YYYY-MM-DD_ 或 -YYYY-MM-DD- (有横杠格式)
+        # 示例: TermuxAudioRecording_2025-11-15_12-56-54.m4a
+        cursor.execute(
+            "SELECT filename FROM processed_files_a WHERE filename ~ %s",
+            (f'[_-]{date_str}[_-]',)
+        )
+        for row in cursor.fetchall():
+            result.add(row[0])
+
+        # 格式3: 文件名中包含 YYYYMMDD (无横杠格式)
+        # 示例: recording-20251115-125944.m4a
+        date_no_dash = date_str.replace('-', '')  # '2025-11-15' → '20251115'
+        cursor.execute(
+            "SELECT filename FROM processed_files_a WHERE filename ~ %s",
+            (date_no_dash,)
+        )
+        for row in cursor.fetchall():
+            result.add(row[0])
+
+        # 格式4: 文件名中包含 YYYY-MM-DD 但前后分隔符不固定 (混合格式)
+        # 示例: recording-2025-11-15-125944.m4a 或 backup_2025-11-15_old.m4a
+        # 使用更宽松的正则：只要包含完整日期即可
+        cursor.execute(
+            "SELECT filename FROM processed_files_a WHERE filename ~ %s",
+            (date_str,)
         )
         for row in cursor.fetchall():
             result.add(row[0])
@@ -672,6 +716,8 @@ def get_processed_files_for_date(date_str: str) -> set:
         return result
     except Exception as e:
         print(f"  [DB Error] 获取日期已处理文件列表失败: {e}")
+        import traceback
+        traceback.print_exc()
         return set()
     finally:
         if conn: return_connection(conn)
