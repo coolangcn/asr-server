@@ -2497,8 +2497,8 @@
         // 页面加载时初始化日期队列
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(fetchBcLogs, 500);
-            // 启动定时轮询（5秒一次）
-            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);
+            // 启动定时轮询（10秒一次，减少服务器压力）
+            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 10000);
             checkRefreshCacheStatusOnLoad();
         });
 
@@ -2517,7 +2517,7 @@
 
                     btn.disabled = true;
                     statusDiv.classList.remove('hidden');
-                    if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);
+                    if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 10000);
                     startRefreshCachePolling(btn, originalHTML, statusDiv, progressDiv, timeDiv);
                 }
             } catch (e) {
@@ -2531,7 +2531,8 @@
             currentDate: null,
             allDates: [], // 所有找到的日期（按日期升序排列）
             selectedDate: null, // 当前选中的日期（用于过滤日志）
-            showAllPending: true // 是否显示所有待处理日期
+            showAllPending: true, // 是否显示所有待处理日期
+            lastScanDatesTime: 0 // 上次调用 scan_dates 的时间戳（用于节流）
         };
 
         // 创建日期方块
@@ -2792,8 +2793,13 @@
             // 2. 只有日期列表为空时才刷新，避免覆盖从日志中设置的 processing 状态
             const hasTaskStartSignal = lines.some(line => line.includes('开始执行历史音频重分析'));
             // 只有当日期列表为空时才刷新，其他情况都不刷新
-            let needRefreshDates = !dateQueueState.allDates || dateQueueState.allDates.length === 0;
+            // 【节流】30秒内最多只调用一次 scan_dates
+            const now = Date.now();
+            let needRefreshDates = (!dateQueueState.allDates || dateQueueState.allDates.length === 0) &&
+                                   (now - dateQueueState.lastScanDatesTime > 30000);
+
             if (needRefreshDates) {
+                dateQueueState.lastScanDatesTime = now; // 更新时间戳
                 try {
                     const response = await fetch('/api/scan_dates');
                     const result = await response.json();
@@ -2949,8 +2955,13 @@
             }
 
             // 如果检测到正在处理的日期不在已加载列表中，重新从 API 加载所有日期
-            if (processingDate && !dateQueueState.dates.has(processingDate)) {
+            // 【节流】30秒内最多只调用一次 scan_dates
+            const now2 = Date.now();
+            const canCallScanDates = now2 - dateQueueState.lastScanDatesTime > 30000; // 30秒间隔
+
+            if (processingDate && !dateQueueState.dates.has(processingDate) && canCallScanDates) {
                 console.log(`[AutoLoad] 检测到新日期 ${processingDate} 不在已加载列表，重新加载所有日期`);
+                dateQueueState.lastScanDatesTime = now2; // 更新时间戳
                 try {
                     const response = await fetch('/api/scan_dates');
                     const result = await response.json();
@@ -3271,7 +3282,7 @@
                 const result = await response.json();
 
                 if (result.status === 'started' || result.status === 'running') {
-                    if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);
+                    if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 10000);
                     startRefreshCachePolling(btn, originalHTML, statusDiv, progressDiv, timeDiv);
                 } else {
                     progressDiv.textContent = '启动失败：' + result.message;
@@ -3523,7 +3534,7 @@
             btn.classList.replace('to-indigo-600', 'to-gray-600');
             
             showATrackStatus('<span class="animate-pulse text-blue-400 font-bold"><i class="fa-solid fa-satellite-dish mr-2"></i>正在拉起独立云端分析引擎...</span>');
-            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 5000);  // 5 秒一次，减少扫描频率
+            if (!bcLogInterval) bcLogInterval = setInterval(fetchBcLogs, 10000);  // 10 秒一次，减少服务器压力
             
             try {
                 let url = '/api/trigger_reprocess?1=1';

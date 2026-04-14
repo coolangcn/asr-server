@@ -566,6 +566,9 @@
                 <button class="action-btn start" id="aStartBtn" onclick="startHistoryTask()">
                     <i class="fa-solid fa-play"></i> 启动
                 </button>
+                <button class="action-btn refresh" id="aRefreshBtn" onclick="refreshFileCache()">
+                    <i class="fa-solid fa-rotate"></i> 刷盘
+                </button>
                 <button class="action-btn stop" id="aStopBtn" onclick="stopHistoryTask()" disabled>
                     <i class="fa-solid fa-stop"></i> 停止
                 </button>
@@ -696,7 +699,7 @@
         <!-- 日志 -->
         <div class="log-card">
             <div class="log-header">
-                <h3><i class="fa-solid fa-terminal"></i> 实时日志</h3>
+                <h3><i class="fa-solid fa-terminal"></i> <span id="logTitleText">A轨日志</span></h3>
                 <button class="log-toggle" onclick="toggleLogs()">
                     <span id="logToggleText">展开</span> <i class="fa-solid fa-chevron-down"></i>
                 </button>
@@ -715,6 +718,39 @@
     <script>
         let currentTrack = 'a';
         let logsExpanded = false;
+        let lastRefreshTaskStatus = null;
+
+        function updateLogTitle(title) {
+            const logTitleText = document.getElementById('logTitleText');
+            if (logTitleText) {
+                logTitleText.textContent = title;
+            }
+        }
+
+        function getCurrentLogs(statusData, liveLogsData, refreshStatusData) {
+            const refreshTask = refreshStatusData.task || {};
+            const refreshLogs = refreshStatusData.logs || '';
+            const isRefreshRunning = !!refreshTask.running || refreshTask.status === 'running';
+
+            if (currentTrack === 'a') {
+                if (isRefreshRunning && refreshLogs.trim()) {
+                    return {
+                        title: '刷盘日志',
+                        logs: refreshLogs
+                    };
+                }
+
+                return {
+                    title: 'A轨日志',
+                    logs: statusData.logs_a || ''
+                };
+            }
+
+            return {
+                title: 'B轨日志',
+                logs: liveLogsData.logs || ''
+            };
+        }
 
         function switchTrack(track) {
             currentTrack = track;
@@ -760,6 +796,59 @@
             }
             btn.disabled = false;
             btn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止';
+        }
+
+        function updateRefreshButton(task = {}) {
+            const refreshBtn = document.getElementById('aRefreshBtn');
+            if (!refreshBtn) return;
+
+            const taskStatus = task.status || null;
+            const isRunning = !!task.running || taskStatus === 'running';
+
+            if (isRunning) {
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 刷盘中';
+            } else {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> 刷盘';
+            }
+
+            if (lastRefreshTaskStatus === 'running' && taskStatus === 'completed') {
+                showToast(task.message || '刷盘完成', 'success');
+            } else if (lastRefreshTaskStatus === 'running' && taskStatus === 'error') {
+                showToast(task.message || '刷盘失败', 'error');
+            }
+
+            lastRefreshTaskStatus = taskStatus;
+        }
+
+        async function refreshFileCache() {
+            const refreshBtn = document.getElementById('aRefreshBtn');
+            if (!refreshBtn || refreshBtn.disabled) return;
+
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 刷盘中';
+
+            try {
+                const response = await fetch('/api/refresh_file_cache', { method: 'POST' });
+                const data = await response.json();
+
+                updateRefreshButton(data.task || {});
+
+                if (data.status === 'started') {
+                    showToast(data.message || '刷盘任务已启动', 'success');
+                } else if (data.status === 'running') {
+                    showToast(data.message || '刷盘任务已在运行中', 'info');
+                } else {
+                    showToast(data.message || '刷盘请求已发送', response.ok ? 'success' : 'error');
+                }
+
+                fetchDataWithLock();
+            } catch (e) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> 刷盘';
+                showToast('刷盘失败: ' + e.message, 'error');
+            }
         }
 
         // B轨操作
@@ -832,17 +921,25 @@
 
         async function fetchData() {
             try {
-                // 获取 A/B 轨状态和 A 轨日志（已合并到 live_status 接口）
-                const statusRes = await fetch('/api/live_status');
-                const statusData = await statusRes.json();
+                const [statusRes, liveLogsRes, refreshStatusRes] = await Promise.all([
+                    fetch('/api/live_status'),
+                    fetch('/api/live_logs'),
+                    fetch('/api/refresh_file_cache/status')
+                ]);
 
-                // B轨日志
-                const liveLogsRes = await fetch('/api/live_logs');
-                const liveLogsData = await liveLogsRes.json();
+                const [statusData, liveLogsData, refreshStatusData] = await Promise.all([
+                    statusRes.json(),
+                    liveLogsRes.json(),
+                    refreshStatusRes.json()
+                ]);
 
                 updateTrackA(statusData.logs_a || '', statusData);
                 updateTrackB(statusData, liveLogsData.logs || '');
-                updateLogs(currentTrack === 'a' ? (statusData.logs_a || '') : (liveLogsData.logs || ''));
+                updateRefreshButton(refreshStatusData.task || {});
+
+                const currentLogs = getCurrentLogs(statusData, liveLogsData, refreshStatusData);
+                updateLogTitle(currentLogs.title);
+                updateLogs(currentLogs.logs);
                 document.getElementById('updateTime').textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
             } catch (e) {
                 console.error('获取数据失败:', e);
@@ -851,6 +948,7 @@
 
         function updateTrackA(logs, statusData) {
             const isRunning = statusData.a_running;
+            const progress = statusData.a_progress;  // 结构化进度数据
             const aRing = document.getElementById('aStatusRing');
             const aLabel = document.getElementById('aStatusLabel');
             const aBadge = document.getElementById('aStatusBadge');
@@ -867,6 +965,12 @@
                 aLabel.textContent = '处理中';
                 aBadge.textContent = 'RUNNING';
                 aBadge.className = 'status-badge running';
+            } else if (progress && progress.status === 'completed') {
+                aRing.className = 'pulse-ring stopped';
+                aRing.innerHTML = '<i class="fa-solid fa-check"></i>';
+                aLabel.textContent = '已完成';
+                aBadge.textContent = 'DONE';
+                aBadge.className = 'status-badge stopped';
             } else if (logs.includes('任务已结束') || logs.includes('已完成')) {
                 aRing.className = 'pulse-ring stopped';
                 aRing.innerHTML = '<i class="fa-solid fa-check"></i>';
@@ -881,55 +985,95 @@
                 aBadge.className = 'status-badge stopped';
             }
 
-            const countMatch = logs.match(/\[(\d+)\/(\d+)\]/);
-            if (countMatch) {
-                const processed = parseInt(countMatch[1]);
-                const total = parseInt(countMatch[2]);
-                const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+            // 进度：优先使用结构化字段，兜底用日志正则
+            if (progress && progress.total > 0) {
+                const processed = progress.processed || 0;
+                const total = progress.total;
+                const percent = Math.round((processed / total) * 100);
                 document.getElementById('aProgressPercent').textContent = percent + '%';
                 document.getElementById('aProcessedNum').textContent = processed.toLocaleString();
                 document.getElementById('aTotalNum').textContent = total.toLocaleString();
                 document.getElementById('aProgressBar').style.width = percent + '%';
+            } else {
+                const countMatch = logs.match(/\[(\d+)\/(\d+)\]/);
+                if (countMatch) {
+                    const processed = parseInt(countMatch[1]);
+                    const total = parseInt(countMatch[2]);
+                    const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+                    document.getElementById('aProgressPercent').textContent = percent + '%';
+                    document.getElementById('aProcessedNum').textContent = processed.toLocaleString();
+                    document.getElementById('aTotalNum').textContent = total.toLocaleString();
+                    document.getElementById('aProgressBar').style.width = percent + '%';
+                }
             }
 
-            // 从心跳日志获取统计：💓 心跳 | 已处理：2800/107398 | 成功：2800 | 错误：0 | 跳过：0
-            const heartbeatMatch = logs.match(/💓 心跳.*?成功：(\d+).*?错误：(\d+).*?跳过：(\d+)/);
-            if (heartbeatMatch) {
-                document.getElementById('aSuccessCount').textContent = parseInt(heartbeatMatch[1]).toLocaleString();
-                document.getElementById('aErrorCount').textContent = parseInt(heartbeatMatch[2]).toLocaleString();
-                document.getElementById('aSkipCount').textContent = parseInt(heartbeatMatch[3]).toLocaleString();
+            // 成功/错误/跳过：优先结构化字段
+            if (progress) {
+                document.getElementById('aSuccessCount').textContent = (progress.success_count || 0).toLocaleString();
+                document.getElementById('aErrorCount').textContent = (progress.error_count || 0).toLocaleString();
+                document.getElementById('aSkipCount').textContent = (progress.skip_count || 0).toLocaleString();
+            } else {
+                const heartbeatMatch = logs.match(/💓 心跳.*?成功：(\d+).*?错误：(\d+).*?跳过：(\d+)/);
+                if (heartbeatMatch) {
+                    document.getElementById('aSuccessCount').textContent = parseInt(heartbeatMatch[1]).toLocaleString();
+                    document.getElementById('aErrorCount').textContent = parseInt(heartbeatMatch[2]).toLocaleString();
+                    document.getElementById('aSkipCount').textContent = parseInt(heartbeatMatch[3]).toLocaleString();
+                }
             }
 
-            // 从进度日志获取平均时间和预计剩余：已用时间：16.73 小时 | 平均每个：20.8s | 预计剩余：603.0 小时
-            const avgMatch = logs.match(/平均每个：([\d.]+)s/);
-            if (avgMatch) document.getElementById('aAvgTime').textContent = avgMatch[1] + 's';
-
-            const etaMatch = logs.match(/预计剩余：([\d.]+)小时/);
-            if (etaMatch) {
-                const hours = parseFloat(etaMatch[1]);
-                document.getElementById('aEtaValue').textContent = hours < 1 ? Math.round(hours * 60) + ' 分钟' : hours.toFixed(1) + ' 小时';
-            } else if (logs.includes('已完成') || logs.includes('任务已结束')) {
-                document.getElementById('aEtaValue').textContent = '00:00';
+            // 平均时间
+            if (progress && progress.avg_time) {
+                document.getElementById('aAvgTime').textContent = progress.avg_time + 's';
+            } else {
+                const avgMatch = logs.match(/平均每个：([\d.]+)s/);
+                if (avgMatch) document.getElementById('aAvgTime').textContent = avgMatch[1] + 's';
             }
 
-            // 解析当前日期：📅【正在处理日期】2025-11-14
-            const dateMatch = logs.match(/📅【正在处理日期】(\d{4}-\d{2}-\d{2})/);
-            if (dateMatch) {
-                document.getElementById('aCurrentDate').textContent = '📅 ' + dateMatch[1];
+            // 预计剩余
+            if (progress && progress.eta_hours !== undefined) {
+                const hours = progress.eta_hours;
+                if (hours <= 0 || progress.status === 'completed') {
+                    document.getElementById('aEtaValue').textContent = '00:00';
+                } else {
+                    document.getElementById('aEtaValue').textContent = hours < 1 ? Math.round(hours * 60) + ' 分钟' : hours.toFixed(1) + ' 小时';
+                }
+            } else {
+                const etaMatch = logs.match(/预计剩余：([\d.]+)小时/);
+                if (etaMatch) {
+                    const hours = parseFloat(etaMatch[1]);
+                    document.getElementById('aEtaValue').textContent = hours < 1 ? Math.round(hours * 60) + ' 分钟' : hours.toFixed(1) + ' 小时';
+                } else if (logs.includes('已完成') || logs.includes('任务已结束')) {
+                    document.getElementById('aEtaValue').textContent = '00:00';
+                }
             }
 
-            // 解析当前文件：[2997/107398] 正在发起云端分析请求：/path/to/file
-            const fileMatch = logs.match(/正在发起云端分析请求：(.+\.(?:m4a|mp3|wav|acc|aac))/i);
-            if (fileMatch) {
-                const filepath = fileMatch[1];
-                const filename = filepath.split('/').pop();
-                document.getElementById('aCurrentFile').textContent = filename || filepath;
+            // 当前处理日期
+            if (progress && progress.current_date) {
+                document.getElementById('aCurrentDate').textContent = '📅 ' + progress.current_date;
+            } else {
+                const dateMatch = logs.match(/📅【正在处理日期】(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                    document.getElementById('aCurrentDate').textContent = '📅 ' + dateMatch[1];
+                }
+            }
+
+            // 当前处理文件
+            if (progress && progress.current_file) {
+                document.getElementById('aCurrentFile').textContent = progress.current_file;
+            } else {
+                const fileMatch = logs.match(/正在发起云端分析请求：(.+\.(?:m4a|mp3|wav|acc|aac))/i);
+                if (fileMatch) {
+                    const filepath = fileMatch[1];
+                    const filename = filepath.split('/').pop();
+                    document.getElementById('aCurrentFile').textContent = filename || filepath;
+                }
             }
         }
 
         function updateTrackB(statusData, liveLogs) {
             const isRunning = statusData.b_running;
             const isPaused = statusData.b_paused;
+            const bStats = statusData.b_stats;  // 结构化B轨统计
             const bRing = document.getElementById('bStatusRing');
             const bLabel = document.getElementById('bStatusLabel');
             const bBadge = document.getElementById('bStatusBadge');
@@ -969,32 +1113,52 @@
                 document.getElementById('bLastEvent').textContent = statusData.b_reason;
             }
 
-            // 解析 B 轨统计
-            const today = new Date().toISOString().split('T')[0];
-            const todayRecordings = (liveLogs.match(new RegExp(today + '.*收到转录任务', 'g')) || []).length;
-            const todayCry = (liveLogs.match(/哭声|宝宝哭|检测到/g) || []).length;
+            // B 轨统计：优先使用结构化字段，兜底用日志正则
+            if (bStats) {
+                // 今日哭声
+                const cryCount = bStats.today_cry_count || statusData.today_cry_count || 0;
+                document.getElementById('bCryCount').textContent = cryCount > 0 ? cryCount : '0';
+                
+                // 今日录音
+                document.getElementById('bRecordCount').textContent = bStats.today_record_count || '0';
+                
+                // 运行时长
+                document.getElementById('bActiveTime').textContent = bStats.runtime || '--';
+                
+                // 最近事件
+                document.getElementById('bLastEvent').textContent = bStats.last_event_time || bStats.last_cry_time || '--';
+                
+                // 最近哭声检测
+                if (bStats.last_cry_time) {
+                    document.getElementById('bLastCry').textContent = '最近有哭声 (' + bStats.last_cry_time + ')';
+                } else {
+                    document.getElementById('bLastCry').textContent = '暂无哭声';
+                }
+            } else {
+                // 兜底：从日志正则提取
+                const today = new Date().toISOString().split('T')[0];
+                const todayRecordings = (liveLogs.match(new RegExp(today + '.*收到转录任务', 'g')) || []).length;
+                const todayCry = Number.isFinite(Number(statusData.today_cry_count)) ? Number(statusData.today_cry_count) : (liveLogs.match(/哭声|宝宝哭|检测到/g) || []).length;
 
-            // 运行时长
-            const startMatch = liveLogs.match(/开始监控.*?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-            let runtime = '--';
-            if (startMatch) {
-                const startTime = new Date(startMatch[1]);
-                const now = new Date();
-                const diff = Math.floor((now - startTime) / 1000);
-                const hours = Math.floor(diff / 3600);
-                const mins = Math.floor((diff % 3600) / 60);
-                runtime = hours > 0 ? `${hours}小时${mins}分` : `${mins}分钟`;
+                const startMatch = liveLogs.match(/开始监控.*?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+                let runtime = '--';
+                if (startMatch) {
+                    const startTime = new Date(startMatch[1]);
+                    const now = new Date();
+                    const diff = Math.floor((now - startTime) / 1000);
+                    const hours = Math.floor(diff / 3600);
+                    const mins = Math.floor((diff % 3600) / 60);
+                    runtime = hours > 0 ? `${hours}小时${mins}分` : `${mins}分钟`;
+                }
+
+                const recentEvent = liveLogs.match(/收到转录任务.*?(\d{2}:\d{2}:\d{2})/);
+
+                document.getElementById('bRecordCount').textContent = todayRecordings || liveLogs.includes('收到转录任务') ? '1+' : '0';
+                document.getElementById('bCryCount').textContent = todayCry > 0 ? todayCry : '0';
+                document.getElementById('bActiveTime').textContent = runtime;
+                document.getElementById('bLastEvent').textContent = recentEvent ? recentEvent[1] : '--';
+                document.getElementById('bLastCry').textContent = liveLogs.includes('检测到') ? '最近有哭声' : (liveLogs.includes('哭声') ? '有哭声记录' : '暂无哭声');
             }
-
-            // 最近事件
-            const cryMatch = liveLogs.match(/哭声.*?\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
-            const recentEvent = liveLogs.match(/收到转录任务.*?(\d{2}:\d{2}:\d{2})/);
-
-            document.getElementById('bRecordCount').textContent = todayRecordings || liveLogs.includes('收到转录任务') ? '1+' : '0';
-            document.getElementById('bCryCount').textContent = todayCry > 0 ? todayCry : '0';
-            document.getElementById('bActiveTime').textContent = runtime;
-            document.getElementById('bLastEvent').textContent = recentEvent ? recentEvent[1] : '--';
-            document.getElementById('bLastCry').textContent = liveLogs.includes('检测到') ? '最近有哭声' : (liveLogs.includes('哭声') ? '有哭声记录' : '暂无哭声');
         }
 
         function updateLogs(logs) {

@@ -499,34 +499,57 @@
             }
         });
 
+        // 缓存已渲染的事件ID，避免重复渲染
+        let renderedEventIds = new Set();
+        let lastEventsHash = '';
+
         async function loadCryEvents() {
             const container = document.getElementById('cryData');
             try {
                 const response = await fetch('/api/cry_events?limit=50');
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     const events = result.events;
                     if (events.length === 0) {
                         container.innerHTML = '<div class="status" style="grid-column: 1/-1;">📭 观测范围内未见异常行为</div>';
+                        renderedEventIds.clear();
+                        lastEventsHash = '';
                         return;
                     }
-                    
+
+                    // 【优化】计算事件哈希，如果数据没变就不重新渲染
+                    const eventsHash = events.map(e => e.id + (e.created_at || '')).join(',');
+                    if (eventsHash === lastEventsHash) {
+                        console.log('[BabyCry] 数据无变化，跳过渲染');
+                        return;
+                    }
+                    lastEventsHash = eventsHash;
+
+                    // 【优化】增量渲染：只渲染新事件
                     let html = '';
+                    let newEventsCount = 0;
+
                     events.forEach((ev, index) => {
+                        // 如果已经渲染过，跳过
+                        if (renderedEventIds.has(ev.id)) {
+                            return;
+                        }
+                        renderedEventIds.add(ev.id);
+                        newEventsCount++;
+
                         const recTime = new Date(ev.recording_time || ev.created_at);
                         const dateStr = recTime.toLocaleDateString();
                         const timeStr = recTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                        
+
                         const start = ev.start_time.toFixed(1);
                         const end = ev.end_time.toFixed(1);
-                        const duration = (ev.end_time - ev.start_time).toFixed(1);
-                        
+
                         const reason = ev.reason || '未知诱因';
                         const category = (ev.reason_category || 'pending').toLowerCase();
                         const advice = ev.advice || '建议保持严密观察并在必要时提供安抚。';
                         const illustrationUrl = ev.illustration_url || null;
-                        
+
                         // Map category to icon
                         let icon = '🍼';
                         let illustrationIcon = '👶';
@@ -543,7 +566,7 @@
                         }
 
                         html += `
-                            <div class="event-card" style="animation-delay: ${index * 0.1}s">
+                            <div class="event-card" data-event-id="${ev.id}" style="animation-delay: ${index * 0.05}s">
                                 <div class="card-header">
                                     <div class="category-badge ${category}">${icon} ${ev.reason_category || '行为分析'}</div>
                                     <div class="time-info">
@@ -557,7 +580,7 @@
                                         <div class="advice-box">${formattedAdvice}</div>
                                     </div>
                                     <div class="cry-illustration" title="${ev.reason_category || '未知'}">
-                                        ${illustrationUrl ? `<img src="${illustrationUrl}" alt="${ev.reason_category}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;">` : illustrationIcon}
+                                        ${illustrationUrl ? `<img src="${illustrationUrl}" alt="${ev.reason_category}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;">` : illustrationIcon}
                                     </div>
                                 </div>
                                 <div class="card-footer">
@@ -567,13 +590,34 @@
                             </div>
                         `;
                     });
-                    
-                    container.innerHTML = html;
+
+                    // 【优化】如果有新事件，插入到顶部；否则保持现有内容
+                    if (newEventsCount > 0) {
+                        if (container.querySelector('.status')) {
+                            // 如果是空状态，直接替换
+                            container.innerHTML = html;
+                        } else {
+                            // 插入新事件到顶部
+                            container.insertAdjacentHTML('afterbegin', html);
+                            console.log(`[BabyCry] 新增 ${newEventsCount} 个事件`);
+                        }
+
+                        // 【优化】限制DOM节点数量，最多保留100个
+                        const cards = container.querySelectorAll('.event-card');
+                        if (cards.length > 100) {
+                            for (let i = 100; i < cards.length; i++) {
+                                const id = parseInt(cards[i].dataset.eventId);
+                                renderedEventIds.delete(id);
+                                cards[i].remove();
+                            }
+                            console.log('[BabyCry] 清理旧事件，保留最新100个');
+                        }
+                    }
                 } else {
-                    container.innerHTML = `<div class="status" style="grid-column: 1/-1; color: var(--danger);">🛑 系统同步异常: ${result.error}</div>`;
+                    container.innerHTML = `<div class="status" style="grid-column: 1/-1; color: var(--danger);">� 系统同步异常: ${result.error}</div>`;
                 }
             } catch (error) {
-                container.innerHTML = `<div class="status" style="grid-column: 1/-1; color: var(--danger);">📡 空间链路中断，无法获取遥测数据</div>`;
+                console.error('[BabyCry] 加载失败:', error);
             }
         }
 

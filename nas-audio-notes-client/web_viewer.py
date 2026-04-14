@@ -12,7 +12,7 @@ import datetime
 import requests
 import subprocess
 import argparse
-from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, fix_recording_time, get_connection, return_connection, save_date_stats_to_redis, get_date_stats_from_redis, clear_date_stats_in_redis
+from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, fix_recording_time, get_connection, return_connection, save_date_stats_to_redis, get_date_stats_from_redis, clear_date_stats_in_redis, get_file_cache_from_redis
 
 # --- 配置 ---
 # 获取脚本自身所在的目录

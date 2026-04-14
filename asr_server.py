@@ -125,7 +125,8 @@ class LLMConfig:
     USE_GEMINI_LLM = True
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_API_BASE_URL = os.getenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com")
-    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-3-flash-preview")
+    GEMINI_FALLBACK_MODEL_NAME = os.getenv("GEMINI_FALLBACK_MODEL_NAME", "gemini-3.1-flash-lite-preview")
     
     # 火山引擎通用 3.0 文生图配置
     VOLCENGINE_ACCESS_KEY = os.getenv("VOLCENGINE_ACCESS_KEY", "")
@@ -261,6 +262,16 @@ _track_b_paused = False # 是否暂停 B 轨实时扫描
 _track_b_running = False # B 轨是否正在运行
 _monitor_thread = None # B 轨实时监听线程
 
+# B 轨统计状态（由各处理函数更新）
+_b_stats = {
+    "started_at": None,       # B轨启动时间 ISO格式
+    "today_record_count": 0,  # 今日录音数
+    "today_cry_count": 0,     # 今日哭声数
+    "last_event_time": None,  # 最近事件时间 HH:MM:SS
+    "last_cry_time": None,    # 最近哭声时间
+}
+_b_stats_lock = threading.Lock()
+
 # =================【 轨道A: 独立哭声检测配置 】=================
 # 与语音识别参数完全隔离，仅用于原始音频的哭声声纹匹配
 class CryDetectionConfig:
@@ -273,12 +284,18 @@ class CryDetectionConfig:
     VOICEPRINT_THRESHOLD = 0.65     # 极致严格门槛 (用户倾向严格)
     VOICEPRINT_GAP = 0.15           # 严格置信度间隔 (原为0.02/0.10)
     
-    # 二票放行: 必须 2 个模型命中才通过 (三选二)
+    # 二票放行: 必须 2 个模型命中才进入下一步校验 (三选二)
     MIN_VOTES = 2
+    MIN_AVG_CONFIDENCE = 0.82      # 拦截中等分数的 2 票误判
+    STRONG_MODEL_SCORE = 0.85      # 至少要有一个模型达到强命中
+    MIN_STRONG_MODELS = 1
     
     # 目标声纹名 (大小写不敏感)
     TARGET_SPEAKERS = ["baby", "宝宝"]
-    
+
+    # 语音识别用的说话人（在哭声检测时排除，避免干扰）
+    VOICE_RECOGNITION_SPEAKERS = ["大可", "妈妈", "婆婆"]
+
     # 冷却机制
     COOLDOWN_SEC = 600              # 10分钟冷却
 
@@ -391,6 +408,118 @@ def generate_conversation_summary(segments, audio_duration):
         'avg_segment_duration': round(audio_duration / len(segments), 2) if segments else 0
     }
 
+def _get_gemini_model_candidates():
+    """返回按固定顺序排列的 Gemini 主备模型。"""
+    configured_models = [
+        ("Gemini 3 Flash", LLMConfig.GEMINI_MODEL_NAME),
+        ("Gemini 3.1 Flash Lite", LLMConfig.GEMINI_FALLBACK_MODEL_NAME),
+    ]
+
+    candidates = []
+    seen = set()
+    for display_name, model_name in configured_models:
+        model_name = (model_name or "").strip()
+        if not model_name or model_name in seen:
+            continue
+        candidates.append((display_name, model_name))
+        seen.add(model_name)
+    return candidates
+
+
+def _extract_gemini_response_text(result):
+    """从 Gemini 响应中提取文本内容。"""
+    candidates = result.get("candidates") or []
+    if not candidates:
+        return None, None, "UNKNOWN"
+
+    candidate = candidates[0]
+    content = candidate.get("content", {})
+    finish_reason = candidate.get("finishReason", "UNKNOWN")
+
+    for part in content.get("parts", []):
+        text = part.get("text", "")
+        if text:
+            return text, candidate, finish_reason
+
+    return None, candidate, finish_reason
+
+
+def _post_gemini_request_with_fallback(data, timeout, logger_obj, log_prefix):
+    """按严格顺序调用 Gemini 主备模型，请求失败时自动降级。"""
+    model_candidates = _get_gemini_model_candidates()
+    if not model_candidates:
+        logger_obj.error(f"{log_prefix} 未配置任何可用的 Gemini 模型")
+        return None
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": LLMConfig.GEMINI_API_KEY
+    }
+    last_error = None
+
+    for idx, (display_name, model_name) in enumerate(model_candidates):
+        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/{model_name}:generateContent"
+        logger_obj.info(
+            f"{log_prefix} 尝试模型 {idx + 1}/{len(model_candidates)}: {display_name} ({model_name})"
+        )
+        logger_obj.info(f"{log_prefix} 请求URL: {url}")
+        logger_obj.info(f"{log_prefix} 请求超时: {timeout}秒")
+
+        try:
+            response = requests.post(url, headers=headers, json=data, timeout=timeout)
+
+            try:
+                result = response.json()
+            except Exception as json_error:
+                last_error = f"返回非 JSON 数据: {json_error}"
+                logger_obj.error(f"{log_prefix} {display_name} 返回非 JSON 数据: {json_error}")
+                logger_obj.error(f"{log_prefix} 原始响应: {response.text[:2000]}")
+                result = None
+
+            if result is None:
+                pass
+            elif not response.ok:
+                last_error = f"HTTP {response.status_code}"
+                logger_obj.error(f"{log_prefix} {display_name} API HTTP 错误 {response.status_code}")
+                logger_obj.error(f"{log_prefix} 错误详情: {result}")
+            else:
+                response_text, candidate, finish_reason = _extract_gemini_response_text(result)
+                logger_obj.info(f"{log_prefix} {display_name} ✅ API 响应成功")
+                logger_obj.info(f"{log_prefix} finishReason: {finish_reason}")
+                logger_obj.debug(f"{log_prefix} 完整响应: {result}")
+
+                if response_text:
+                    logger_obj.info(f"{log_prefix} 响应文本长度: {len(response_text)} 字符")
+                    logger_obj.info(f"{log_prefix} 响应内容预览: {response_text[:500]}...")
+                    return response_text
+
+                if finish_reason == "MAX_TOKENS":
+                    logger_obj.warning(f"{log_prefix} 生成 Token 超限，但未提取到有效文本")
+
+                if candidate and candidate.get("safetyRatings"):
+                    logger_obj.warning(f"{log_prefix} 安全评级: {candidate['safetyRatings']}")
+
+                last_error = f"{display_name} 返回空回复"
+                logger_obj.error(
+                    f"{log_prefix} {display_name} 安全拦截或空回复，完整响应: "
+                    f"{json.dumps(result, ensure_ascii=False)[:1000]}"
+                )
+        except Exception as e:
+            last_error = str(e)
+            logger_obj.error(f"{log_prefix} {display_name} 请求异常：{e}")
+            logger_obj.error(f"{log_prefix} 异常堆栈: {traceback.format_exc()}")
+
+        if idx < len(model_candidates) - 1:
+            next_display_name, next_model_name = model_candidates[idx + 1]
+            logger_obj.warning(
+                f"{log_prefix} {display_name} 调用失败，降级到下一模型: "
+                f"{next_display_name} ({next_model_name})"
+            )
+
+    logger_obj.error(f"{log_prefix} 所有 Gemini 模型调用均失败，最后错误: {last_error}")
+    return None
+
+
 def call_gemini_api(prompt):
     """调用 Gemini API"""
     if not LLMConfig.USE_GEMINI_LLM:
@@ -404,31 +533,24 @@ def call_gemini_api(prompt):
                 logger_sys.info(f"  [LLM] 使用缓存响应")
                 return llm_cache[cache_key]
         
-        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/{LLMConfig.GEMINI_MODEL_NAME}:generateContent"
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": LLMConfig.GEMINI_API_KEY
-        }
         data = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500}
         }
-        
-        response = requests.post(url, headers=headers, json=data, timeout=LLMConfig.LLM_REQUEST_TIMEOUT)
-        response.raise_for_status()
-        result = response.json()
-        
-        if 'candidates' in result and len(result['candidates']) > 0:
-            text = result['candidates'][0]['content']['parts'][0]['text']
-            
-            # 保存到缓存
+        text = _post_gemini_request_with_fallback(
+            data=data,
+            timeout=LLMConfig.LLM_REQUEST_TIMEOUT,
+            logger_obj=logger_sys,
+            log_prefix="  [LLM]"
+        )
+
+        if text:
             with llm_cache_lock:
                 if len(llm_cache) >= LLMConfig.LLM_CACHE_SIZE:
                     llm_cache.pop(next(iter(llm_cache)))
                 llm_cache[cache_key] = text
-            
-            return text
-        return None
+
+        return text
     except Exception as e:
         logger_sys.error(f"  [LLM] API 调用失败: {e}")
         return None
@@ -442,12 +564,6 @@ def call_gemini_audio_api(audio_paths, prompt):
         
     try:
         logger_a.info(f"  [BabyCry LLM] 开始调用，音频文件数: {len(audio_paths) if isinstance(audio_paths, list) else 1}")
-        
-        url = f"{LLMConfig.GEMINI_API_BASE_URL}/v1beta/models/{LLMConfig.GEMINI_MODEL_NAME}:generateContent"
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": LLMConfig.GEMINI_API_KEY
-        }
         
         parts_list = [{"text": prompt}]
         
@@ -499,64 +615,14 @@ def call_gemini_audio_api(audio_paths, prompt):
         }
         
         logger_a.info(f"  [BabyCry LLM] 发送请求到 Gemini API...")
-        logger_a.info(f"  [BabyCry LLM] 请求URL: {url}")
-        logger_a.info(f"  [BabyCry LLM] 请求模型: {LLMConfig.GEMINI_MODEL_NAME}")
-        logger_a.info(f"  [BabyCry LLM] 请求超时: {LLMConfig.LLM_REQUEST_TIMEOUT + 40}秒")
         logger_a.debug(f"  [BabyCry LLM] 请求数据: {data}")
-        
-        response = requests.post(url, headers=headers, json=data, timeout=LLMConfig.LLM_REQUEST_TIMEOUT + 40)
-        
-        try:
-            result = response.json()
-        except Exception as e:
-            logger_sys.error(f"  [BabyCry LLM] 返回非JSON数据: {e}")
-            logger_sys.error(f"  [BabyCry LLM] 原始响应: {response.text[:2000]}")
-            return None
 
-        if not response.ok:
-            logger_sys.error(f"  [BabyCry LLM] API HTTP 错误 {response.status_code}")
-            logger_sys.error(f"  [BabyCry LLM] 错误详情: {result}")
-            return None
-            
-        logger_a.info(f"  [BabyCry LLM] 收到 HTTP 响应，状态码: {response.status_code}")
-        logger_a.debug(f"  [BabyCry LLM] 完整响应: {result}")
-        
-        if 'candidates' in result and len(result['candidates']) > 0:
-            candidate = result['candidates'][0]
-            content = candidate.get('content', {})
-            finish_reason = candidate.get('finishReason', 'UNKNOWN')
-            
-            logger_a.info(f"  [BabyCry LLM] ✅ API 响应成功")
-            logger_a.info(f"  [BabyCry LLM] finishReason: {finish_reason}")
-            logger_a.info(f"  [BabyCry LLM] content 结构: {json.dumps(content, ensure_ascii=False)[:500]}")
-            
-            # 即使 finishReason 是 MAX_TOKENS，也尝试提取已有内容
-            if 'parts' in content and len(content['parts']) > 0:
-                response_text = content['parts'][0].get('text', '')
-                logger_a.info(f"  [BabyCry LLM] 响应文本长度: {len(response_text)} 字符")
-                if response_text:
-                    logger_a.info(f"  [BabyCry LLM] 响应内容预览: {response_text[:500]}...")
-                    return response_text
-                else:
-                    logger_a.warning(f"  [BabyCry LLM] 响应文本为空")
-            
-            # 如果没有内容但有 MAX_TOKENS，记录警告
-            if finish_reason == 'MAX_TOKENS':
-                logger_a.warning(f"  [BabyCry LLM] 生成 Token 超限，但尝试返回已生成内容")
-            
-            # 安全拦截检查
-            if 'safetyRatings' in candidate:
-                logger_a.warning(f"  [BabyCry LLM] 安全评级: {candidate['safetyRatings']}")
-            
-            logger_a.error(f"  [BabyCry LLM] 安全拦截或空回复，完整响应: {json.dumps(result, ensure_ascii=False)[:1000]}")
-            return None
-        else:
-            # 检查是否有其他错误信息
-            if 'error' in result:
-                logger_a.error(f"  [BabyCry LLM] API 返回错误: {result['error']}")
-            else:
-                logger_a.error(f"  [BabyCry LLM] API 返回异常结构，完整响应: {json.dumps(result, ensure_ascii=False)[:1000]}")
-            return None
+        return _post_gemini_request_with_fallback(
+            data=data,
+            timeout=LLMConfig.LLM_REQUEST_TIMEOUT + 40,
+            logger_obj=logger_a,
+            log_prefix="  [BabyCry LLM]"
+        )
     except Exception as e:
         logger_a.error(f"  [BabyCry LLM] 发送请求异常：{e}")
         import traceback
@@ -1362,12 +1428,20 @@ def detect_cry_from_full_audio(audio_path):
         return False, 0.0, []
     
     logger_b.info(f"🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...")
-    logger_b.info(f"   参数: threshold={CryDetectionConfig.VOICEPRINT_THRESHOLD}, gap={CryDetectionConfig.VOICEPRINT_GAP}, min_votes={CryDetectionConfig.MIN_VOTES}")
+    logger_b.info(
+        f"   参数: threshold={CryDetectionConfig.VOICEPRINT_THRESHOLD}, "
+        f"gap={CryDetectionConfig.VOICEPRINT_GAP}, min_votes={CryDetectionConfig.MIN_VOTES}, "
+        f"min_avg_conf={CryDetectionConfig.MIN_AVG_CONFIDENCE}, strong_score={CryDetectionConfig.STRONG_MODEL_SCORE}, "
+        f"min_strong_models={CryDetectionConfig.MIN_STRONG_MODELS}"
+    )
     
     target_speakers = CryDetectionConfig.TARGET_SPEAKERS
     cry_threshold = CryDetectionConfig.VOICEPRINT_THRESHOLD
     cry_gap = CryDetectionConfig.VOICEPRINT_GAP
     min_votes = CryDetectionConfig.MIN_VOTES
+    min_avg_conf = CryDetectionConfig.MIN_AVG_CONFIDENCE
+    strong_model_score = CryDetectionConfig.STRONG_MODEL_SCORE
+    min_strong_models = CryDetectionConfig.MIN_STRONG_MODELS
     
     model_results = {}  # {model_name: (top_target_name, top_target_score, gap_to_others)}
     all_details = []
@@ -1378,10 +1452,13 @@ def detect_cry_from_full_audio(audio_path):
             all_details.append(f"  {model_name}: 特征提取失败")
             continue
         
-        # 对所有已注册说话人打分
+        # 对所有已注册说话人打分（排除语音识别专用的说话人）
         all_scores = []
         for name, speaker_data in speaker_db.items():
             if "avg_embeddings" not in speaker_data or model_name not in speaker_data["avg_embeddings"]:
+                continue
+            # 跳过语音识别用的说话人（如"大可"），避免干扰哭声检测
+            if name in CryDetectionConfig.VOICE_RECOGNITION_SPEAKERS:
                 continue
             emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
             score = 1 - cosine(emb_a.flatten(), emb_b)
@@ -1403,12 +1480,20 @@ def detect_cry_from_full_audio(audio_path):
         
         if target_hits:
             best_target_name, best_target_score = target_hits[0]
-            best_other_score = non_target_scores[0][1] if non_target_scores else 0.0
+            best_other_name, best_other_score = non_target_scores[0] if non_target_scores else ("无", 0.0)
             gap = best_target_score - best_other_score
-            
+
+            logger_b.info(
+                f"   {model_name}: target={best_target_name}={best_target_score:.3f}, "
+                f"other={best_other_name}={best_other_score:.3f}, gap={gap:.3f}"
+            )
+
             passed = best_target_score >= cry_threshold and gap >= cry_gap
             status = "✅ PASS" if passed else "❌ FAIL"
-            all_details.append(f"  {model_name}: {best_target_name}={best_target_score:.3f} (gap={gap:.3f}) {status}")
+            all_details.append(
+                f"  {model_name}: {best_target_name}={best_target_score:.3f}, "
+                f"other={best_other_name}={best_other_score:.3f} (gap={gap:.3f}) {status}"
+            )
             
             if passed:
                 model_results[model_name] = (best_target_name, best_target_score, gap)
@@ -1417,18 +1502,42 @@ def detect_cry_from_full_audio(audio_path):
     
     # 投票判定
     vote_count = len(model_results)
-    is_cry = vote_count >= min_votes
-    
-    if is_cry:
-        avg_conf = np.mean([v[1] for v in model_results.values()])
-        winner_name = list(model_results.values())[0][0]
-        logger_b.info(f"   🍼 [轨道A 结论] 检出哭声! 说话人={winner_name}, 票数={vote_count}/{len(sv_pipelines)}, 平均置信度={avg_conf:.3f}")
-        all_details.append(f"结论: 哭声检出 ({winner_name}, {vote_count}票, conf={avg_conf:.3f})")
-        return True, avg_conf, all_details
-    else:
+    passed_scores = [v[1] for v in model_results.values()]
+    avg_conf = float(np.mean(passed_scores)) if passed_scores else 0.0
+    strong_model_count = sum(1 for score in passed_scores if score >= strong_model_score)
+    winner_name = list(model_results.values())[0][0] if model_results else None
+
+    if vote_count < min_votes:
         logger_sys.info(f"   ℹ️ [轨道A 结论] 未检出哭声 (命中模型数={vote_count} < 所需={min_votes})")
         all_details.append(f"结论: 未检出哭声 (票数不足: {vote_count}<{min_votes})")
         return False, 0.0, all_details
+
+    if avg_conf < min_avg_conf:
+        logger_sys.info(
+            f"   ℹ️ [轨道A 结论] 未检出哭声 (平均置信度不足: {avg_conf:.3f} < {min_avg_conf:.3f})"
+        )
+        all_details.append(
+            f"结论: 未检出哭声 (平均置信度不足: {avg_conf:.3f}<{min_avg_conf:.3f}, 票数={vote_count})"
+        )
+        return False, 0.0, all_details
+
+    if strong_model_count < min_strong_models:
+        logger_sys.info(
+            f"   ℹ️ [轨道A 结论] 未检出哭声 (强命中模型不足: {strong_model_count} < {min_strong_models})"
+        )
+        all_details.append(
+            f"结论: 未检出哭声 (强命中模型不足: {strong_model_count}<{min_strong_models}, 平均置信度={avg_conf:.3f})"
+        )
+        return False, 0.0, all_details
+
+    logger_b.info(
+        f"   🍼 [轨道A 结论] 检出哭声! 说话人={winner_name}, 票数={vote_count}/{len(sv_pipelines)}, "
+        f"平均置信度={avg_conf:.3f}, 强命中模型数={strong_model_count}"
+    )
+    all_details.append(
+        f"结论: 哭声检出 ({winner_name}, {vote_count}票, conf={avg_conf:.3f}, strong={strong_model_count})"
+    )
+    return True, avg_conf, all_details
 
 # =================== Flask 接口 ===================
 @app.route("/")
@@ -1795,7 +1904,8 @@ refresh_cache_task = {
     "start_time": None,
     "count": 0,
     "status": "idle",  # idle, running, completed, error
-    "message": ""
+    "message": "",
+    "logs": ""
 }
 
 def update_refresh_progress(count, current_dir):
@@ -1816,6 +1926,20 @@ def log_to_process(msg):
             f.flush()  # 立即刷新到磁盘
     except Exception as e:
         logger_a.error(f"[刷盘] 写入process log失败: {e}")
+
+def get_recent_process_logs(limit=100):
+    """读取最近的 process 日志，供前端展示刷盘进度"""
+    try:
+        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "history_process.log")
+        if not os.path.exists(log_file):
+            return ""
+
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return ''.join(lines[-limit:])
+    except Exception as e:
+        logger_a.error(f"[刷盘] 读取process log失败: {e}")
+        return f"读取刷盘日志失败: {e}"
 
 def run_refresh_file_cache(target_dir):
     """后台执行刷盘任务"""
@@ -1896,9 +2020,21 @@ def refresh_file_cache():
 @app.route("/api/refresh_file_cache/status", methods=["GET"])
 def refresh_file_cache_status():
     """获取刷盘任务状态"""
+    # 读取最近的刷盘日志
+    logs = ""
+    try:
+        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "history_process.log")
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+                logs = "".join(lines[-50:])  # 最后50行
+    except Exception as e:
+        logger_a.error(f"读取刷盘日志失败: {e}")
+    
     return jsonify({
         "status": "success",
-        "task": refresh_cache_task
+        "task": refresh_cache_task,
+        "logs": logs
     })
 
 @app.route("/api/file_cache_status", methods=["GET"])
@@ -1921,32 +2057,71 @@ def get_live_status():
     """获取 A/B 轨状态"""
     try:
         global _track_b_running, _track_b_paused, _history_reprocess_proc
+        from db_manager import get_baby_cry_count
         # 检查 A 轨进程是否还在运行
         a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
+        today_cry_count = get_baby_cry_count()
         
         # 读取 A 轨日志（与左下角 A 轨日志一致）
         log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-a.log")
         logs_a = "尚未开始处理，或日志文件不存在..."
         if os.path.exists(log_file):
             try:
-                with open(log_file, "rb") as f:
-                    f.seek(0, 2)
-                    size = f.tell()
-                    f.seek(max(size - 200000, 0), 0)  # 读取最后大概 200KB（增加到 200KB）
-                    logs_bytes = f.read()
-                    logs_a = logs_bytes.decode('utf-8', errors='replace')
+                with open(log_file, "r", encoding='utf-8', errors='replace') as f:
+                    # 读取所有行，只保留最后100行
+                    lines = f.readlines()
+                    logs_a = ''.join(lines[-100:])  # 最后100行
             except Exception as e:
                 logs_a = f"读取日志失败: {str(e)}"
+        
+        # 读取 A 轨结构化进度（由 reprocess_history_cries.py 写入）
+        a_progress = None
+        progress_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
+        if os.path.exists(progress_file):
+            try:
+                with open(progress_file, "r", encoding="utf-8") as f:
+                    a_progress = json.load(f)
+                # 如果进程已退出但进度状态还是 running，修正为 stopped
+                if not a_running and a_progress.get("status") == "running":
+                    a_progress["status"] = "stopped"
+            except Exception:
+                a_progress = None
+        
+        # 获取 B 轨结构化统计
+        with _b_stats_lock:
+            b_stats = _b_stats.copy()
+        
+        # 计算 B 轨运行时长
+        b_runtime = None
+        if b_stats.get("started_at"):
+            try:
+                started = datetime.fromisoformat(b_stats["started_at"])
+                diff = (datetime.now() - started).total_seconds()
+                hours = int(diff // 3600)
+                mins = int((diff % 3600) // 60)
+                b_runtime = f"{hours}小时{mins}分" if hours > 0 else f"{mins}分钟"
+            except Exception:
+                b_runtime = None
         
         return jsonify({
             "a_running": a_running,
             "b_running": _track_b_running,
             "b_paused": _track_b_paused if _track_b_running else True,
             "logs_a": logs_a,
+            "a_progress": a_progress,
+            "today_cry_count": today_cry_count,
             "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None,
             "a_reason": "A 轨历史分析中" if (a_running and _track_b_running and _track_b_paused) else None,
             "b_reason": "A 轨历史分析中" if (a_running and _track_b_running) else None,
-            "message": "B 轨已暂停" if (_track_b_running and _track_b_paused) else ("B 轨正常运行中" if _track_b_running else "B 轨未启动")
+            "message": "B 轨已暂停" if (_track_b_running and _track_b_paused) else ("B 轨正常运行中" if _track_b_running else "B 轨未启动"),
+            "b_stats": {
+                "started_at": b_stats.get("started_at"),
+                "runtime": b_runtime,
+                "today_record_count": b_stats.get("today_record_count", 0),
+                "today_cry_count": b_stats.get("today_cry_count", 0),
+                "last_event_time": b_stats.get("last_event_time"),
+                "last_cry_time": b_stats.get("last_cry_time")
+            }
         })
     except Exception as e:
         return jsonify({"error": str(e), "a_running": False, "logs_a": ""}), 500
@@ -1980,6 +2155,12 @@ def start_live():
             return jsonify({"message": "B 轨已在运行中", "status": "already_running"})
         _track_b_running = True
         _track_b_paused = False
+        with _b_stats_lock:
+            _b_stats["started_at"] = datetime.now().isoformat()
+            _b_stats["today_record_count"] = 0
+            _b_stats["today_cry_count"] = 0
+            _b_stats["last_event_time"] = None
+            _b_stats["last_cry_time"] = None
         _monitor_thread = threading.Thread(target=audio_processor.start_monitor, daemon=True)
         _monitor_thread.start()
         return jsonify({"message": "B 轨实时监听已启动", "status": "started"})
@@ -2554,6 +2735,11 @@ def transcribe_audio():
             
             logger_b.info(f"📥 收到转录任务: {file.filename}")
             
+            # 更新 B 轨统计
+            with _b_stats_lock:
+                _b_stats["today_record_count"] += 1
+                _b_stats["last_event_time"] = datetime.now().strftime('%H:%M:%S')
+            
             logger_b.info("  [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...")
             if not preprocess_audio(raw_temp, proc_temp):
                 return jsonify({"error": "Audio preprocessing failed"}), 500
@@ -2577,6 +2763,11 @@ def transcribe_audio():
                 
                 if cry_detected:
                     logger_b.info(f"  🍼 [轨道A] 哭声确认! 置信度={cry_confidence:.3f}, 启动报警流程...")
+                    
+                    # 更新 B 轨统计
+                    with _b_stats_lock:
+                        _b_stats["today_cry_count"] = _b_stats.get("today_cry_count", 0) + 1
+                        _b_stats["last_cry_time"] = datetime.now().strftime('%H:%M:%S')
                     
                     if skip_cry_flag:
                         logger_b.info(f"      [skip_cry] 哭声已标记，历史模式不发送即时邮件")

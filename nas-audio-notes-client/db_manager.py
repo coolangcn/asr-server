@@ -472,6 +472,52 @@ def clear_date_stats_in_redis() -> bool:
         print(f"  [Valkey Error] 清空日期统计失败: {e}")
         return False
 
+def get_file_cache_from_redis(date_str: str = None) -> list:
+    """从 Valkey 获取文件列表（使用 pipeline 优化）"""
+    import os
+    VALKEY_URI = os.environ.get('VALKEY_URI', '')
+    if not VALKEY_URI:
+        print(f"  [Valkey Error] VALKEY_URI 环境变量未设置")
+        return []
+    try:
+        import valkey
+        r = valkey.from_url(VALKEY_URI)
+
+        if date_str:
+            filepaths = r.smembers('babycry:date:' + date_str)
+        else:
+            filepaths = r.smembers('babycry:files')
+
+        result = []
+        # 使用 pipeline 批量获取（最多 10000 个一批）
+        batch_size = 10000
+        filepath_list = list(filepaths)
+        total = len(filepath_list)
+
+        for i in range(0, len(filepath_list), batch_size):
+            batch = filepath_list[i:i+batch_size]
+            pipe = r.pipeline()
+            for fp in batch:
+                fp_str = fp.decode('utf-8') if isinstance(fp, bytes) else fp
+                pipe.get('babycry:file:' + fp_str)
+            values = pipe.execute()
+
+            for j, val in enumerate(values):
+                fp = filepath_list[i + j]
+                fp_str = fp.decode('utf-8') if isinstance(fp, bytes) else fp
+                if val:
+                    val_str = val.decode('utf-8') if isinstance(val, bytes) else val
+                    parts = val_str.split('|', 1)
+                    if len(parts) == 2:
+                        result.append({'filepath': fp_str, 'filename': parts[1], 'date_str': parts[0]})
+                    else:
+                        result.append({'filepath': fp_str, 'filename': val_str})
+
+        return result
+    except Exception as e:
+        print(f"  [Valkey Error] 获取文件缓存失败: {e}")
+        return []
+
 if __name__ == "__main__":
     # 测试代码
     print("测试数据库连接...")

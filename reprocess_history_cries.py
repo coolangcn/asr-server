@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import shutil
 import requests
 import time
@@ -8,7 +9,10 @@ import datetime
 import logging
 import functools
 from logging.handlers import TimedRotatingFileHandler
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache
+
+# 进度状态文件路径（供 API 读取）
+PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
 
 # 导入邮件模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -59,6 +63,27 @@ def log_detail(message, level='info'):
         reprocess_logger.error(message)
     elif level == 'debug':
         reprocess_logger.debug(message)
+
+def write_progress(data):
+    """将进度状态原子写入 JSON 文件，供 API 读取"""
+    try:
+        os.makedirs(os.path.dirname(PROGRESS_FILE), exist_ok=True)
+        tmp_path = PROGRESS_FILE + ".tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, PROGRESS_FILE)
+    except Exception as e:
+        log_detail(f"    [进度写入失败] {e}", 'warning')
+
+def clear_progress():
+    """任务结束后清除进度文件"""
+    try:
+        if os.path.exists(PROGRESS_FILE):
+            os.remove(PROGRESS_FILE)
+    except Exception:
+        pass
 
 
 def retry_on_error(max_retries=5, initial_delay=2, backoff_factor=2, allowed_exceptions=(Exception,)):
@@ -386,48 +411,74 @@ if __name__ == "__main__":
 
         log_detail(f"[*] 从缓存获取文件列表完成", 'info')
     else:
-        # DB 缓存未命中，回退到磁盘扫描
-        log_detail(f"[*] ⚠️ DB 缓存为空，回退到磁盘扫描（首次可能较慢）", 'info')
+        # DB 缓存未命中，自动触发刷盘而不是回退到慢速磁盘扫描
+        log_detail(f"[*] ⚠️ DB 缓存为空，自动触发刷盘缓存...", 'warning')
 
-        try:
-            log_detail(f"[*] 正在启动文件树扫描...", 'info')
-            
-            @retry_on_error(
-                max_retries=10,
-                initial_delay=5,
-                backoff_factor=1.5,
-                allowed_exceptions=(OSError, IOError)
-            )
-            def scan_directory():
-                files_scanned = []
-                targets_scanned = []
-                
-                for root, dirs, files in os.walk(target_dir):
-                    dirs[:] = [d for d in dirs if not d.startswith('.')]
-                    
-                    current_container = os.path.basename(root) or 'root'
-                    if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
-                        log_detail(f"    📅 【扫描日期】{current_container}", 'info')
-                    
-                    for file in files:
-                        if file.startswith('.'): continue
-                        if not file.lower().endswith(AUDIO_EXTS): continue
-                        if filter_date and filter_date not in file: continue
-                        
-                        file_path = os.path.join(root, file)
-                        files_scanned.append(file_path)
-                        
-                        if is_time_in_range(file, start_time_arg, end_time_arg):
-                            targets_scanned.append(file_path)
-                
-                return files_scanned, targets_scanned
-            
-            all_files, target_files = scan_directory()
-            
-            log_detail(f"[*] 磁盘扫描完成，共 {len(all_files)} 个文件", 'info')
+        def on_cache_progress(count, current_dir):
+            if count % 1000 == 0:
+                log_detail(f"    📁 刷盘进度: {count} 个文件 @ {current_dir}", 'info')
 
-        except Exception as e:
-            log_detail(f"\n错误：扫描目录时遇到问题：{e}", 'error')
+        cache_count = refresh_file_cache(
+            PROCESSED_DIR,
+            audio_exts=AUDIO_EXTS,
+            progress_callback=on_cache_progress,
+            log_callback=lambda msg: log_detail(f"    {msg}", 'info')
+        )
+
+        if cache_count > 0:
+            log_detail(f"[*] ✅ 刷盘完成，缓存了 {cache_count} 个文件，现在从缓存读取", 'success')
+            all_files = get_file_cache_from_redis()
+            all_files = [f['filepath'] for f in all_files]
+
+            # 按日期过滤
+            if filter_date:
+                all_files = [f for f in all_files if filter_date in f]
+
+            # 按时间过滤
+            target_files = [f for f in all_files if is_time_in_range(os.path.basename(f), start_time_arg, end_time_arg)]
+        else:
+            # 刷盘失败，回退到传统磁盘扫描
+            log_detail(f"[*] ⚠️ 刷盘失败或没有文件，回退到磁盘扫描", 'warning')
+
+            try:
+                log_detail(f"[*] 正在启动文件树扫描...", 'info')
+
+                @retry_on_error(
+                    max_retries=10,
+                    initial_delay=5,
+                    backoff_factor=1.5,
+                    allowed_exceptions=(OSError, IOError)
+                )
+                def scan_directory():
+                    files_scanned = []
+                    targets_scanned = []
+
+                    for root, dirs, files in os.walk(target_dir):
+                        dirs[:] = [d for d in dirs if not d.startswith('.')]
+
+                        current_container = os.path.basename(root) or 'root'
+                        if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
+                            log_detail(f"    📅 【扫描日期】{current_container}", 'info')
+
+                        for file in files:
+                            if file.startswith('.'): continue
+                            if not file.lower().endswith(AUDIO_EXTS): continue
+                            if filter_date and filter_date not in file: continue
+
+                            file_path = os.path.join(root, file)
+                            files_scanned.append(file_path)
+
+                            if is_time_in_range(file, start_time_arg, end_time_arg):
+                                targets_scanned.append(file_path)
+
+                    return files_scanned, targets_scanned
+
+                all_files, target_files = scan_directory()
+
+                log_detail(f"[*] 磁盘扫描完成，共 {len(all_files)} 个文件", 'info')
+
+            except Exception as e:
+                log_detail(f"\n错误：扫描目录时遇到问题：{e}", 'error')
 
     # 去重并排序，防止重复扫描
     all_files = sorted(list(set(all_files)))
@@ -437,15 +488,29 @@ if __name__ == "__main__":
     log_detail(f"   - 扫描范围: {'指定日期 ' + filter_date if filter_date else '全日期'}", 'info')
     log_detail(f"   - 所有文件数: {len(all_files)} 个", 'info')
     log_detail(f"   - 目标文件数: {len(target_files)} 个", 'info')
-    log_detail(f"[*] 文件列表（前20个）:", 'info')
-    for i, f in enumerate(all_files[:20], 1):
+    preview_files = target_files if is_targeted else all_files
+    preview_label = "目标文件列表" if is_targeted else "文件列表"
+    log_detail(f"[*] {preview_label}（前20个）:", 'info')
+    for i, f in enumerate(preview_files[:20], 1):
         log_detail(f"    {i}. {os.path.basename(f)}", 'info')
 
-    # 用于分析的文件列表（优先用目标文件，没有就用所有文件）
-    files_to_process = target_files if target_files else all_files
+    # 用于分析的文件列表
+    # 定向分析时必须严格使用目标文件；若时间范围内没有命中，则直接结束，不能回退到整天全量处理。
+    if is_targeted:
+        files_to_process = target_files
+    else:
+        files_to_process = target_files if target_files else all_files
     
     if not files_to_process:
-        log_detail(f"在 {target_dir} 中未找到任何支持的音频文件。", 'warning')
+        if is_targeted:
+            log_detail(
+                f"⚠️ 所选日期/时间范围内没有匹配文件：日期={filter_date or '全部'}，"
+                f"时间={start_time_arg or '00-00'} ~ {end_time_arg or '23-59'}。",
+                'warning'
+            )
+            log_detail("🛑 已按定向条件停止，本次不会自动回退到整天或全量扫描。", 'warning')
+        else:
+            log_detail(f"在 {target_dir} 中未找到任何支持的音频文件。", 'warning')
         sys.exit(0)
 
     # === 智能续传优化：跳过已完成的日期，对部分处理的日期从断点继续 ===
@@ -589,8 +654,24 @@ if __name__ == "__main__":
     task_start_time = time.time()
 
     current_processing_date = None
+    current_processing_file = None
     date_file_count = {}  # 统计每个日期的文件数
     date_processed_count = {}  # 统计每个日期已处理的文件数
+
+    # 写入初始进度
+    write_progress({
+        "status": "running",
+        "processed": 0,
+        "total": len(files_to_process),
+        "success_count": 0,
+        "error_count": 0,
+        "skip_count": 0,
+        "avg_time": 0,
+        "eta_hours": 0,
+        "current_date": None,
+        "current_file": None,
+        "started_at": datetime.datetime.now().isoformat()
+    })
 
     # 先统计每个日期的文件数量
     for filepath in files_to_process:
@@ -605,6 +686,7 @@ if __name__ == "__main__":
 
     for idx, filepath in enumerate(files_to_process, 1):
         filename = os.path.basename(filepath)
+        current_processing_file = filename
 
         # 提取当前文件的日期并显示
         # 先尝试原来的格式：YYYY-MM-DD
@@ -726,7 +808,7 @@ if __name__ == "__main__":
             if not is_targeted:
                 mark_file_processed_a(filename, status="error")
         
-        # 每 100 个文件打印心跳日志
+        # 每 100 个文件打印心跳日志 + 写入进度文件
         if idx % 100 == 0:
             elapsed = time.time() - task_start_time
             avg_time = elapsed / idx if idx > 0 else 0
@@ -736,6 +818,19 @@ if __name__ == "__main__":
             log_detail(f"💓 心跳 | 已处理：{idx}/{len(files_to_process)} | 成功：{success_count} | 错误：{error_count} | 跳过：{skip_count}", 'info')
             log_detail(f"   已用时间：{elapsed/3600:.2f}小时 | 平均每个：{avg_time:.1f}s | 预计剩余：{eta_hours:.1f}小时", 'info')
             log_detail(f"{'='*60}\n", 'info')
+            write_progress({
+                "status": "running",
+                "processed": idx,
+                "total": len(files_to_process),
+                "success_count": success_count,
+                "error_count": error_count,
+                "skip_count": skip_count,
+                "avg_time": round(avg_time, 1),
+                "eta_hours": round(eta_hours, 1),
+                "current_date": current_processing_date,
+                "current_file": current_processing_file,
+                "started_at": datetime.datetime.fromtimestamp(task_start_time).isoformat()
+            })
         
         # 快速检测模式：间隔缩短为0.1秒（因为检测很快，不需要等待）
         time.sleep(0.1)
@@ -752,6 +847,23 @@ if __name__ == "__main__":
     if filter_date:
         log_detail(f"   ✅ 日期 {filter_date} 阶段一完成 (哭声识别)", 'info')
     log_detail(f"{'='*60}\n", 'info')
+
+    # 写入阶段一完成进度
+    elapsed = time.time() - task_start_time
+    avg_time = elapsed / len(files_to_process) if len(files_to_process) > 0 else 0
+    write_progress({
+        "status": "completed",
+        "processed": len(files_to_process),
+        "total": len(files_to_process),
+        "success_count": success_count,
+        "error_count": error_count,
+        "skip_count": skip_count,
+        "avg_time": round(avg_time, 1),
+        "eta_hours": 0,
+        "current_date": current_processing_date,
+        "current_file": None,
+        "started_at": datetime.datetime.fromtimestamp(task_start_time).isoformat()
+    })
 
     if not cry_file_paths:
         log_detail(f"\n✅ 历史音频分析完成！未发现任何哭闹事件。", 'info')

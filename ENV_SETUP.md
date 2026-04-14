@@ -28,7 +28,8 @@ cp .env.example .env
 # Gemini LLM 配置
 GEMINI_API_KEY=你的 Gemini API 密钥
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
-GEMINI_MODEL_NAME=gemini-2.5-pro
+GEMINI_MODEL_NAME=gemini-3-flash-preview
+GEMINI_FALLBACK_MODEL_NAME=gemini-3.1-flash-lite-preview
 
 # 邮箱配置
 EMAIL_SMTP_SERVER=smtp.qq.com
@@ -66,7 +67,8 @@ start_all.bat
 
 - `GEMINI_API_KEY` - Google Gemini API 密钥
 - `GEMINI_API_BASE_URL` - Gemini API 基础 URL
-- `GEMINI_MODEL_NAME` - 使用的 Gemini 模型名称
+- `GEMINI_MODEL_NAME` - 主模型，默认 `gemini-3-flash-preview`
+- `GEMINI_FALLBACK_MODEL_NAME` - 备用模型，默认 `gemini-3.1-flash-lite-preview`，仅在主模型失败后按顺序降级
 
 ### 邮箱配置
 

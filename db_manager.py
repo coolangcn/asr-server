@@ -395,6 +395,31 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
         if conn:
             return_connection(conn)
 
+def get_baby_cry_count(date_filter: str = None) -> int:
+    """获取指定日期的宝宝哭声事件数量，默认按东八区今天统计"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return 0
+
+        cursor = conn.cursor()
+        target_date = date_filter or datetime.now(UTC_PLUS_8).date().isoformat()
+        cursor.execute(
+            "SELECT COUNT(*) FROM baby_cry_events WHERE COALESCE(recording_time, created_at)::date = %s",
+            (target_date,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return int(row[0]) if row and row[0] is not None else 0
+    except Exception as e:
+        print(f"[DB Error] 查询哭声数量失败: {e}")
+        return 0
+    finally:
+        if conn:
+            return_connection(conn)
+
+
 def get_baby_cry_event_by_id(event_id: int) -> Dict:
     """根据 ID 获取单个宝宝哭声分析事件"""
     conn = None
