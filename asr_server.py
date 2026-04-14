@@ -3343,12 +3343,11 @@ if __name__ == "__main__":
     # 初始化数据库连接池和表结构
     print("初始化数据库连接池...")
     if not init_pool():
-        logger_sys.critical("❌ 数据库连接池初始化失败！")
-        sys.exit(1)
-    
-    print("初始化数据库表结构...")
-    if not init_db():
-        logger_sys.warning("⚠️ 数据库表结构初始化失败，但服务将继续运行")
+        logger_sys.warning("⚠️ 数据库连接池初始化失败！服务将继续运行，数据库功能暂不可用，连接恢复后自动生效")
+    else:
+        print("初始化数据库表结构...")
+        if not init_db():
+            logger_sys.warning("⚠️ 数据库表结构初始化失败，但服务将继续运行")
 
     load_models()
     

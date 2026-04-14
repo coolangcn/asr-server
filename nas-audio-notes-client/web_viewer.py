@@ -53,7 +53,7 @@ CONFIG = {
     "ASR_API_URL": DEFAULT_ASR_API_URL,
     "LOG_FILE_PATH": DEFAULT_LOG_FILE_PATH,
     "WEB_PORT": DEFAULT_WEB_PORT,
-    "DATABASE_URL": "postgresql://cnncn:74123698cN@cncn.postgres.database.azure.com:5432/postgres?sslmode=require"
+    "DATABASE_URL": os.getenv('DATABASE_URL', 'postgresql://postgres:cncncncn@192.168.1.188:5433/postgres')
 
 }
 
@@ -1183,12 +1183,11 @@ if __name__ == "__main__":
         # 初始化数据库连接池
         logger_web.info("初始化数据库连接池...")
         if not init_pool(CONFIG["DATABASE_URL"]):
-            logger_web.error("数据库连接池初始化失败，程序退出")
-            sys.exit(1)
-        
-        # 初始化数据库表结构
-        logger_web.info("初始化数据库表结构...")
-        init_db()
+            logger_web.warning("⚠️ 数据库连接池初始化失败！服务将继续运行，数据库功能暂不可用，连接恢复后自动生效")
+        else:
+            # 初始化数据库表结构
+            logger_web.info("初始化数据库表结构...")
+            init_db()
         
         args = parse_args()
         update_config(args)

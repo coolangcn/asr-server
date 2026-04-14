@@ -4,12 +4,17 @@
 import psycopg2
 from psycopg2 import pool
 import json
+import os
 import re
 from datetime import datetime
 from typing import List, Dict, Optional
 
 # PostgreSQL 连接配置
-DATABASE_URL = "postgresql://cnncn:74123698cN@cncn.postgres.database.azure.com:5432/postgres?sslmode=require"
+# 优先使用环境变量，如果未设置则使用默认值（本地 NAS）
+DATABASE_URL = os.getenv(
+    'DATABASE_URL',
+    'postgresql://postgres:cncncncn@192.168.1.188:5433/postgres'
+)
 
 # 连接池
 connection_pool = None
