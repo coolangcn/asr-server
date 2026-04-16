@@ -9,7 +9,7 @@ import datetime
 import logging
 import functools
 from logging.handlers import TimedRotatingFileHandler
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
 
 # 进度状态文件路径（供 API 读取）
 PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
@@ -180,6 +180,9 @@ CRY_MERGE_GAP_SEC = 600   # 10 分钟
 # 事件上下文扩展：在首尾哭声文件前后各取 N 个相邻文件
 CRY_CONTEXT_EACH_SIDE = 5  # 前 5 + 后 5 = 最多 10 个上下文文件
 
+# 最大事件文件数：超过此数量的cry组合将被拆分（避免单个事件包含过多文件导致分析不准）
+CRY_MAX_EVENT_FILES = 15
+
 
 def parse_file_datetime(filename):
     """从文件名解析 datetime - 支持两种格式：YYYY-MM-DD_HH-MM-SS 和 YYYYMMDD-HHMMSS"""
@@ -206,11 +209,40 @@ def parse_file_datetime(filename):
     return None
 
 
+def _split_large_group(group):
+    """将超过 CRY_MAX_EVENT_FILES 的组按最大间隔拆分，递归直到每段都不超限"""
+    if len(group) <= CRY_MAX_EVENT_FILES:
+        return [group]
+    # 找相邻文件间最大时间间隔的位置
+    max_gap = -1
+    max_gap_idx = -1
+    for i in range(1, len(group)):
+        prev_dt = parse_file_datetime(os.path.basename(group[i - 1]))
+        curr_dt = parse_file_datetime(os.path.basename(group[i]))
+        if prev_dt and curr_dt:
+            gap = (curr_dt - prev_dt).total_seconds()
+            if gap > max_gap:
+                max_gap = gap
+                max_gap_idx = i
+    # 如果找不到有效时间（文件名无法解析），则简单对半拆分
+    if max_gap_idx <= 0:
+        mid = len(group) // 2
+        max_gap_idx = mid
+        log_detail(f"    ⚠️ 无法解析时间，在位置 {mid} 处对半拆分", 'warning')
+    else:
+        log_detail(f"    ✂️ 在间隔 {max_gap:.0f}秒 处拆分 (文件 {max_gap_idx}/{len(group)})", 'info')
+    left = group[:max_gap_idx]
+    right = group[max_gap_idx:]
+    # 递归拆分
+    return _split_large_group(left) + _split_large_group(right)
+
+
 def merge_cry_events(cry_file_paths, all_sorted_files):
     """
     1. 将时间间隔 <= CRY_MERGE_GAP_SEC 的相邻哭声文件合并为一个事件
-    2. 每个事件在 all_sorted_files 中往前/后各扩展 CRY_CONTEXT_EACH_SIDE 个文件
-    返回：list of (event_id, [filepath, ...])
+    2. 超过 CRY_MAX_EVENT_FILES 的组按最大间隔拆分为多个子事件
+    3. 每个事件在 all_sorted_files 中往前/后各扩展 CRY_CONTEXT_EACH_SIDE 个文件
+    返回：list of [filepath, ...]
     """
     if not cry_file_paths:
         return []
@@ -227,6 +259,19 @@ def merge_cry_events(cry_file_paths, all_sorted_files):
             groups.append(current)
             current = [cry_file_paths[i]]
     groups.append(current)
+
+    # 对超过最大文件数的组进行拆分
+    split_groups = []
+    for group in groups:
+        if len(group) > CRY_MAX_EVENT_FILES:
+            log_detail(f"  ✂️ 哭声文件组 {len(group)} 个超过上限 {CRY_MAX_EVENT_FILES}，按最大间隔拆分:", 'info')
+            sub_groups = _split_large_group(group)
+            for si, sg in enumerate(sub_groups, 1):
+                log_detail(f"    子组 {si}: {len(sg)} 个文件", 'info')
+            split_groups.extend(sub_groups)
+        else:
+            split_groups.append(group)
+    groups = split_groups
 
     # 用 all_sorted_files 构建索引，扩展上下文并去重
     all_idx = {p: i for i, p in enumerate(all_sorted_files)}
@@ -383,6 +428,30 @@ if __name__ == "__main__":
     # 初始化数据库连接池（必须在调用数据库函数之前）
     init_pool()
 
+    # ── 分布式锁：防止多个 A 轨进程同时运行 ──
+    VALKEY_URI = os.environ.get('VALKEY_URI', '')
+    _redis_lock = None
+    _lock_acquired = False
+    
+    if VALKEY_URI:
+        try:
+            import valkey
+            _redis_lock = valkey.from_url(VALKEY_URI)
+            # 尝试获取锁，TTL 2 小时（A 轨可能运行很久），nx=True 保证互斥
+            _lock_acquired = _redis_lock.set('babycry:reprocess_lock', 'a_track_reprocess', nx=True, ex=7200)
+            if not _lock_acquired:
+                lock_holder = _redis_lock.get('babycry:reprocess_lock')
+                holder_str = lock_holder.decode() if isinstance(lock_holder, bytes) else lock_holder
+                log_detail(f"❌ 无法获取分布式锁！当前持有者: {holder_str}", 'error')
+                log_detail(f"   可能有另一个 A 轨进程正在运行", 'warning')
+                log_detail(f"   请等待其完成后再试，或手动删除锁: redis-cli DEL babycry:reprocess_lock", 'warning')
+                sys.exit(1)
+            log_detail(f"🔒 已获取分布式锁 (babycry:reprocess_lock)", 'info')
+        except Exception as e:
+            log_detail(f"⚠️  Redis 连接异常，无法获取锁: {e}", 'warning')
+            log_detail(f"   将继续运行（无锁模式）", 'warning')
+            _redis_lock = None
+
     # === 智能续传：先从数据库获取文件列表 ===
     # 注意：定向检索（选择特定日期/时间）时不使用智能续传，强制重新分析
     is_targeted = bool(filter_date or start_time_arg or end_time_arg)
@@ -393,10 +462,22 @@ if __name__ == "__main__":
 
     # 尝试从 DB 缓存获取文件列表
     log_detail(f"[*] 正在从数据库缓存获取文件列表...", 'info')
-    cached_count = get_file_count_from_redis()
-    log_detail(f"[*] DB 缓存中有 {cached_count} 个文件", 'info')
+    
+    # 检查缓存新鲜度（TTL 是否存在且未即将过期）
+    cache_info = check_cache_freshness()
+    cached_count = cache_info.get('total_keys', 0)
+    cache_fresh = cache_info.get('fresh', False)
+    
+    if cache_info.get('ttl_min', -2) == -1:
+        log_detail(f"[*] ⚠️  Redis 缓存无 TTL（旧缓存），将强制刷盘更新", 'warning')
+        cache_fresh = False
+    elif cache_info.get('ttl_min', -2) > 0:
+        ttl_hours = cache_info['ttl_min'] / 3600
+        log_detail(f"[*] Redis 缓存 TTL 剩余 {ttl_hours:.1f} 小时", 'info')
+    
+    log_detail(f"[*] DB 缓存中有 {cached_count} 个文件，新鲜度: {'✅ 新鲜' if cache_fresh else '⚠️ 过期/无TTL'}", 'info')
 
-    if cached_count > 0:
+    if cached_count > 0 and cache_fresh:
         # DB 缓存命中！直接从 Redis 获取文件列表
         log_detail(f"[*] ✅ Redis 缓存命中，使用缓存文件列表（极速模式）", 'info')
         all_files = get_file_cache_from_redis()  # 返回 [{filepath, filename}, ...]
@@ -411,8 +492,11 @@ if __name__ == "__main__":
 
         log_detail(f"[*] 从缓存获取文件列表完成", 'info')
     else:
-        # DB 缓存未命中，自动触发刷盘而不是回退到慢速磁盘扫描
-        log_detail(f"[*] ⚠️ DB 缓存为空，自动触发刷盘缓存...", 'warning')
+        # DB 缓存未命中或已过期，自动触发刷盘
+        if cached_count > 0 and not cache_fresh:
+            log_detail(f"[*] ⚠️ Redis 缓存已过期/无TTL，自动触发刷盘更新...", 'warning')
+        else:
+            log_detail(f"[*] ⚠️ DB 缓存为空，自动触发刷盘缓存...", 'warning')
 
         def on_cache_progress(count, current_dir):
             if count % 1000 == 0:
@@ -514,6 +598,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # === 智能续传优化：跳过已完成的日期，对部分处理的日期从断点继续 ===
+    incomplete_dates_from_resume = []  # 阶段一完成但阶段二不完整的日期（智能续传发现）
     if not force_replace and date_stats:
         def extract_date_from_filepath(filepath):
             """从文件路径中提取日期，支持多种格式（与 get_date_processing_stats 保持一致）
@@ -585,8 +670,25 @@ if __name__ == "__main__":
             actual_processed = total - len(remaining)
 
             if actual_processed >= total and total > 0:
-                # 日期完全处理完（所有文件都在 processed_set 中）
-                completed_dates.append(d)
+                # 阶段一完成，但还需检查阶段二是否完整
+                incomplete_evts = get_incomplete_cry_events(d)
+                uncovered_cry = get_uncovered_cry_count(d)
+                if incomplete_evts:
+                    # 阶段二有不完整事件，需要重新跑阶段二
+                    incomplete_dates_from_resume.append(d)
+                    log_detail(f"   📎 {d}: 阶段一完成但有 {len(incomplete_evts)} 个不完整分析，需重跑阶段二", 'info')
+                    for ie in incomplete_evts:
+                        rec_t = ie.get('recording_time', '?')
+                        cat = ie.get('reason_category', '无')
+                        rsn = ie.get('reason', '')
+                        rsn_short = (rsn[:40] + '...') if rsn and len(rsn) > 40 else (rsn or '缺失')
+                        log_detail(f"      • ID={ie.get('id')} | {rec_t} | 分类={cat} | 原因={rsn_short}", 'warning')
+                elif uncovered_cry > 0:
+                    # 有cry标记文件未被事件覆盖，需要重跑阶段二
+                    incomplete_dates_from_resume.append(d)
+                    log_detail(f"   📎 {d}: 阶段一完成但有 {uncovered_cry} 个cry文件未生成事件，需重跑阶段二", 'info')
+                else:
+                    completed_dates.append(d)
             elif actual_processed > 0:
                 # 部分处理，只处理剩余文件
                 files_to_process.extend(remaining)
@@ -597,6 +699,8 @@ if __name__ == "__main__":
 
         if completed_dates:
             log_detail(f"[*] 智能续传：跳过 {len(completed_dates)} 个已完成日期", 'info')
+        if incomplete_dates_from_resume:
+            log_detail(f"[*] 智能续传：{len(incomplete_dates_from_resume)} 个日期阶段二不完整（缺事件/分析不完整），将重跑: {', '.join(incomplete_dates_from_resume)}", 'info')
         if partial_dates:
             log_detail(f"[*] 智能续传：{len(partial_dates)} 个日期从断点继续: {', '.join(partial_dates)}", 'info')
 
@@ -613,493 +717,565 @@ if __name__ == "__main__":
 
     log_detail(f"\n找到 {len(files_to_process)} 个文件进行哭声识别（扫描范围内共 {len(all_files)} 个音频文件，哭声事件将从中选取上下文）...", 'info')
 
-    # =====================================================================
-    # 阶段一：全量转录，识别哭声文件（不触发 Gemini 分析）
-    # =====================================================================
-    log_detail(f"\n{'='*60}", 'info')
-    log_detail(f"📡 阶段一：逐文件转录，识别哭声片段（共 {len(files_to_process)} 个）", 'info')
-    log_detail(f"{'='*60}", 'info')
-    
-    # 显示当前处理的日期范围 - 更详细的日期信息
+    # ── 过滤 Redis 缓存中过时的文件（NAS 上已不存在的文件）──
+    # 只检查 files_to_process（待处理列表），all_files 在后续按日期分组时自然过滤
     if files_to_process:
-        first_file = os.path.basename(files_to_process[0])
-        last_file = os.path.basename(files_to_process[-1])
-        first_date = parse_file_datetime(first_file)
-        last_date = parse_file_datetime(last_file)
-        
-        log_detail(f"", 'info')
-        log_detail(f"📅 【当前处理日期详细信息】", 'info')
-        
-        if first_date and last_date:
-            day_span = (last_date - first_date).days + 1
-            log_detail(f"   📅 日期范围: {first_date.strftime('%Y-%m-%d %H:%M')} → {last_date.strftime('%Y-%m-%d %H:%M')}", 'info')
-            log_detail(f"   📅 时间跨度: {day_span} 天", 'info')
-            log_detail(f"   ⏰ 起始时间: {first_date.strftime('%H:%M:%S')}", 'info')
-            log_detail(f"   ⏰ 结束时间: {last_date.strftime('%H:%M:%S')}", 'info')
-        
-        log_detail(f"   📅 首个文件: {first_file}", 'info')
-        log_detail(f"   📅 末个文件: {last_file}", 'info')
-        log_detail(f"   📈 文件总数: {len(files_to_process)} 个", 'info')
-        
-        # 如果是按日期过滤，显示当前日期
-        if filter_date:
-            log_detail(f"   🎯 指定日期: {filter_date}", 'info')
-            log_detail(f"   📝 处理状态: 准备开始哭声识别...", 'info')
-    
+        missing_files = [f for f in files_to_process if not os.path.exists(f)]
+        if missing_files:
+            log_detail(f"[*] ⚠️  发现 {len(missing_files)} 个文件在 NAS 上不存在（Redis缓存过时），已标记跳过", 'warning')
+            if not is_targeted:
+                for f in missing_files:
+                    mark_file_processed_a(os.path.basename(f), status="no_cry")
+            files_to_process = [f for f in files_to_process if os.path.exists(f)]
+            all_files = [f for f in all_files if os.path.exists(f)]
+            log_detail(f"[*] 过滤后实际需要处理 {len(files_to_process)} 个文件", 'info')
 
-    cry_file_paths = []   # 有哭声的文件路径列表（有序）
-    success_count = 0
-    skip_count = 0
-    error_count = 0
-    task_start_time = time.time()
+    # =====================================================================
+    # 【按日期滚动处理】每天独立完成 阶段一(检测) + 阶段二(分析)
+    # 不再等所有天扫描完才分析，每天检测完立即出结果
+    # =====================================================================
 
-    current_processing_date = None
-    current_processing_file = None
-    date_file_count = {}  # 统计每个日期的文件数
-    date_processed_count = {}  # 统计每个日期已处理的文件数
+    # --- 将 files_to_process 和 all_files 按日期分组 ---
+    def extract_date_from_filepath(filepath):
+        """从文件路径中提取日期"""
+        m = re.search(r'/(\d{4}-\d{2}-\d{2})/', filepath)
+        if m: return m.group(1)
+        basename = os.path.basename(filepath)
+        m = re.search(r'(\d{4}-\d{2}-\d{2})', basename)
+        if m: return m.group(1)
+        m = re.search(r'(\d{4})(\d{2})(\d{2})', basename)
+        if m: return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+        return None
 
-    # 写入初始进度
-    write_progress({
-        "status": "running",
-        "processed": 0,
-        "total": len(files_to_process),
-        "success_count": 0,
-        "error_count": 0,
-        "skip_count": 0,
-        "avg_time": 0,
-        "eta_hours": 0,
-        "current_date": None,
-        "current_file": None,
-        "started_at": datetime.datetime.now().isoformat()
-    })
+    date_files_to_process = {}  # {date: [filepath, ...]}
+    date_all_files = {}         # {date: [filepath, ...]} 用于上下文扩展
+    for f in files_to_process:
+        d = extract_date_from_filepath(f)
+        if d:
+            date_files_to_process.setdefault(d, []).append(f)
+    for f in all_files:
+        d = extract_date_from_filepath(f)
+        if d:
+            date_all_files.setdefault(d, []).append(f)
 
-    # 先统计每个日期的文件数量
-    for filepath in files_to_process:
-        filename = os.path.basename(filepath)
-        # 支持两种格式：YYYY-MM-DD 和 YYYYMMDD
-        file_date_match = re.search(r'(\d{4})[-\s]?(\d{2})[-\s]?(\d{2})', filename)
-        if file_date_match:
-            # 统一格式化为 YYYY-MM-DD
-            year, month, day = file_date_match.group(1), file_date_match.group(2), file_date_match.group(3)
-            file_date = f"{year}-{month}-{day}"
-            date_file_count[file_date] = date_file_count.get(file_date, 0) + 1
+    # 确定要处理的日期列表（排序）
+    dates_to_process = sorted(date_files_to_process.keys())
 
-    for idx, filepath in enumerate(files_to_process, 1):
-        filename = os.path.basename(filepath)
-        current_processing_file = filename
+    # ── 补全遗漏：检查 DB 中有 cry 记录但缺少 baby_cry_events 的日期 ──
+    # 这些日期之前被智能续传跳过了，但阶段二（合并+分析）从未执行
+    unanalyzed_dates = get_unanalyzed_cry_dates()
+    phase2_only_dates = []  # 只需执行阶段二的日期
+    # 将智能续传发现的不完整日期也纳入
+    all_unanalyzed = set(unanalyzed_dates) | set(incomplete_dates_from_resume)
+    if all_unanalyzed:
+        for ud in sorted(all_unanalyzed):
+            if ud not in date_files_to_process:
+                phase2_only_dates.append(ud)
+                # 补充 date_all_files 供阶段二使用
+                # 先从 all_files 中找
+                ud_files = [f for f in all_files if extract_date_from_filepath(f) == ud]
+                # 如果 all_files 中没有，尝试从 SOURCE_DIR/日期/ 直接扫描
+                if not ud_files:
+                    ud_dir = os.path.join(SOURCE_DIR, ud)
+                    if os.path.isdir(ud_dir):
+                        audio_exts = ('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc')
+                        ud_files = [os.path.join(ud_dir, f) for f in os.listdir(ud_dir)
+                                    if f.lower().endswith(audio_exts)]
+                        log_detail(f"   📂 {ud}: 从目录扫描到 {len(ud_files)} 个音频文件", 'info')
+                date_all_files[ud] = sorted(ud_files, key=os.path.basename)
+                date_files_to_process[ud] = []  # 阶段一无文件需处理
+        if phase2_only_dates:
+            log_detail(f"\n📎 发现 {len(phase2_only_dates)} 个日期有cry记录但缺少分析结果（将只执行阶段二）", 'info')
+            for pd in phase2_only_dates:
+                cry_count = len(get_cry_files_for_date(pd))
+                incomplete_evts = get_incomplete_cry_events(pd)
+                uncovered_cry = get_uncovered_cry_count(pd)
+                detail_parts = [f"{cry_count} 个cry文件"]
+                if incomplete_evts:
+                    detail_parts.append(f"{len(incomplete_evts)} 个不完整事件")
+                if uncovered_cry > 0:
+                    detail_parts.append(f"{uncovered_cry} 个未覆盖")
+                log_detail(f"   • {pd}: {', '.join(detail_parts)}", 'info')
+                for ie in incomplete_evts:
+                    rec_t = ie.get('recording_time', '?')
+                    cat = ie.get('reason_category', '无')
+                    rsn = ie.get('reason', '')
+                    rsn_short = (rsn[:40] + '...') if rsn and len(rsn) > 40 else (rsn or '缺失')
+                    log_detail(f"      ⚠️ ID={ie.get('id')} | {rec_t} | 分类={cat} | 原因={rsn_short}", 'warning')
 
-        # 提取当前文件的日期并显示
-        # 先尝试原来的格式：YYYY-MM-DD
-        file_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
-        if file_date_match:
-            file_date = file_date_match.group(1)
+    # 合并所有待处理日期
+    all_dates = sorted(set(dates_to_process + phase2_only_dates))
+
+    if not all_dates:
+        log_detail(f"\n✅ 未找到需要处理的文件，也没有遗漏的cry记录。", 'info')
+        sys.exit(0)
+
+    log_detail(f"\n{'='*60}", 'info')
+    log_detail(f"📋 按日期滚动处理模式", 'info')
+    log_detail(f"   📅 共 {len(all_dates)} 个日期待处理: {all_dates[0]} ~ {all_dates[-1]}", 'info')
+    if phase2_only_dates:
+        log_detail(f"   📎 其中 {len(phase2_only_dates)} 个日期只执行阶段二（历史cry补分析）", 'info')
+    log_detail(f"   🔄 每天独立完成: 检测 → 合并 → Gemini 分析", 'info')
+    log_detail(f"{'='*60}\n", 'info')
+
+    total_task_start = time.time()
+    total_events_all = 0      # 总事件数
+    total_cry_files_all = 0   # 总 cry 文件数
+
+    for date_idx, current_date in enumerate(all_dates, 1):
+        day_files = date_files_to_process.get(current_date, [])
+        day_all_files = date_all_files.get(current_date, day_files)
+        day_all_files_sorted = sorted(day_all_files, key=os.path.basename)
+        is_phase2_only = current_date in phase2_only_dates
+
+        log_detail(f"\n{'='*60}", 'info')
+        mode_str = "仅阶段二(历史cry补分析)" if is_phase2_only else f"{len(day_files)} 个文件"
+        log_detail(f"📅 [{date_idx}/{len(all_dates)}] 处理日期: {current_date} ({mode_str})", 'info')
+        log_detail(f"{'='*60}", 'info')
+
+        # ── 阶段一：逐文件检测 ──
+        if is_phase2_only or len(day_files) == 0:
+            log_detail(f"\n⏩ 阶段一跳过（已有DB记录，直接从DB恢复cry文件）", 'info')
+            cry_file_paths = []
+            day_success = 0
+            day_error = 0
+            day_skip = 0
+            day_elapsed = 0
         else:
-            # 再尝试 YYYYMMDD 格式
-            file_date_match = re.search(r'(\d{4})(\d{2})(\d{2})', filename)
-            if file_date_match:
-                file_date = f"{file_date_match.group(1)}-{file_date_match.group(2)}-{file_date_match.group(3)}"
-        
-        if file_date_match:
-            date_processed_count[file_date] = date_processed_count.get(file_date, 0) + 1
-            if file_date != current_processing_date:
-                current_processing_date = file_date
-                log_detail(f"", 'info')
-                log_detail(f"    📅 【正在处理日期】{file_date} (该日期共 {date_file_count.get(file_date, 0)} 个文件)", 'info')
-            # 显示该日期内的进度
-            date_progress = date_processed_count[file_date]
-            date_total = date_file_count.get(file_date, 0)
-            if idx % 10 == 0 or date_progress == date_total:  # 每10个文件或完成时显示
-                log_detail(f"       该日期进度: {date_progress}/{date_total} ({date_progress*100//date_total}%)", 'info')
+            log_detail(f"\n📡 阶段一：逐文件检测哭声 ({len(day_files)} 个文件)", 'info')
 
-        # 【断点续传已完成过滤，这里不再逐个检查】
-        # 注意：定向检索时不跳过已处理文件，强制重新分析
+            cry_file_paths = []
+            day_success = 0
+            day_error = 0
+            day_skip = 0
+            day_start = time.time()
 
-        log_detail(f"\n[{idx}/{len(files_to_process)}] 正在发起云端分析请求：{filepath}", 'info')
-        
-        # 首先检查网络挂载是否可用
-        if not wait_for_network_mount(SOURCE_DIR, max_wait=300, check_interval=5):
-            log_detail(f"    ❌ 网络挂载不可用，跳过此文件", 'error')
-            skip_count += 1
+            write_progress({
+                "status": "running",
+                "processed": 0,
+                "total": len(day_files),
+                "success_count": 0,
+                "error_count": 0,
+                "skip_count": 0,
+                "avg_time": 0,
+                "eta_hours": 0,
+                "current_date": current_date,
+                "current_file": None,
+                "started_at": datetime.datetime.now().isoformat()
+            })
+
+            for file_idx, filepath in enumerate(day_files, 1):
+                filename = os.path.basename(filepath)
+
+                # 检查文件是否实际存在（Redis 缓存可能过时）
+                if not os.path.exists(filepath):
+                    log_detail(f"\n  [{file_idx}/{len(day_files)}] {filename} — ⏭️ 文件不存在（已从NAS移除），跳过", 'info')
+                    if not is_targeted:
+                        mark_file_processed_a(filename, status="no_cry")
+                    day_skip += 1
+                    continue
+
+                log_detail(f"\n  [{file_idx}/{len(day_files)}] {filename}", 'info')
+
+                if not wait_for_network_mount(SOURCE_DIR, max_wait=300, check_interval=5):
+                    log_detail(f"    ❌ 网络挂载不可用，跳过", 'error')
+                    if not is_targeted:
+                        mark_file_processed_a(filename, status="no_cry")
+                    day_skip += 1
+                    continue
+
+                max_retries = 5
+                retry_count = 0
+                request_success = False
+
+                while retry_count < max_retries:
+                    try:
+                        @retry_on_error(
+                            max_retries=5,
+                            initial_delay=3,
+                            backoff_factor=2,
+                            allowed_exceptions=(OSError, IOError)
+                        )
+                        def open_audio_file():
+                            return open(filepath, 'rb')
+
+                        with open_audio_file() as f:
+                            files_data = {'audio_file': (filename, f, 'audio/m4a')}
+                            response = requests.post(QUICK_DETECT_URL, files=files_data, timeout=60)
+                        request_success = True
+                        break
+                    except (OSError, IOError) as e:
+                        retry_count += 1
+                        log_detail(f"    ⚠️  文件访问失败 ({retry_count}/{max_retries}): {e}", 'warning')
+                        if retry_count >= max_retries:
+                            day_skip += 1
+                            break
+                        wait_for_network_mount(SOURCE_DIR, max_wait=120, check_interval=10)
+                    except requests.exceptions.Timeout as e:
+                        retry_count += 1
+                        log_detail(f"    ⚠️  超时 ({retry_count}/{max_retries})", 'warning')
+                        if retry_count >= max_retries:
+                            day_skip += 1
+                            break
+                        time.sleep(2)
+                    except requests.exceptions.RequestException as e:
+                        retry_count += 1
+                        log_detail(f"    ⚠️  网络错误 ({retry_count}/{max_retries})", 'warning')
+                        if retry_count >= max_retries:
+                            day_skip += 1
+                            break
+                        time.sleep(2)
+
+                if not request_success:
+                    if not is_targeted:
+                        mark_file_processed_a(filename, status="error")
+                elif response.status_code == 200:
+                    result = response.json()
+                    is_cry = result.get('is_baby_cry', False)
+                    confidence = result.get('confidence', 0)
+
+                    if is_cry:
+                        cry_file_paths.append(filepath)
+                        log_detail(f"    🍼 检测到哭声! 置信度={confidence:.3f}", 'info')
+                    else:
+                        log_detail(f"    📉 未检出哭声 (置信度={confidence:.3f})", 'info')
+
+                    day_success += 1
+                    if not is_targeted:
+                        mark_file_processed_a(filename, status="cry" if is_cry else "no_cry")
+                else:
+                    log_detail(f"    ❌ 失败 (Status {response.status_code})", 'error')
+                    day_error += 1
+                    if not is_targeted:
+                        mark_file_processed_a(filename, status="error")
+
+                # 写入进度（每20个文件）
+                if file_idx % 20 == 0:
+                    elapsed = time.time() - day_start
+                    avg = elapsed / file_idx if file_idx > 0 else 0
+                    remaining_files = len(day_files) - file_idx
+                    eta_h = (remaining_files * avg) / 3600
+                    log_detail(f"    📊 进度: {file_idx}/{len(day_files)} | 哭声: {len(cry_file_paths)} | ETA: {eta_h:.1f}h", 'info')
+                    write_progress({
+                        "status": "running",
+                        "processed": file_idx,
+                        "total": len(day_files),
+                        "success_count": day_success,
+                        "error_count": day_error,
+                        "skip_count": day_skip,
+                        "avg_time": round(avg, 1),
+                        "eta_hours": round(eta_h, 1),
+                        "current_date": current_date,
+                        "current_file": filename,
+                        "started_at": datetime.datetime.fromtimestamp(day_start).isoformat()
+                    })
+
+                time.sleep(0.1)
+
+            day_elapsed = time.time() - day_start
+            log_detail(f"\n{'─'*40}", 'info')
+            log_detail(f"📊 {current_date} 阶段一完成: 成功={day_success}, 跳过={day_skip}, 错误={day_error}, 哭声={len(cry_file_paths)}, 耗时={day_elapsed/60:.1f}分钟", 'info')
+
+        # ── 同时从数据库恢复该日期已标记的 cry 文件（补全之前中断累积的） ──
+        db_cry_filenames = get_cry_files_for_date(current_date)
+        if db_cry_filenames:
+            # 将数据库中的 cry 文件名映射为完整路径
+            day_all_basenames = {os.path.basename(f): f for f in day_all_files_sorted}
+            db_cry_paths = []
+            db_unresolved = []
+            for fn in db_cry_filenames:
+                if fn in day_all_basenames:
+                    full_path = day_all_basenames[fn]
+                    if full_path not in cry_file_paths:
+                        db_cry_paths.append(full_path)
+                        cry_file_paths.append(full_path)
+                else:
+                    # 文件不在 day_all_files 中，尝试从 SOURCE_DIR 的日期子目录查找
+                    date_dir = os.path.join(SOURCE_DIR, current_date)
+                    candidate = os.path.join(date_dir, fn) if os.path.isdir(date_dir) else None
+                    if candidate and os.path.isfile(candidate):
+                        if candidate not in cry_file_paths:
+                            db_cry_paths.append(candidate)
+                            cry_file_paths.append(candidate)
+                            # 同时补充到 day_all_files_sorted
+                            if candidate not in day_all_files_sorted:
+                                day_all_files_sorted.append(candidate)
+                    else:
+                        db_unresolved.append(fn)
+            if db_cry_paths:
+                log_detail(f"   📎 从数据库恢复 {len(db_cry_paths)} 个历史cry文件", 'info')
+            if db_unresolved:
+                log_detail(f"   ⚠️  {len(db_unresolved)} 个cry文件在磁盘上未找到: {db_unresolved[:3]}{'...' if len(db_unresolved) > 3 else ''}", 'warning')
+
+        # 排序 cry_file_paths
+        cry_file_paths.sort(key=os.path.basename)
+
+        if not cry_file_paths:
+            # 即使没有找到 cry 文件，检查是否有不完整的历史事件需要重新分析
+            incomplete_events = get_incomplete_cry_events(current_date)
+            if incomplete_events:
+                log_detail(f"   🔄 {current_date} 无cry文件，但有 {len(incomplete_events)} 个不完整事件需要重新分析", 'info')
+                # 删除不完整事件，让 get_unanalyzed_cry_dates 下次仍能捕获该日期
+                # 但先尝试用已有 audio_path 重新分析
+                for ie in incomplete_events:
+                    ie_audio = ie.get('audio_path')
+                    ie_filename = ie.get('filename')
+                    if ie_audio and os.path.exists(ie_audio):
+                        log_detail(f"      🔄 重新分析: {ie_filename} (category={ie.get('reason_category')})", 'info')
+                        try:
+                            # 重新调用分析
+                            ie_event_files = ie.get('event_files', [])
+                            req_data = {
+                                "filename": ie_filename,
+                                "audio_path": ie_audio,
+                                "start_ms": 0,
+                                "end_ms": 60000,
+                                "audio_paths": ie_event_files if ie_event_files else [ie_audio],
+                            }
+                            # 限额退避重试
+                            max_api_retries = 3
+                            for api_retry in range(max_api_retries):
+                                resp = requests.post(
+                                    "http://localhost:5008/api/analyze_cry",
+                                    json=req_data,
+                                    timeout=180
+                                )
+                                if resp.status_code == 200:
+                                    r = resp.json()
+                                    if r.get("reason"):
+                                        log_detail(f"      ✨ 重新分析成功! category={r.get('category', '?')}", 'info')
+                                        break
+                                    else:
+                                        log_detail(f"      ⚠️ 重新分析仍无结果", 'warning')
+                                        break
+                                elif resp.status_code == 429 or 'RESOURCE_EXHAUSTED' in resp.text:
+                                    wait_sec = 15 * (2 ** api_retry)
+                                    log_detail(f"      ⚠️ API 限额，等待 {wait_sec}秒...", 'warning')
+                                    time.sleep(wait_sec)
+                                else:
+                                    log_detail(f"      ❌ 分析失败: HTTP {resp.status_code}", 'error')
+                                    break
+                        except Exception as e:
+                            log_detail(f"      ❌ 重新分析异常: {e}", 'error')
+                        time.sleep(5)
+                    else:
+                        # 音频文件不存在，删除这条不完整记录
+                        log_detail(f"      🗑️ 音频不存在，删除不完整记录: {ie_filename}", 'warning')
+                        try:
+                            from db_manager import delete_cry_event_by_id
+                            delete_cry_event_by_id(ie['id'])
+                        except:
+                            pass
+            else:
+                log_detail(f"   ✅ {current_date} 无哭声事件，跳过阶段二", 'info')
             continue
-        
-        max_retries = 5
-        retry_count = 0
-        request_success = False
-        
-        # 使用快速哭声检测接口（无ASR，仅声纹匹配，速度提升10倍）
-        while retry_count < max_retries:
+
+        # ── 阶段二：合并事件 + Gemini 深度分析 ──
+        log_detail(f"\n🧠 阶段二：{current_date} 合并事件 + 深度分析", 'info')
+
+        # 删除该日期的旧分析记录（含不完整记录）
+        log_detail(f"   🗑️  删除 {current_date} 的旧分析记录...", 'info')
+        try:
+            from db_manager import delete_cry_events_by_date, delete_incomplete_cry_events
+            # 先删不完整记录
+            incomplete_deleted = delete_incomplete_cry_events(current_date)
+            if incomplete_deleted > 0:
+                log_detail(f"   ✅ 已删除 {incomplete_deleted} 条不完整记录", 'info')
+            # 如果是 phase2_only 模式，只删不完整的，不删正常的
+            if not is_phase2_only:
+                deleted_count = delete_cry_events_by_date(current_date)
+                if deleted_count > 0:
+                    log_detail(f"   ✅ 已删除 {deleted_count} 条旧记录", 'info')
+        except Exception as e:
+            log_detail(f"   ⚠️  删除旧记录失败: {e}", 'warning')
+
+        events = merge_cry_events(cry_file_paths, day_all_files_sorted)
+
+        events_base_dir = os.path.join(SOURCE_DIR, "cry_events")
+        os.makedirs(events_base_dir, exist_ok=True)
+
+        log_detail(f"   🍼 哭声文件: {len(cry_file_paths)} 个", 'info')
+        log_detail(f"   🔔 独立事件: {len(events)} 个", 'info')
+
+        phase2_skip = 0  # 快速检测未确认而跳过的事件数
+        for evt_idx, event_files in enumerate(events, 1):
+            if not wait_for_network_mount(SOURCE_DIR, max_wait=300, check_interval=5):
+                log_detail(f"    ❌ 网络挂载不可用，跳过事件 {evt_idx}", 'error')
+                continue
+
+            event_dir = build_event_dir(events_base_dir, evt_idx, event_files)
+            rep_filepath = event_files[len(event_files) // 2]
+            rep_filename = os.path.basename(rep_filepath)
+
+            log_detail(f"\n   🔔 事件 {evt_idx}/{len(events)}: {len(event_files)} 个文件, 代表={rep_filename}", 'info')
+
+            cry_files_in_event = [f for f in event_files if f in cry_file_paths]
+            log_detail(f"      哭声文件: {len(cry_files_in_event)}个, 上下文: {len(event_files) - len(cry_files_in_event)}个", 'info')
+
+            # 快速检测验证
+            first_seg = {'start': 0, 'end': 60000}
             try:
-                request_start = time.time()
-                
-                # 使用安全文件操作打开文件
                 @retry_on_error(
                     max_retries=5,
                     initial_delay=3,
                     backoff_factor=2,
                     allowed_exceptions=(OSError, IOError)
                 )
-                def open_audio_file():
-                    return open(filepath, 'rb')
-                
-                with open_audio_file() as f:
-                    files_data = {'audio_file': (os.path.basename(filepath), f, 'audio/m4a')}
-                    log_detail(f"    🌐 快速哭声检测 {QUICK_DETECT_URL}...", 'info')
-                    response = requests.post(QUICK_DETECT_URL, files=files_data, timeout=60)
-                request_time = time.time() - request_start
-                log_detail(f"    ⏱️  检测耗时：{request_time:.1f}s", 'info')
-                request_success = True
-                break  # 成功则跳出重试循环
-            except (OSError, IOError) as e:
-                retry_count += 1
-                log_detail(f"    ⚠️  文件访问失败 ({retry_count}/{max_retries}): {e}", 'warning')
-                if retry_count >= max_retries:
-                    log_detail(f"    ❌ 文件访问失败次数过多，跳过此文件", 'error')
-                    skip_count += 1
-                    break
-                # 等待网络挂载恢复
-                wait_for_network_mount(SOURCE_DIR, max_wait=120, check_interval=10)
-            except requests.exceptions.Timeout as e:
-                retry_count += 1
-                log_detail(f"    ⚠️  请求超时 ({retry_count}/{max_retries}): {e}", 'warning')
-                if retry_count >= max_retries:
-                    log_detail(f"    ❌ 超时过多，跳过此文件", 'error')
-                    skip_count += 1
-                    break
-                time.sleep(2)  # 等待 2 秒后重试
-            except requests.exceptions.RequestException as e:
-                retry_count += 1
-                log_detail(f"    ⚠️  网络错误 ({retry_count}/{max_retries}): {e}", 'warning')
-                if retry_count >= max_retries:
-                    log_detail(f"    ❌ 网络错误过多，跳过此文件", 'error')
-                    skip_count += 1
-                    break
-                time.sleep(2)
+                def open_and_detect():
+                    with open(rep_filepath, 'rb') as f:
+                        return requests.post(
+                            QUICK_DETECT_URL,
+                            files={'audio_file': (rep_filename, f, 'audio/m4a')},
+                            timeout=30
+                        )
 
-        # 在 for 循环层级处理响应
-        if not request_success:
-            # 请求失败已经在上面的循环中处理过了
-            pass
-        elif response.status_code == 200:
-            result = response.json()
-            is_cry = result.get('is_baby_cry', False)
-            confidence = result.get('confidence', 0)
-            detect_time_ms = result.get('detect_time_ms', 0)
-            
-            if is_cry:
-                cry_file_paths.append(filepath)
-                log_detail(f"    🍼 检测到哭声! 置信度={confidence:.3f}", 'info')
-            else:
-                log_detail(f"    📉 未检出哭声 (置信度={confidence:.3f})", 'info')
-            
-            log_detail(
-                f"    ✓ 成功 | 检测耗时：{detect_time_ms:.0f}ms | 置信度：{confidence:.3f}",
-                'info'
-            )
-            success_count += 1
-            # 只有非定向检索时才标记文件为已处理（避免影响最后运行日期判断）
-            if not is_targeted:
-                mark_file_processed_a(filename, status="cry" if is_cry else "no_cry")
-            else:
-                log_detail(f"    ⏭️ 定向检索模式，不标记文件处理状态", 'debug')
-        else:
-            log_detail(f"    ❌ 失败 (Status {response.status_code}): {response.text}", 'error')
-            error_count += 1
-            # 只有非定向检索时才标记文件为已处理
-            if not is_targeted:
-                mark_file_processed_a(filename, status="error")
-        
-        # 每 100 个文件打印心跳日志 + 写入进度文件
-        if idx % 100 == 0:
-            elapsed = time.time() - task_start_time
-            avg_time = elapsed / idx if idx > 0 else 0
-            remaining = len(files_to_process) - idx
-            eta_hours = (remaining * avg_time) / 3600
-            log_detail(f"\n{'='*60}", 'info')
-            log_detail(f"💓 心跳 | 已处理：{idx}/{len(files_to_process)} | 成功：{success_count} | 错误：{error_count} | 跳过：{skip_count}", 'info')
-            log_detail(f"   已用时间：{elapsed/3600:.2f}小时 | 平均每个：{avg_time:.1f}s | 预计剩余：{eta_hours:.1f}小时", 'info')
-            log_detail(f"{'='*60}\n", 'info')
-            write_progress({
-                "status": "running",
-                "processed": idx,
-                "total": len(files_to_process),
-                "success_count": success_count,
-                "error_count": error_count,
-                "skip_count": skip_count,
-                "avg_time": round(avg_time, 1),
-                "eta_hours": round(eta_hours, 1),
-                "current_date": current_processing_date,
-                "current_file": current_processing_file,
-                "started_at": datetime.datetime.fromtimestamp(task_start_time).isoformat()
-            })
-        
-        # 快速检测模式：间隔缩短为0.1秒（因为检测很快，不需要等待）
-        time.sleep(0.1)
+                res = open_and_detect()
+                if res.status_code == 200:
+                    result = res.json()
+                    if result.get('is_baby_cry'):
+                        log_detail(f"      📍 哭声确认: 置信度={result.get('confidence', 0):.3f}", 'info')
+                    else:
+                        log_detail(f"      ⚠️ 快速检测未确认哭声 (conf={result.get('confidence', 0):.3f})，跳过该事件", 'warning')
+                        phase2_skip += 1
+                        continue
+            except Exception as e:
+                log_detail(f"      ⚠️ 快速检测失败: {e}", 'warning')
 
-    log_detail(f"\n{'='*60}", 'info')
-    log_detail(f"📊 阶段一统计 (日期: {filter_date or current_processing_date or '全部'}):", 'info')
-    log_detail(f"{'─'*60}", 'info')
-    log_detail(f"   📁 总文件数：     {len(files_to_process):>6}", 'info')
-    log_detail(f"   ✅ 成功处理：     {success_count:>6}", 'info')
-    log_detail(f"   ⏭️ 跳过文件：     {skip_count:>6}", 'info')
-    log_detail(f"   ❌ 处理错误：     {error_count:>6}", 'info')
-    log_detail(f"   🍼 检出哭声文件： {len(cry_file_paths):>6}", 'info')
-    log_detail(f"{'─'*60}", 'info')
-    if filter_date:
-        log_detail(f"   ✅ 日期 {filter_date} 阶段一完成 (哭声识别)", 'info')
-    log_detail(f"{'='*60}\n", 'info')
-
-    # 写入阶段一完成进度
-    elapsed = time.time() - task_start_time
-    avg_time = elapsed / len(files_to_process) if len(files_to_process) > 0 else 0
-    write_progress({
-        "status": "completed",
-        "processed": len(files_to_process),
-        "total": len(files_to_process),
-        "success_count": success_count,
-        "error_count": error_count,
-        "skip_count": skip_count,
-        "avg_time": round(avg_time, 1),
-        "eta_hours": 0,
-        "current_date": current_processing_date,
-        "current_file": None,
-        "started_at": datetime.datetime.fromtimestamp(task_start_time).isoformat()
-    })
-
-    if not cry_file_paths:
-        log_detail(f"\n✅ 历史音频分析完成！未发现任何哭闹事件。", 'info')
-        sys.exit(0)
-
-    # =====================================================================
-    # 阶段二：合并连续事件，构建事件文件夹，统一分析
-    # =====================================================================
-    # 在分析前删除该日期的旧记录（避免新旧重复）
-    if filter_date:
-        log_detail(f"🗑️  正在删除日期 {filter_date} 的旧分析记录...", 'info')
-        try:
-            from db_manager import delete_cry_events_by_date
-            deleted_count = delete_cry_events_by_date(filter_date)
-            log_detail(f"✅ 已删除 {deleted_count} 条旧记录", 'info')
-        except Exception as e:
-            log_detail(f"⚠️  删除旧记录失败: {e}", 'warning')
-    
-    # 使用当天所有文件来扩展上下文（确保能扩展到10个文件）
-    events = merge_cry_events(cry_file_paths, all_files)
-
-    # 事件文件夹统一放在 SOURCE_DIR/cry_events/ 下
-    events_base_dir = os.path.join(SOURCE_DIR, "cry_events")
-    os.makedirs(events_base_dir, exist_ok=True)
-
-    log_detail(f"\n{'='*60}", 'info')
-    log_detail(f"🧠 阶段二：哭声事件深度分析", 'info')
-    log_detail(f"{'─'*60}", 'info')
-    log_detail(f"   📅 处理日期: {filter_date or '全部日期'}", 'info')
-    log_detail(f"   🍼 哭声文件: {len(cry_file_paths)} 个", 'info')
-    log_detail(f"   🔔 独立事件: {len(events)} 个", 'info')
-    log_detail(f"   📁 事件目录: {events_base_dir}", 'info')
-    log_detail(f"   ⏱️ 合并阈值: {CRY_MERGE_GAP_SEC//60} 分钟", 'info')
-    log_detail(f"   📎 上下文扩展: 前后各 {CRY_CONTEXT_EACH_SIDE} 个文件", 'info')
-    log_detail(f"{'─'*60}", 'info')
-    log_detail(f"{'='*60}", 'info')
-
-    for idx, event_files in enumerate(events, 1):
-        # 首先检查网络挂载是否可用
-        if not wait_for_network_mount(SOURCE_DIR, max_wait=300, check_interval=5):
-            log_detail(f"    ❌ 网络挂载不可用，跳过此事件", 'error')
-            continue
-        
-        event_dir = build_event_dir(events_base_dir, idx, event_files)
-        rep_filepath = event_files[len(event_files) // 2]   # 取中间文件作代表
-        rep_filename = os.path.basename(rep_filepath)
-
-        log_detail(f"\n🔔 事件 {idx}/{len(events)}: {len(event_files)} 个文件", 'info')
-        log_detail(f"   目录：{event_dir}", 'info')
-        
-        cry_files_in_event = [f for f in event_files if f in cry_file_paths]
-        log_detail(f"   哭声文件 ({len(cry_files_in_event)}个):", 'info')
-        for f in cry_files_in_event:
-            log_detail(f"      📂 {os.path.basename(f)}", 'info')
-        
-        log_detail(f"   上下文文件 ({len(event_files) - len(cry_files_in_event)}个):", 'info')
-        for f in event_files:
-            if f not in cry_file_paths:
-                log_detail(f"      📂 {os.path.basename(f)}", 'info')
-        
-        log_detail(f"   代表文件：{rep_filename}", 'info')
-
-        # 取代表文件中第一个哭声片段的时间范围
-        # 使用快速检测接口验证哭声，然后使用默认时间范围（0-60s）
-        first_seg = {'start': 0, 'end': 60000}
-        try:
-            @retry_on_error(
-                max_retries=5,
-                initial_delay=3,
-                backoff_factor=2,
-                allowed_exceptions=(OSError, IOError)
-            )
-            def open_and_detect():
-                with open(rep_filepath, 'rb') as f:
-                    return requests.post(
-                        QUICK_DETECT_URL,
-                        files={'audio_file': (rep_filename, f, 'audio/m4a')},
-                        timeout=30
+            try:
+                log_detail(f"      🤖 调用 Gemini 深度分析...", 'info')
+                # 限额退避重试
+                max_api_retries = 3
+                for api_retry in range(max_api_retries):
+                    response = requests.post(
+                        "http://localhost:5008/api/analyze_cry",
+                        json={
+                            "filename": rep_filename,
+                            "audio_path": rep_filepath,
+                            "start_ms": first_seg.get('start', 0),
+                            "end_ms": first_seg.get('end', 60000),
+                            "audio_paths": event_files,
+                        },
+                        timeout=180
                     )
-            
-            res = open_and_detect()
-            if res.status_code == 200:
-                result = res.json()
-                if result.get('is_baby_cry'):
-                    log_detail(f"   📍 哭声确认：置信度={result.get('confidence', 0):.3f}，使用完整音频片段 (0-60s)", 'info')
-                else:
-                    log_detail(f"   ⚠️ 快速检测未确认哭声，但仍继续分析...", 'warning')
-        except Exception as e:
-            log_detail(f"   ⚠️ 快速检测失败：{e}，使用默认时间范围", 'warning')
+                    if response.status_code == 200:
+                        break
+                    elif response.status_code == 429 or 'RESOURCE_EXHAUSTED' in response.text:
+                        wait_sec = 15 * (2 ** api_retry)
+                        log_detail(f"      ⚠️ API 限额 (429)，第 {api_retry + 1}/{max_api_retries} 次重试，等待 {wait_sec}秒...", 'warning')
+                        time.sleep(wait_sec)
+                    else:
+                        break
+                if response.status_code == 200:
+                    result = response.json()
+                    reason = result.get("reason") or "未知"
+                    advice = result.get("advice") or "无"
+                    category = result.get("category") or "未分类"
 
-        try:
-            log_detail(f"   🤖 正在调用 Gemini 深度分析...", 'info')
-            response = requests.post(
-                "http://localhost:5008/api/analyze_cry",
-                json={
-                    "filename": rep_filename,
-                    "audio_path": rep_filepath,
-                    "start_ms": first_seg.get('start', 0),
-                    "end_ms": first_seg.get('end', 60000),
-                    "audio_paths": event_files,   # ← 直接传入完整事件文件列表，绕过自动搜索
-                },
-                timeout=180
-            )
-            event_result = None
-            if response.status_code == 200:
-                result = response.json()
-                reason = result.get("reason") or "未知"
-                advice = result.get("advice") or "无"
-                category = result.get("category") or "未分类"
-                event_result = result
-                log_detail(f"    ✨ 分析完成!", 'info')
-                log_detail(f"       分类：{category}", 'info')
-                log_detail(f"       原因：{reason[:100]}{'...' if len(reason) > 100 else ''}", 'info')
-                log_detail(f"       建议：{advice[:80]}{'...' if len(advice) > 80 else ''}", 'info')
+                    log_detail(f"      ✨ 分析完成! 分类={category}", 'info')
+                    log_detail(f"         原因: {reason[:100]}{'...' if len(reason) > 100 else ''}", 'info')
+                    log_detail(f"         建议: {advice[:80]}{'...' if len(advice) > 80 else ''}", 'info')
 
-                # 发送邮件通知（历史模式也发送）
-                if EMAIL_ENABLED:
-                    try:
-                        # 获取哭声片段时间
-                        cry_start = first_seg.get('start', 0) / 1000.0
-                        cry_end = first_seg.get('end', 60000) / 1000.0
-                        cry_time = parse_file_datetime(rep_filename)
-                        cry_time_str = cry_time.strftime('%Y-%m-%d %H:%M:%S') if cry_time else '未知'
-
-                        # 构建详细邮件内容
-                        subject = f"📋 历史分析报告 | {filter_date or '全量'} | 检测到 {len(events)} 个哭声事件"
-                        content = f"""
+                    # 发送邮件
+                    if EMAIL_ENABLED:
+                        try:
+                            cry_time = parse_file_datetime(rep_filename)
+                            cry_time_str = cry_time.strftime('%Y-%m-%d %H:%M:%S') if cry_time else '未知'
+                            subject = f"📋 历史分析 | {current_date} | 事件 {evt_idx}/{len(events)}"
+                            content = f"""
 ═══════════════════════════════════════════════════════════════
                      📋 宝宝哭声历史分析报告
 ═══════════════════════════════════════════════════════════════
 
-📅 处理日期: {filter_date or '全部日期'}
-⏰ 报告生成时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-📂 事件目录: {events_base_dir}
+📅 处理日期: {current_date}
+⏰ 报告时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🔔 事件 {evt_idx}/{len(events)}
 
 ───────────────────────────────────────────────────────────────
-📊 分析统计
-───────────────────────────────────────────────────────────────
-🔔 独立哭声事件: {len(events)} 个
-📁 关联文件总数: {len(cry_file_paths)} 个
-🤖 合并阈值: {CRY_MERGE_GAP_SEC // 60} 分钟
-📎 上下文扩展: 前后各 {CRY_CONTEXT_EACH_SIDE} 个文件
-
-───────────────────────────────────────────────────────────────
-🔔 事件 {idx}/{len(events)} 详情
-───────────────────────────────────────────────────────────────
-📁 事件目录: {event_dir}
-🎵 代表文件: {rep_filename}
-⏰ 哭声时间: {cry_time_str}
-⏱️ 哭声片段: {cry_start:.1f}s - {cry_end:.1f}s
-📊 事件文件数: {len(event_files)} 个
-
 🏷️ 分析结果:
    • 分类: {category}
    • 原因: {reason}
    • 建议: {advice}
 
-📂 事件文件列表:
-"""
-                        for i, f in enumerate(event_files, 1):
-                            ftime = parse_file_datetime(os.path.basename(f))
-                            ftime_str = ftime.strftime('%H:%M:%S') if ftime else ''
-                            is_cry = '🔴' if f in cry_file_paths else '📎'
-                            content += f"   {is_cry} {i:2d}. {os.path.basename(f)} ({ftime_str})\n"
-
-                        content += f"""
+🎵 代表文件: {rep_filename}
+⏰ 哭声时间: {cry_time_str}
+📊 事件文件数: {len(event_files)} 个 (哭声 {len(cry_files_in_event)} 个)
+📁 文件列表 (🔴=哭声文件):
+{chr(10).join(('   🔴 ' if f in cry_file_paths else '      ') + os.path.basename(f) for f in event_files)}
 ═══════════════════════════════════════════════════════════════
 """
+                            send_email_async(subject, content)
+                            log_detail(f"      📧 邮件已发送", 'info')
+                        except Exception as email_err:
+                            log_detail(f"      ⚠️ 邮件发送失败: {email_err}", 'warning')
+                else:
+                    log_detail(f"      ⚠️ Gemini 返回 {response.status_code}，跳过", 'warning')
+            except Exception as e:
+                log_detail(f"      ❌ Gemini 分析失败: {e}", 'error')
 
-                        send_email_async(subject, content)
-                        log_detail(f"    📧 邮件已发送", 'info')
-                    except Exception as email_err:
-                        log_detail(f"    ⚠️ 邮件发送失败: {email_err}", 'warning')
-            else:
-                log_detail(f"    ⚠️  Gemini 分析接口返回 {response.status_code}，跳过", 'warning')
-        except Exception as e:
-            log_detail(f"    ❌ Gemini 分析失败：{e}", 'error')
+            time.sleep(5)  # 事件间隔拉长，避免连续调用触发 Gemini API 限额
 
-        time.sleep(2)
+        total_events_all += len(events)
+        total_cry_files_all += len(cry_file_paths)
 
+        log_detail(f"\n   ✅ {current_date} 完成: {len(events)} 个事件, {len(cry_file_paths)} 个哭声文件" + 
+                   (f", {phase2_skip} 个事件因快速检测未确认而跳过" if phase2_skip > 0 else ""), 'info')
+
+    # =====================================================================
+    # 全部完成汇总
+    # =====================================================================
+    total_elapsed = time.time() - total_task_start
     log_detail(f"\n{'='*60}", 'info')
-    if filter_date:
-        log_detail(f"✅ 日期 {filter_date} 全部处理完成！", 'info')
-    else:
-        log_detail(f"✅ 历史音频重新分析完成！", 'info')
+    log_detail(f"✅ 全部处理完成！", 'info')
     log_detail(f"{'─'*60}", 'info')
-    log_detail(f"   📅 处理日期: {filter_date or '全部日期'}", 'info')
-    log_detail(f"   📁 事件文件夹: {events_base_dir}", 'info')
-    log_detail(f"   🔔 独立事件数: {len(events)} 个", 'info')
+    log_detail(f"   📅 处理日期: {len(all_dates)} 个", 'info')
+    log_detail(f"   🍼 哭声文件: {total_cry_files_all} 个", 'info')
+    log_detail(f"   🔔 独立事件: {total_events_all} 个", 'info')
+    log_detail(f"   ⏱️ 总耗时: {total_elapsed/60:.1f} 分钟", 'info')
     log_detail(f"{'─'*60}", 'info')
     log_detail(f"{'='*60}", 'info')
     log_detail(f"\n请在上方切换到【宝宝分析】标签页查看自动刷新的记录。", 'info')
 
-    # 发送任务完成汇总邮件
-    if EMAIL_ENABLED and events:
+    # 写入最终进度
+    write_progress({
+        "status": "completed",
+        "processed": sum(len(date_files_to_process.get(d, [])) for d in all_dates),
+        "total": sum(len(date_files_to_process.get(d, [])) for d in all_dates),
+        "success_count": 0,
+        "error_count": 0,
+        "skip_count": 0,
+        "avg_time": 0,
+        "eta_hours": 0,
+        "current_date": all_dates[-1] if all_dates else None,
+        "current_file": None,
+        "started_at": datetime.datetime.fromtimestamp(total_task_start).isoformat()
+    })
+
+    # 发送汇总邮件
+    if EMAIL_ENABLED and total_events_all > 0:
         try:
-            subject = f"✅ 历史分析完成 | {filter_date or '全量'} | 共 {len(events)} 个事件"
+            subject = f"✅ 历史分析完成 | 共 {len(all_dates)} 天 | {total_events_all} 个事件"
             content = f"""
 ═══════════════════════════════════════════════════════════════
                    📋 历史分析任务完成汇总
 ═══════════════════════════════════════════════════════════════
 
-📅 处理日期: {filter_date or '全部日期'}
-⏰ 完成时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-📂 事件目录: {events_base_dir}
+📅 处理日期: {len(all_dates)} 天
+🍼 哭声文件: {total_cry_files_all} 个
+🔔 独立事件: {total_events_all} 个
+⏱️ 总耗时: {total_elapsed/60:.1f} 分钟
 
-───────────────────────────────────────────────────────────────
-📊 任务统计
-───────────────────────────────────────────────────────────────
-📁 扫描文件总数: {len(all_files)} 个
-🎯 目标文件数: {len(target_files)} 个
-🔔 检出哭声文件: {len(cry_file_paths)} 个
-🔔 独立哭声事件: {len(events)} 个
-✅ 成功处理: {success_count} 个
-⏭️  跳过文件: {skip_count} 个
-❌ 处理错误: {error_count} 个
-
-───────────────────────────────────────────────────────────────
-📋 各事件概览
-───────────────────────────────────────────────────────────────
-"""
-            for i, event_files_item in enumerate(events, 1):
-                cry_in_event = [f for f in event_files_item if f in cry_file_paths]
-                rep_file = event_files_item[len(event_files_item) // 2]
-                rep_time = parse_file_datetime(os.path.basename(rep_file))
-                rep_time_str = rep_time.strftime('%H:%M:%S') if rep_time else ''
-                content += f"""
-🔔 事件 {i}: {len(event_files_item)} 个文件 (哭声 {len(cry_in_event)} 个)
-   代表: {os.path.basename(rep_file)} ({rep_time_str})
-"""
-            content += f"""
-═══════════════════════════════════════════════════════════════
 请在 BabyCry 分析看板查看详细分析结果。
 ═══════════════════════════════════════════════════════════════
 """
             send_email_async(subject, content)
-            log_detail(f"📧 任务完成汇总邮件已发送", 'info')
+            log_detail(f"📧 汇总邮件已发送", 'info')
         except Exception as email_err:
             log_detail(f"⚠️ 汇总邮件发送失败: {email_err}", 'warning')
+
+    # ── 释放分布式锁 ──
+    if _redis_lock and _lock_acquired:
+        try:
+            _redis_lock.delete('babycry:reprocess_lock')
+            log_detail(f"🔓 已释放分布式锁", 'info')
+        except Exception:
+            pass

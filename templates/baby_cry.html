@@ -124,19 +124,18 @@
 
         .event-card {
             background: var(--card-bg);
-            backdrop-filter: blur(16px);
             border: 1px solid var(--border);
             border-radius: 20px;
             padding: 1.5rem;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             position: relative;
             overflow: hidden;
+            contain: layout style paint;
+            will-change: border-color, box-shadow;
         }
 
         .event-card:hover {
-            transform: scale(1.03) translateY(-5px);
             border-color: var(--primary-light);
-            box-shadow: 0 20px 40px -10px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 12px 24px -8px rgba(99, 102, 241, 0.25);
         }
 
         .card-header {
@@ -160,6 +159,50 @@
 
         .category-badge.pain { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3); }
         .category-badge.hungry { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border-color: rgba(245, 158, 11, 0.3); }
+        .category-badge.incomplete { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); animation: badge-pulse 2s infinite; }
+
+        /* 不完整事件卡片 - 红色警告 */
+        .event-card.incomplete {
+            border-color: rgba(239, 68, 68, 0.5);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+        }
+        .event-card.incomplete::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), transparent);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .event-card.incomplete:hover {
+            border-color: rgba(239, 68, 68, 0.7);
+            box-shadow: 0 12px 24px -8px rgba(239, 68, 68, 0.2);
+        }
+        .incomplete-warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            font-size: 0.8rem;
+            color: #fca5a5;
+            margin-bottom: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            grid-column: 1 / -1;
+        }
+        .incomplete-warning .warn-icon {
+            font-size: 1.1rem;
+            animation: warn-blink 1.5s infinite;
+        }
+        @keyframes warn-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        @keyframes badge-pulse {
+            0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
+            50% { border-color: rgba(239, 68, 68, 0.8); }
+        }
 
         .time-info {
             font-size: 0.8rem;
@@ -208,7 +251,6 @@
             width: 200%;
             height: 200%;
             background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
-            animation: pulse 3s infinite;
         }
 
         .cry-illustration img {
@@ -303,17 +345,13 @@
             overflow: hidden;
             border: 1px solid #334155;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-            animation: zoomIn 0.6s ease-out;
             height: 100%;
             display: flex;
             flex-direction: column;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             position: relative;
         }
 
         #logContainer:hover {
-            transform: scale(1.02);
-            box-shadow: 0 25px 60px rgba(99, 102, 241, 0.3);
             border-color: rgba(99, 102, 241, 0.5);
             z-index: 10;
         }
@@ -365,28 +403,17 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
             gap: 1.5rem;
-            animation: fadeInUp 1s ease-out;
             height: 100%;
             overflow-y: auto;
             padding-right: 8px;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             border-radius: 12px;
             border: 1px solid transparent;
-        }
-
-        .grid-container:hover {
-            transform: scale(1.01);
-            border-color: rgba(99, 102, 241, 0.3);
-            box-shadow: 0 20px 50px rgba(99, 102, 241, 0.15);
-            z-index: 10;
         }
 
         .grid-container::-webkit-scrollbar { width: 8px; }
         .grid-container::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
         .grid-container::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.5); border-radius: 10px; }
         .grid-container::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.7); }
-
-        /* Responsive */
         @media (max-width: 1200px) {
             .main-content-wrapper {
                 grid-template-columns: 1fr;
@@ -502,11 +529,14 @@
         // 缓存已渲染的事件ID，避免重复渲染
         let renderedEventIds = new Set();
         let lastEventsHash = '';
+        let eventsLoading = false;  // 防止并发请求
 
         async function loadCryEvents() {
+            if (eventsLoading) return;
+            eventsLoading = true;
             const container = document.getElementById('cryData');
             try {
-                const response = await fetch('/api/cry_events?limit=50');
+                const response = await fetch('/api/cry_events?limit=30');
                 const result = await response.json();
 
                 if (response.ok) {
@@ -550,6 +580,13 @@
                         const advice = ev.advice || '建议保持严密观察并在必要时提供安抚。';
                         const illustrationUrl = ev.illustration_url || null;
 
+                        // 判断是否为不完整事件
+                        const isIncomplete = !ev.reason || ev.reason === '未知'
+                            || category === 'analyzing' || category === '未分类'
+                            || !ev.reason_category;
+                        const incompleteClass = isIncomplete ? ' incomplete' : '';
+                        const incompleteCatClass = isIncomplete ? ' incomplete' : '';
+
                         // Map category to icon
                         let icon = '🍼';
                         let illustrationIcon = '👶';
@@ -566,21 +603,22 @@
                         }
 
                         html += `
-                            <div class="event-card" data-event-id="${ev.id}" style="animation-delay: ${index * 0.05}s">
+                            <div class="event-card${incompleteClass}" data-event-id="${ev.id}">
                                 <div class="card-header">
-                                    <div class="category-badge ${category}">${icon} ${ev.reason_category || '行为分析'}</div>
+                                    <div class="category-badge${incompleteCatClass}">${isIncomplete ? '⚠️' : icon} ${isIncomplete ? '分析未完成' : (ev.reason_category || '行为分析')}</div>
                                     <div class="time-info">
                                         <div style="font-size: 0.9rem; color: #fff;">${timeStr}</div>
                                         <div>${dateStr}</div>
                                     </div>
                                 </div>
+                                ${isIncomplete ? `<div class="incomplete-warning"><span class="warn-icon">⚠️</span><span>该事件分析未完成（${ev.reason_category || '无分类'}${!ev.reason ? '，原因缺失' : ''}），下次历史回顾分析将自动重跑</span></div>` : ''}
                                 <div class="card-body">
                                     <div class="reason-content">
                                         <h3>${reason}</h3>
-                                        <div class="advice-box">${formattedAdvice}</div>
+                                        ${!isIncomplete ? `<div class="advice-box">${formattedAdvice}</div>` : ''}
                                     </div>
                                     <div class="cry-illustration" title="${ev.reason_category || '未知'}">
-                                        ${illustrationUrl ? `<img src="${illustrationUrl}" alt="${ev.reason_category}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;">` : illustrationIcon}
+                                        ${illustrationUrl ? `<img src="${illustrationUrl}" alt="${ev.reason_category}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;">` : (isIncomplete ? '❓' : illustrationIcon)}
                                     </div>
                                 </div>
                                 <div class="card-footer">
@@ -602,15 +640,14 @@
                             console.log(`[BabyCry] 新增 ${newEventsCount} 个事件`);
                         }
 
-                        // 【优化】限制DOM节点数量，最多保留100个
+                        // 限制DOM节点数量，最多保留30个（性能优化）
                         const cards = container.querySelectorAll('.event-card');
-                        if (cards.length > 100) {
-                            for (let i = 100; i < cards.length; i++) {
-                                const id = parseInt(cards[i].dataset.eventId);
-                                renderedEventIds.delete(id);
+                        if (cards.length > 30) {
+                            const toRemove = cards.length - 30;
+                            for (let i = cards.length - 1; i >= cards.length - toRemove; i--) {
+                                renderedEventIds.delete(parseInt(cards[i].dataset.eventId));
                                 cards[i].remove();
                             }
-                            console.log('[BabyCry] 清理旧事件，保留最新100个');
                         }
                     }
                 } else {
@@ -618,14 +655,19 @@
                 }
             } catch (error) {
                 console.error('[BabyCry] 加载失败:', error);
+            } finally {
+                eventsLoading = false;
             }
         }
 
         let logInterval = null;
         let lastLogContent = '';  // 用于检测日志是否有变化
         let noChangeCount = 0;    // 连续无变化计数
+        let logLoading = false;   // 防止并发请求
 
         async function fetchLogs() {
+            if (logLoading) return;
+            logLoading = true;
             try {
                 const response = await fetch('/api/live_status');
                 const result = await response.json();
@@ -659,6 +701,8 @@
                 }
             } catch (e) {
                 console.error("Fetch log error:", e);
+            } finally {
+                logLoading = false;
             }
         }
 

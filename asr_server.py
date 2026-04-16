@@ -4,6 +4,7 @@
 import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse
 import numpy as np
 from scipy.spatial.distance import cosine
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, jsonify, render_template, send_file, send_from_directory, Response
 from funasr import AutoModel  # ASR 用 FunASR
 from modelscope.pipelines import pipeline  # SV 用 ModelScope
@@ -123,7 +124,9 @@ FileMonitorConfig = audio_processor.FileMonitorConfig
 # LLM 配置
 class LLMConfig:
     USE_GEMINI_LLM = True
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    # 多 Key 轮询支持：优先读 GEMINI_API_KEYS（逗号分隔），兼容旧的 GEMINI_API_KEY
+    _keys_str = os.getenv("GEMINI_API_KEYS", "") or os.getenv("GEMINI_API_KEY", "")
+    GEMINI_API_KEYS = [k.strip() for k in _keys_str.split(",") if k.strip()]
     GEMINI_API_BASE_URL = os.getenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com")
     GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-3-flash-preview")
     GEMINI_FALLBACK_MODEL_NAME = os.getenv("GEMINI_FALLBACK_MODEL_NAME", "gemini-3.1-flash-lite-preview")
@@ -143,6 +146,49 @@ class LLMConfig:
     LLM_CACHE_SIZE = 100
     LLM_REQUEST_TIMEOUT = 120
 # ==========================================
+
+# Gemini API Key 轮换管理器
+class GeminiKeyRotator:
+    """多 Key 轮询，遇到 429 自动切换下一个 Key"""
+    def __init__(self, keys):
+        self._keys = keys
+        self._idx = 0
+        self._lock = threading.Lock()
+        # 记录每个 Key 的 429 冷却时间 {key: cooldown_until_timestamp}
+        self._cooldowns = {}
+
+    @property
+    def key_count(self):
+        return len(self._keys)
+
+    def get_next_key(self):
+        """获取下一个可用 Key（跳过冷却中的）"""
+        with self._lock:
+            if not self._keys:
+                return None
+            now = time.time()
+            # 尝试从当前位置开始找可用的 Key
+            for _ in range(len(self._keys)):
+                key = self._keys[self._idx]
+                self._idx = (self._idx + 1) % len(self._keys)
+                cooldown_until = self._cooldowns.get(key, 0)
+                if now >= cooldown_until:
+                    return key
+            # 所有 Key 都在冷却，返回冷却最快结束的
+            earliest_key = min(self._keys, key=lambda k: self._cooldowns.get(k, 0))
+            return earliest_key
+
+    def mark_rate_limited(self, key, cooldown_seconds=60):
+        """标记某个 Key 触发了 429，冷却指定秒数"""
+        with self._lock:
+            self._cooldowns[key] = time.time() + cooldown_seconds
+            logger_sys.warning(f"[KeyRotator] Key ...{key[-6:]} 触发限额，冷却 {cooldown_seconds}s")
+
+    def current_index(self):
+        with self._lock:
+            return self._idx
+
+_gemini_key_rotator = GeminiKeyRotator(LLMConfig.GEMINI_API_KEYS)
 
 EMOTION_TAGS = {
     "<|happy|>": "happy", "<|sad|>": "sad", "<|angry|>": "angry",
@@ -445,16 +491,19 @@ def _extract_gemini_response_text(result):
 
 
 def _post_gemini_request_with_fallback(data, timeout, logger_obj, log_prefix):
-    """按严格顺序调用 Gemini 主备模型，请求失败时自动降级。"""
+    """多 Key 轮询 + 多模型降级 + 429 自动退避
+    
+    轮询策略：
+    1. 从 Key 轮换器获取下一个可用 Key
+    2. 遇到 429：标记该 Key 冷却，换下一个 Key 重试
+    3. 所有 Key 都 429：等待最短冷却结束后重试
+    4. Key 用完仍失败：降级到备用模型
+    """
     model_candidates = _get_gemini_model_candidates()
     if not model_candidates:
         logger_obj.error(f"{log_prefix} 未配置任何可用的 Gemini 模型")
         return None
 
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": LLMConfig.GEMINI_API_KEY
-    }
     last_error = None
 
     for idx, (display_name, model_name) in enumerate(model_candidates):
@@ -462,52 +511,95 @@ def _post_gemini_request_with_fallback(data, timeout, logger_obj, log_prefix):
         logger_obj.info(
             f"{log_prefix} 尝试模型 {idx + 1}/{len(model_candidates)}: {display_name} ({model_name})"
         )
-        logger_obj.info(f"{log_prefix} 请求URL: {url}")
-        logger_obj.info(f"{log_prefix} 请求超时: {timeout}秒")
 
-        try:
-            response = requests.post(url, headers=headers, json=data, timeout=timeout)
+        # 尝试用不同 Key 发送请求
+        max_key_attempts = max(_gemini_key_rotator.key_count, 1)
+        for key_attempt in range(max_key_attempts):
+            api_key = _gemini_key_rotator.get_next_key()
+            if not api_key:
+                break
+
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key
+            }
+            logger_obj.info(f"{log_prefix} 使用 Key ...{api_key[-6:]} (轮询 {key_attempt + 1}/{max_key_attempts})")
 
             try:
-                result = response.json()
-            except Exception as json_error:
-                last_error = f"返回非 JSON 数据: {json_error}"
-                logger_obj.error(f"{log_prefix} {display_name} 返回非 JSON 数据: {json_error}")
-                logger_obj.error(f"{log_prefix} 原始响应: {response.text[:2000]}")
-                result = None
+                response = requests.post(url, headers=headers, json=data, timeout=timeout)
 
-            if result is None:
-                pass
-            elif not response.ok:
+                try:
+                    result = response.json()
+                except Exception as json_error:
+                    last_error = f"返回非 JSON 数据: {json_error}"
+                    logger_obj.error(f"{log_prefix} {display_name} 返回非 JSON 数据: {json_error}")
+                    result = None
+
+                if result is None:
+                    break  # JSON 解析失败，换模型
+
+                if response.ok:
+                    response_text, candidate, finish_reason = _extract_gemini_response_text(result)
+                    logger_obj.info(f"{log_prefix} {display_name} ✅ API 响应成功 (Key ...{api_key[-6:]})")
+                    logger_obj.info(f"{log_prefix} finishReason: {finish_reason}")
+
+                    if response_text:
+                        logger_obj.info(f"{log_prefix} 响应文本长度: {len(response_text)} 字符")
+                        logger_obj.info(f"{log_prefix} 响应内容预览: {response_text[:500]}...")
+                        return response_text
+
+                    if finish_reason == "MAX_TOKENS":
+                        logger_obj.warning(f"{log_prefix} 生成 Token 超限，但未提取到有效文本")
+
+                    if candidate and candidate.get("safetyRatings"):
+                        logger_obj.warning(f"{log_prefix} 安全评级: {candidate['safetyRatings']}")
+
+                    last_error = f"{display_name} 返回空回复"
+                    logger_obj.error(
+                        f"{log_prefix} {display_name} 安全拦截或空回复，完整响应: "
+                        f"{json.dumps(result, ensure_ascii=False)[:1000]}"
+                    )
+                    break  # 非 429 错误，换模型
+
+                # 429 / RESOURCE_EXHAUSTED：换 Key 重试
+                if response.status_code == 429 or 'RESOURCE_EXHAUSTED' in str(result):
+                    _gemini_key_rotator.mark_rate_limited(api_key, cooldown_seconds=60)
+                    logger_obj.warning(
+                        f"{log_prefix} Key ...{api_key[-6:]} 触发限额 (429)，"
+                        f"切换下一个 Key ({key_attempt + 1}/{max_key_attempts})"
+                    )
+                    last_error = f"HTTP 429 Key...{api_key[-6:]}"
+                    continue  # 换下一个 Key
+
+                # 其他 HTTP 错误
                 last_error = f"HTTP {response.status_code}"
                 logger_obj.error(f"{log_prefix} {display_name} API HTTP 错误 {response.status_code}")
                 logger_obj.error(f"{log_prefix} 错误详情: {result}")
-            else:
-                response_text, candidate, finish_reason = _extract_gemini_response_text(result)
-                logger_obj.info(f"{log_prefix} {display_name} ✅ API 响应成功")
-                logger_obj.info(f"{log_prefix} finishReason: {finish_reason}")
-                logger_obj.debug(f"{log_prefix} 完整响应: {result}")
+                break  # 非 429，换模型
 
-                if response_text:
-                    logger_obj.info(f"{log_prefix} 响应文本长度: {len(response_text)} 字符")
-                    logger_obj.info(f"{log_prefix} 响应内容预览: {response_text[:500]}...")
-                    return response_text
+            except Exception as e:
+                last_error = str(e)
+                logger_obj.error(f"{log_prefix} {display_name} 请求异常：{e}")
+                logger_obj.error(f"{log_prefix} 异常堆栈: {traceback.format_exc()}")
+                break  # 异常，换模型
 
-                if finish_reason == "MAX_TOKENS":
-                    logger_obj.warning(f"{log_prefix} 生成 Token 超限，但未提取到有效文本")
-
-                if candidate and candidate.get("safetyRatings"):
-                    logger_obj.warning(f"{log_prefix} 安全评级: {candidate['safetyRatings']}")
-
-                last_error = f"{display_name} 返回空回复"
-                logger_obj.error(
-                    f"{log_prefix} {display_name} 安全拦截或空回复，完整响应: "
-                    f"{json.dumps(result, ensure_ascii=False)[:1000]}"
-                )
-        except Exception as e:
-            last_error = str(e)
-            logger_obj.error(f"{log_prefix} {display_name} 请求异常：{e}")
-            logger_obj.error(f"{log_prefix} 异常堆栈: {traceback.format_exc()}")
+        # 所有 Key 都 429 时，等最短冷却后用当前模型再试一次
+        if last_error and '429' in last_error and _gemini_key_rotator.key_count > 0:
+            logger_obj.warning(f"{log_prefix} 所有 Key 均限额，等待冷却后重试...")
+            time.sleep(10)
+            api_key = _gemini_key_rotator.get_next_key()
+            if api_key:
+                headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+                try:
+                    response = requests.post(url, headers=headers, json=data, timeout=timeout)
+                    if response.ok:
+                        result = response.json()
+                        retry_text, _, _ = _extract_gemini_response_text(result)
+                        if retry_text:
+                            logger_obj.info(f"{log_prefix} ✅ 冷却重试成功 (Key ...{api_key[-6:]})")
+                            return retry_text
+                except Exception:
+                    pass
 
         if idx < len(model_candidates) - 1:
             next_display_name, next_model_name = model_candidates[idx + 1]
@@ -1326,18 +1418,29 @@ def identify_speaker_fusion(segment_path):
     logger_sys.info(f"🎯 开始声纹识别: 音频段路径={segment_path}")
     logger_sys.info(f"📋 声纹数据库包含 {len(speaker_db)} 个说话人")
 
-    for model_name, sv_pipe in sv_pipelines.items():
-        emb_a = extract_embedding_from_file(sv_pipe, segment_path)
-        if emb_a is None:
-            logger_sys.error(f"❌ 模型 {model_name} 特征提取失败")
-            model_votes[model_name] = "Failed"
-            continue
+    # 并行提取所有模型的 embedding
+    embeddings = {}
 
+    def _extract_emb(model_name, sv_pipe):
+        emb = extract_embedding_from_file(sv_pipe, segment_path)
+        return model_name, emb
+
+    with ThreadPoolExecutor(max_workers=len(sv_pipelines)) as executor:
+        futures = {executor.submit(_extract_emb, mn, sp): mn for mn, sp in sv_pipelines.items()}
+        for future in as_completed(futures):
+            model_name, emb_a = future.result()
+            if emb_a is None:
+                logger_sys.error(f"❌ 模型 {model_name} 特征提取失败")
+                model_votes[model_name] = "Failed"
+            else:
+                embeddings[model_name] = emb_a
+
+    # 逐模型打分
+    for model_name, emb_a in embeddings.items():
         scores = []
         conf = Config.SV_MODELS[model_name]
         threshold = conf['threshold']
         gap = conf['gap']
-        # 配置已在启动时显示，无需重复
 
         for name, speaker_data in speaker_db.items():
             # 使用平均嵌入进行比较
@@ -1446,12 +1549,24 @@ def detect_cry_from_full_audio(audio_path):
     model_results = {}  # {model_name: (top_target_name, top_target_score, gap_to_others)}
     all_details = []
     
-    for model_name, sv_pipe in sv_pipelines.items():
-        emb_a = extract_embedding_from_file(sv_pipe, audio_path)
-        if emb_a is None:
-            all_details.append(f"  {model_name}: 特征提取失败")
-            continue
-        
+    # 并行提取所有模型的 embedding（串行约4.5s → 并行约1.5s）
+    embeddings = {}
+    
+    def _extract_emb(model_name, sv_pipe):
+        emb = extract_embedding_from_file(sv_pipe, audio_path)
+        return model_name, emb
+    
+    with ThreadPoolExecutor(max_workers=len(sv_pipelines)) as executor:
+        futures = {executor.submit(_extract_emb, mn, sp): mn for mn, sp in sv_pipelines.items()}
+        for future in as_completed(futures):
+            model_name, emb_a = future.result()
+            if emb_a is None:
+                all_details.append(f"  {model_name}: 特征提取失败")
+            else:
+                embeddings[model_name] = emb_a
+    
+    # 逐模型打分（embedding 已并行提取完毕）
+    for model_name, emb_a in embeddings.items():
         # 对所有已注册说话人打分（排除语音识别专用的说话人）
         all_scores = []
         for name, speaker_data in speaker_db.items():
@@ -2062,17 +2177,20 @@ def get_live_status():
         a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
         today_cry_count = get_baby_cry_count()
         
-        # 读取 A 轨日志（与左下角 A 轨日志一致）
-        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-a.log")
-        logs_a = "尚未开始处理，或日志文件不存在..."
-        if os.path.exists(log_file):
-            try:
-                with open(log_file, "r", encoding='utf-8', errors='replace') as f:
-                    # 读取所有行，只保留最后100行
-                    lines = f.readlines()
-                    logs_a = ''.join(lines[-100:])  # 最后100行
-            except Exception as e:
-                logs_a = f"读取日志失败: {str(e)}"
+        # 读取 A 轨日志 — 仅在 A 轨运行时读取，避免每次轮询都读磁盘
+        if a_running:
+            log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-a.log")
+            logs_a = "尚未开始处理，或日志文件不存在..."
+            if os.path.exists(log_file):
+                try:
+                    with open(log_file, "r", encoding='utf-8', errors='replace') as f:
+                        # 使用 seek 从末尾读取最后100行，避免读取整个大文件
+                        lines = f.readlines()
+                        logs_a = ''.join(lines[-100:])  # 最后100行
+                except Exception as e:
+                    logs_a = f"读取日志失败: {str(e)}"
+        else:
+            logs_a = ""
         
         # 读取 A 轨结构化进度（由 reprocess_history_cries.py 写入）
         a_progress = None
@@ -2211,14 +2329,19 @@ def quick_cry_detect():
         os.makedirs(Config.TEMP_DIR, exist_ok=True)
         file.save(temp_path)
         
-        # 音频预处理
+        # 音频预处理（快速模式：跳过响度归一化，SV模型对响度不敏感，省约0.5-1s）
         proc_temp = os.path.join(Config.TEMP_DIR, f"quick_cry_proc_{int(time.time())}.wav")
-        if not preprocess_audio(temp_path, proc_temp):
-            # 清理临时文件
-            for f in [temp_path, proc_temp]:
-                if os.path.exists(f):
-                    os.remove(f)
-            return jsonify({"error": "Audio preprocessing failed"}), 500
+        orig_normalize = Config.NORMALIZE_AUDIO
+        Config.NORMALIZE_AUDIO = False  # 快速检测跳过归一化
+        try:
+            if not preprocess_audio(temp_path, proc_temp):
+                # 清理临时文件
+                for f in [temp_path, proc_temp]:
+                    if os.path.exists(f):
+                        os.remove(f)
+                return jsonify({"error": "Audio preprocessing failed"}), 500
+        finally:
+            Config.NORMALIZE_AUDIO = orig_normalize  # 恢复原始设置
         
         # 快速哭声检测（仅声纹匹配，无ASR）
         start_time = time.time()
@@ -3350,6 +3473,11 @@ if __name__ == "__main__":
             logger_sys.warning("⚠️ 数据库表结构初始化失败，但服务将继续运行")
 
     load_models()
+    
+    # 打印 Gemini Key 轮换配置
+    print(f"Gemini API Key 轮询: {len(LLMConfig.GEMINI_API_KEYS)} 个 Key 已加载")
+    for i, k in enumerate(LLMConfig.GEMINI_API_KEYS):
+        print(f"  Key {i+1}: ...{k[-6:]}")
     
     # 启动临时文件清理定时任务
     cleanup_temp_dir()

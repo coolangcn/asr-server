@@ -335,7 +335,7 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
         cursor = conn.cursor()
         
         # 构建动态 SQL
-        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url FROM baby_cry_events"
+        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, audio_path, confidence, illustration_url, array_length(event_files_json::jsonb, 1) as file_count FROM baby_cry_events"
         where_clauses = []
         params = []
         
@@ -380,11 +380,10 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
                 'reason': row[6],
                 'advice': row[7],
                 'reason_category': row[8],
-                'event_files_json': json.loads(row[9]) if row[9] else [],
-                'audio_path': row[10] if len(row) > 10 else None,
-                'confidence': row[11] if len(row) > 11 else 0.0,
-                'details': json.loads(row[12]) if len(row) > 12 and row[12] else [],
-                'illustration_url': row[13] if len(row) > 13 else None
+                'audio_path': row[9] if len(row) > 9 else None,
+                'confidence': row[10] if len(row) > 10 else 0.0,
+                'illustration_url': row[11] if len(row) > 11 else None,
+                'file_count': row[12] if len(row) > 12 and row[12] else 0
             })
         
         return results
@@ -747,7 +746,274 @@ def get_processed_files_for_date(date_str: str) -> set:
     finally:
         if conn: return_connection(conn)
 
-def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc'), progress_callback=None, log_callback=None) -> int:
+def get_cry_files_for_date(date_str: str) -> list:
+    """获取指定日期已标记为 cry 的文件名列表
+    
+    Args:
+        date_str: 日期字符串，格式: YYYY-MM-DD
+    
+    Returns:
+        cry 文件名列表
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        result = []
+
+        # 查找该日期所有 status='cry' 的文件
+        cursor.execute(
+            "SELECT filename FROM processed_files_a WHERE status='cry' AND filename ~ %s",
+            (date_str,)
+        )
+        for row in cursor.fetchall():
+            result.append(row[0])
+
+        cursor.close()
+        return sorted(result)
+    except Exception as e:
+        print(f"  [DB Error] 获取日期cry文件列表失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+
+def get_unanalyzed_cry_dates() -> list:
+    """获取有 cry 记录但缺少有效 baby_cry_events 分析的日期列表
+    
+    包含两类情况：
+    1. processed_files_a 中 status='cry' 但 baby_cry_events 中无对应记录
+    2. baby_cry_events 中有记录但分析不完整（reason为空/category=analyzing/category=未分类）
+    
+    Returns:
+        日期字符串列表，格式: ['2025-11-17', '2025-11-18', ...]
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+
+        # 情况1：processed_files_a 有 cry 但 baby_cry_events 无记录
+        cursor.execute("""
+            SELECT DISTINCT cry_date FROM (
+                SELECT substring(filename from '\d{4}-\d{2}-\d{2}') AS cry_date
+                FROM processed_files_a
+                WHERE status = 'cry' AND filename ~ '\d{4}-\d{2}-\d{2}'
+            ) AS cry_dates
+            WHERE cry_date NOT IN (
+                SELECT DISTINCT recording_time::date::text
+                FROM baby_cry_events
+                WHERE recording_time IS NOT NULL
+            )
+            ORDER BY cry_date
+        """)
+        missing_dates = set(row[0] for row in cursor.fetchall() if row[0])
+
+        # 情况2：baby_cry_events 有记录但分析不完整
+        cursor.execute("""
+            SELECT DISTINCT recording_time::date::text
+            FROM baby_cry_events
+            WHERE recording_time IS NOT NULL
+              AND (reason IS NULL OR reason = '' OR reason = '未知'
+                   OR reason_category = 'analyzing' 
+                   OR reason_category = '未分类' OR reason_category = '未知'
+                   OR reason_category IS NULL)
+            ORDER BY recording_time::date::text
+        """)
+        incomplete_dates = set(row[0] for row in cursor.fetchall() if row[0])
+
+        result = sorted(missing_dates | incomplete_dates)
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取未分析cry日期列表失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+
+def get_incomplete_cry_events(date_str: str = None) -> list:
+    """获取分析不完整的哭声事件列表（需要重新分析）
+    
+    不完整的定义：reason为空/未知、reason_category=analyzing/未分类/未知/NULL
+    
+    Args:
+        date_str: 可选，指定日期格式 YYYY-MM-DD。为空则返回所有不完整事件。
+    
+    Returns:
+        事件字典列表，包含 id, filename, recording_time, reason_category, audio_path 等
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+
+        query = """
+            SELECT id, filename, recording_time, reason_category, reason, advice, 
+                   event_files_json, audio_path, confidence
+            FROM baby_cry_events
+            WHERE (reason IS NULL OR reason = '' OR reason = '未知'
+                   OR reason_category = 'analyzing' 
+                   OR reason_category = '未分类' OR reason_category = '未知'
+                   OR reason_category IS NULL)
+        """
+        params = []
+        if date_str:
+            query += " AND recording_time::date = %s"
+            params.append(date_str)
+        query += " ORDER BY recording_time"
+
+        cursor.execute(query, tuple(params))
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'id': row[0],
+                'filename': row[1],
+                'recording_time': row[2].isoformat() if row[2] else None,
+                'reason_category': row[3],
+                'reason': row[4],
+                'advice': row[5],
+                'event_files': json.loads(row[6]) if row[6] else [],
+                'audio_path': row[7],
+                'confidence': float(row[8]) if row[8] else 0.0,
+            })
+        cursor.close()
+        return results
+    except Exception as e:
+        print(f"  [DB Error] 获取不完整分析事件列表失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+
+def delete_incomplete_cry_events(date_str: str) -> int:
+    """删除指定日期的分析不完整事件（重新分析前清理）
+    
+    Args:
+        date_str: 日期字符串 YYYY-MM-DD
+    
+    Returns:
+        删除的记录数
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return 0
+        cursor = conn.cursor()
+        cursor.execute(
+            """DELETE FROM baby_cry_events 
+               WHERE recording_time::date = %s
+               AND (reason IS NULL OR reason = '' OR reason = '未知'
+                    OR reason_category = 'analyzing' 
+                    OR reason_category = '未分类' OR reason_category = '未知'
+                    OR reason_category IS NULL)""",
+            (date_str,)
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        return deleted
+    except Exception as e:
+        print(f"  [DB Error] 删除不完整分析事件失败: {e}")
+        if conn: conn.rollback()
+        return 0
+    finally:
+        if conn: return_connection(conn)
+
+
+def get_uncovered_cry_count(date_str: str) -> int:
+    """获取指定日期中，被标记为cry但未被baby_cry_events事件覆盖的文件数量
+    
+    即：在 processed_files_a 中 status='cry'，但该文件名不在 baby_cry_events 的 
+    event_files_json 或 filename 字段中的文件数。
+    
+    Args:
+        date_str: 日期字符串 YYYY-MM-DD
+    
+    Returns:
+        未被覆盖的cry文件数量
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return 0
+        cursor = conn.cursor()
+
+        # 获取该日期所有 cry 标记文件
+        cursor.execute("""
+            SELECT filename FROM processed_files_a 
+            WHERE status = 'cry' AND filename LIKE %s
+        """, (f'%{date_str}%',))
+        cry_files = set(row[0] for row in cursor.fetchall() if row[0])
+
+        if not cry_files:
+            return 0
+
+        # 获取该日期所有事件中包含的文件名（从 event_files_json 和 filename 提取）
+        cursor.execute("""
+            SELECT event_files_json, filename FROM baby_cry_events
+            WHERE recording_time::date = %s
+        """, (date_str,))
+        
+        covered_files = set()
+        for row in cursor.fetchall():
+            # 从 filename 字段
+            if row[1]:
+                covered_files.add(row[1])
+            # 从 event_files_json 字段
+            if row[0]:
+                try:
+                    paths = json.loads(row[0])
+                    for p in paths:
+                        covered_files.add(os.path.basename(p))
+                except:
+                    pass
+
+        # 未覆盖的文件数
+        uncovered = cry_files - covered_files
+        cursor.close()
+        return len(uncovered)
+    except Exception as e:
+        print(f"  [DB Error] 获取未覆盖cry文件数量失败: {e}")
+        return 0
+    finally:
+        if conn: return_connection(conn)
+
+
+def get_all_cry_dates() -> list:
+    """获取所有有 cry 记录的日期列表（从 processed_files_a 表中提取）
+    
+    Returns:
+        日期字符串列表，格式: ['2025-11-17', '2025-11-18', ...]
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+
+        # 从 filename 中提取日期，按日期分组
+        cursor.execute("""
+            SELECT DISTINCT substring(filename from '(\d{4}-\d{2}-\d{2})') as d
+            FROM processed_files_a 
+            WHERE status='cry' AND filename ~ '\d{4}-\d{2}-\d{2}'
+            ORDER BY d
+        """)
+        result = [row[0] for row in cursor.fetchall() if row[0]]
+
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取cry日期列表失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+
+def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc'), progress_callback=None, log_callback=None, ttl_seconds=86400) -> int:
     """扫描目录并刷新文件缓存到Redis，返回扫描到的文件数量
 
     Args:
@@ -755,6 +1021,7 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
         audio_exts: 音频文件扩展名
         progress_callback: 进度回调函数，接收 (count, current_dir) 参数
         log_callback: 日志回调函数，接收 (message) 参数
+        ttl_seconds: 缓存过期时间（秒），默认 86400（24小时）。过期后下次读取会自动触发重新刷盘
     """
     import os
     import re
@@ -861,29 +1128,33 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
                 if processed_in_dir % 5000 == 0:
                     log(f"  [刷盘调试] 目录 {current_container} 已处理 {processed_in_dir} 个文件，总count: {count}")
 
-                # 批量写入 Valkey (每3个元素为一条记录)
+                # 批量写入 Valkey (每3个元素为一条记录)，带 TTL 自动过期
                 if len(batch_data) >= batch_size * 3:
                     pipe = r.pipeline()
                     for i in range(0, len(batch_data), 3):
                         key1, val1 = batch_data[i]
                         key2, val2 = batch_data[i+1]
                         key3, val3 = batch_data[i+2]
-                        pipe.set(key1, val1)
+                        pipe.set(key1, val1, ex=ttl_seconds)
                         pipe.sadd(key2, val2)
+                        pipe.expire(key2, ttl_seconds)
                         pipe.sadd(key3, val3)
+                        pipe.expire(key3, ttl_seconds)
                     pipe.execute()
                     batch_data = []
 
-        # 写入剩余数据
+        # 写入剩余数据，带 TTL
         if batch_data:
             pipe = r.pipeline()
             for i in range(0, len(batch_data), 3):
                 key1, val1 = batch_data[i]
                 key2, val2 = batch_data[i+1]
                 key3, val3 = batch_data[i+2]
-                pipe.set(key1, val1)
+                pipe.set(key1, val1, ex=ttl_seconds)
                 pipe.sadd(key2, val2)
+                pipe.expire(key2, ttl_seconds)
                 pipe.sadd(key3, val3)
+                pipe.expire(key3, ttl_seconds)
             pipe.execute()
 
         # 最后回调一次
@@ -897,6 +1168,47 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
         import traceback
         traceback.print_exc()
         return -1
+
+def check_cache_freshness() -> dict:
+    """检查 Redis 文件缓存的新鲜度
+    
+    Returns:
+        dict: {
+            'fresh': bool,          # 缓存是否新鲜
+            'total_keys': int,      # 总 key 数量
+            'expired_keys': int,    # 已过期的 key 数量
+            'ttl_min': int,         # 最小剩余 TTL（秒），-1=无TTL，-2=key不存在
+            'ttl_avg': float,       # 平均剩余 TTL（秒）
+        }
+    """
+    import os
+    VALKEY_URI = os.environ.get('VALKEY_URI', '')
+    if not VALKEY_URI:
+        return {'fresh': False, 'total_keys': 0, 'expired_keys': 0, 'ttl_min': -2, 'ttl_avg': 0}
+    try:
+        import valkey
+        r = valkey.from_url(VALKEY_URI)
+        
+        # 检查 babycry:files 这个集合的 TTL 作为代表
+        main_key = 'babycry:files'
+        ttl = r.ttl(main_key)
+        
+        # ttl 返回值: -2=key不存在, -1=key存在但无TTL, >0=剩余秒数
+        if ttl == -2:
+            # 缓存不存在
+            return {'fresh': False, 'total_keys': 0, 'expired_keys': 0, 'ttl_min': -2, 'ttl_avg': 0}
+        elif ttl == -1:
+            # 缓存存在但没有 TTL（旧缓存），视为不新鲜
+            return {'fresh': False, 'total_keys': -1, 'expired_keys': 0, 'ttl_min': -1, 'ttl_avg': 0}
+        else:
+            # 有 TTL，检查剩余时间是否充足（<1小时视为不新鲜）
+            fresh = ttl > 3600
+            total = r.scard(main_key)
+            return {'fresh': fresh, 'total_keys': total, 'expired_keys': 0, 'ttl_min': ttl, 'ttl_avg': float(ttl)}
+    except Exception as e:
+        print(f"  [Valkey Error] 检查缓存新鲜度失败: {e}")
+        return {'fresh': False, 'total_keys': 0, 'expired_keys': 0, 'ttl_min': -2, 'ttl_avg': 0}
+
 
 def get_file_cache_from_redis(date_str: str = None) -> list:
     """从 Valkey 获取文件列表（使用 pipeline 优化）"""
@@ -1052,6 +1364,26 @@ def clear_date_stats_in_redis() -> bool:
     except Exception as e:
         print(f"  [Valkey Error] 清空日期统计失败: {e}")
         return False
+
+def delete_cry_event_by_id(event_id: int) -> bool:
+    """按 ID 删除单条哭声事件记录"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return False
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM baby_cry_events WHERE id = %s", (event_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+        cursor.close()
+        return deleted
+    except Exception as e:
+        print(f"  [DB Error] 删除事件失败 (ID={event_id}): {e}")
+        if conn: conn.rollback()
+        return False
+    finally:
+        if conn: return_connection(conn)
+
 
 def delete_cry_events_by_date(date_str: str) -> int:
     """删除指定日期（YYYY-MM-DD）的哭声分析事件和处理进度"""
