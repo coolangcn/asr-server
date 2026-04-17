@@ -536,6 +536,273 @@
 
         .track-content { display: none; }
         .track-content.active { display: block; }
+
+        /* ============ 哭声事件 Tab ============ */
+        .track-tab.track-cry { }
+        .track-tab.track-cry.active {
+            border-color: #f472b6;
+            color: #f472b6;
+            background: rgba(244, 114, 182, 0.1);
+        }
+
+        .cry-events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .cry-event-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 14px 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .cry-event-card:active {
+            transform: scale(0.98);
+            border-color: rgba(244, 114, 182, 0.5);
+        }
+
+        .cry-card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .cry-cat-badge {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+        .cry-cat-badge.pain { background: rgba(239,68,68,0.2); color: #fca5a5; border-color: rgba(239,68,68,0.3); }
+        .cry-cat-badge.hungry { background: rgba(245,158,11,0.2); color: #fcd34d; border-color: rgba(245,158,11,0.3); }
+        .cry-cat-badge.incomplete { background: rgba(239,68,68,0.25); color: #fca5a5; border-color: rgba(239,68,68,0.4); animation: badge-pulse 2s infinite; }
+
+        .cry-time {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            text-align: right;
+        }
+        .cry-time .time-main { font-size: 0.88rem; color: #fff; font-weight: 600; }
+
+        .cry-reason {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-bottom: 6px;
+        }
+
+        .cry-card-footer {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+        .cry-card-footer .arrow {
+            margin-left: auto;
+            color: rgba(244,114,182,0.6);
+        }
+
+        .cry-load-more {
+            text-align: center;
+            padding: 14px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+        .cry-load-more button {
+            background: rgba(99,102,241,0.15);
+            border: 1px solid rgba(99,102,241,0.3);
+            color: #a5b4fc;
+            padding: 8px 24px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        /* 详情弹窗 */
+        .cry-detail-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: flex-end;
+        }
+        .cry-detail-overlay.active { display: flex; }
+
+        .cry-detail-panel {
+            background: #1e293b;
+            border-radius: 24px 24px 0 0;
+            width: 100%;
+            max-height: 88vh;
+            overflow-y: auto;
+            padding: 20px 20px 40px;
+            animation: slideUpPanel 0.3s ease;
+        }
+        @keyframes slideUpPanel {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+
+        .cry-detail-handle {
+            width: 40px; height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            margin: 0 auto 16px;
+        }
+
+        .cry-detail-header {
+            margin-bottom: 16px;
+        }
+        .cry-detail-header h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+        .cry-detail-meta {
+            display: flex; gap: 10px; flex-wrap: wrap;
+            font-size: 0.76rem; color: var(--text-secondary);
+        }
+
+        .cry-detail-section {
+            margin-bottom: 18px;
+        }
+        .cry-detail-section-title {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #a5b4fc;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .cry-advice-box {
+            background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(99,102,241,0.06));
+            border-left: 3px solid #10b981;
+            border-radius: 0 12px 12px 0;
+            padding: 12px 14px;
+            font-size: 0.85rem;
+            line-height: 1.7;
+            color: #d1d5db;
+        }
+        .cry-advice-box ol { margin: 0.4rem 0 0 1rem; padding: 0; }
+        .cry-advice-box li { margin-bottom: 0.3rem; }
+
+        .cry-detail-img {
+            display: flex; justify-content: center;
+            padding: 8px 0;
+        }
+        .cry-detail-img img {
+            border-radius: 14px; max-width: 240px; max-height: 240px;
+            object-fit: cover;
+        }
+
+        /* 音频播放器 */
+        .cry-audio-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .cry-audio-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
+            padding: 10px 12px;
+        }
+        .cry-audio-item .audio-icon {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+        .cry-audio-item .audio-icon.cry {
+            background: rgba(244,114,182,0.2);
+            color: #f472b6;
+        }
+        .cry-audio-item .audio-icon.context {
+            background: rgba(56,189,248,0.2);
+            color: #38bdf8;
+        }
+        .cry-audio-item .audio-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .cry-audio-item .audio-name {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cry-audio-item .audio-label {
+            font-size: 0.62rem;
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+        .cry-audio-item audio {
+            width: 0; height: 0; display: none;
+        }
+        .cry-audio-item .play-btn {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            border: none;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        .cry-audio-item .play-btn.cry {
+            background: rgba(244,114,182,0.3);
+            color: #f472b6;
+        }
+        .cry-audio-item .play-btn.context {
+            background: rgba(56,189,248,0.3);
+            color: #38bdf8;
+        }
+        .cry-audio-item .play-btn:active {
+            transform: scale(0.9);
+        }
+
+        .cry-detail-loading {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 3rem;
+            font-size: 0.9rem;
+        }
+
+        /* 空状态 */
+        .cry-empty {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .cry-empty .empty-icon {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -551,11 +818,15 @@
         <div class="track-tabs">
             <button class="track-tab track-a active" onclick="switchTrack('a')">
                 <i class="fa-solid fa-folder-open"></i>
-                A轨 · 历史
+                A轨
             </button>
             <button class="track-tab track-b" onclick="switchTrack('b')">
                 <i class="fa-solid fa-microphone"></i>
-                B轨 · 实时
+                B轨
+            </button>
+            <button class="track-tab track-cry" onclick="switchTrack('cry')">
+                <i class="fa-solid fa-heart-crack"></i>
+                哭声
             </button>
         </div>
 
@@ -696,6 +967,16 @@
             </div>
         </div>
 
+        <!-- 哭声事件 Tab -->
+        <div id="track-cry-content" class="track-content">
+            <div class="cry-events-list" id="cryEventsList">
+                <div class="cry-empty">
+                    <div class="empty-icon">👶</div>
+                    加载中...
+                </div>
+            </div>
+        </div>
+
         <!-- 日志 -->
         <div class="log-card">
             <div class="log-header">
@@ -758,7 +1039,22 @@
             document.querySelector(`.track-tab.track-${track}`).classList.add('active');
             document.querySelectorAll('.track-content').forEach(c => c.classList.remove('active'));
             document.getElementById(`track-${track}-content`).classList.add('active');
-            // 切换时刷新日志
+            
+            if (track === 'cry') {
+                // 切到哭声事件时加载数据
+                if (!cryEventsInterval) {
+                    loadCryEventsMobile();
+                    cryEventsInterval = setInterval(loadCryEventsMobile, 30000);
+                }
+            } else {
+                // 切走时停止哭声事件轮询
+                if (cryEventsInterval) {
+                    clearInterval(cryEventsInterval);
+                    cryEventsInterval = null;
+                }
+            }
+            
+            // 切换时刷新数据
             fetchData();
         }
 
@@ -1250,15 +1546,271 @@
                     clearInterval(fetchDataInterval);
                     fetchDataInterval = null;
                 }
+                if (cryEventsInterval) {
+                    clearInterval(cryEventsInterval);
+                    cryEventsInterval = null;
+                }
                 console.log('[mobile_monitor] 页面隐藏，暂停轮询');
             } else {
                 if (!fetchDataInterval) {
                     fetchDataInterval = setInterval(fetchDataWithLock, 5000);
                     fetchDataWithLock();
                 }
+                if (!cryEventsInterval && currentTrack === 'cry') {
+                    cryEventsInterval = setInterval(loadCryEventsMobile, 30000);
+                }
                 console.log('[mobile_monitor] 页面显示，恢复轮询');
             }
         });
+
+        // ============ 哭声事件功能 ============
+        let cryEventsInterval = null;
+        let cryEventsLoading = false;
+        let cryEventsHash = '';
+        let cryCurrentOffset = 0;
+        const CRY_PAGE_SIZE = 20;
+        const _cryDetailCache = {};
+        let _currentPlayingAudio = null;  // 跟踪当前播放的音频
+
+        async function loadCryEventsMobile(append = false) {
+            if (cryEventsLoading) return;
+            cryEventsLoading = true;
+
+            const container = document.getElementById('cryEventsList');
+            if (!append) cryCurrentOffset = 0;
+
+            try {
+                const response = await fetch(`/api/cry_events?limit=${CRY_PAGE_SIZE}&offset=${cryCurrentOffset}`);
+                const result = await response.json();
+
+                if (!response.ok) {
+                    if (!append) container.innerHTML = `<div class="cry-empty"><div class="empty-icon">❌</div>加载失败</div>`;
+                    return;
+                }
+
+                const events = result.events || [];
+                if (events.length === 0 && !append) {
+                    container.innerHTML = `<div class="cry-empty"><div class="empty-icon">📭</div>暂无哭声记录</div>`;
+                    return;
+                }
+
+                // 检查是否有变化
+                const newHash = events.map(e => e.id).join(',');
+                if (!append && newHash === cryEventsHash) {
+                    return;
+                }
+                if (!append) cryEventsHash = newHash;
+
+                let html = '';
+                events.forEach(ev => {
+                    const recTime = new Date(ev.recording_time || ev.created_at);
+                    const dateStr = recTime.toLocaleDateString();
+                    const timeStr = recTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                    const category = (ev.reason_category || 'pending').toLowerCase();
+                    const isIncomplete = !ev.reason_category || ev.reason_category === '未知' || category === 'analyzing' || category === '未分类';
+                    
+                    let icon = '🍼';
+                    let catClass = '';
+                    if (category.includes('饿') || category.includes('hungry')) { icon = '🍼'; catClass = 'hungry'; }
+                    if (category.includes('痛') || category.includes('pain')) { icon = '❤️‍🩹'; catClass = 'pain'; }
+                    if (category.includes('困') || category.includes('sleepy')) icon = '😴';
+                    if (category.includes('情绪') || category.includes('emotion')) icon = '🧸';
+                    if (isIncomplete) { icon = '⚠️'; catClass = 'incomplete'; }
+
+                    const reason = ev.reason_preview || '未知诱因';
+                    const hasIll = ev.has_illustration ? '🎨' : '';
+
+                    html += `
+                        <div class="cry-event-card" onclick="showCryDetail(${ev.id})">
+                            <div class="cry-card-top">
+                                <span class="cry-cat-badge ${catClass}">${isIncomplete ? '未完成' : (ev.reason_category || '分析')}</span>
+                                <div class="cry-time">
+                                    <div class="time-main">${timeStr}</div>
+                                    <div>${dateStr}</div>
+                                </div>
+                            </div>
+                            <div class="cry-reason">${icon} ${reason} ${hasIll}</div>
+                            <div class="cry-card-footer">
+                                <span>⏱ ${ev.start_time?.toFixed(1)||0}-${ev.end_time?.toFixed(1)||0}s</span>
+                                <span>📁 ${ev.file_count||0} 文件</span>
+                                <span class="arrow">▸</span>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                if (append) {
+                    // 移除底部的"加载更多"按钮
+                    const loadMore = container.querySelector('.cry-load-more');
+                    if (loadMore) loadMore.remove();
+                    container.insertAdjacentHTML('beforeend', html);
+                } else {
+                    container.innerHTML = html;
+                }
+
+                // 如果还有更多，添加加载更多按钮
+                if (events.length >= CRY_PAGE_SIZE) {
+                    container.insertAdjacentHTML('beforeend', `
+                        <div class="cry-load-more">
+                            <button onclick="loadMoreCryEvents()">加载更多</button>
+                        </div>
+                    `);
+                }
+
+                cryCurrentOffset += events.length;
+            } catch(e) {
+                console.error('[CryEvents] 加载失败:', e);
+                if (!append) container.innerHTML = `<div class="cry-empty"><div class="empty-icon">❌</div>加载失败，下拉刷新</div>`;
+            } finally {
+                cryEventsLoading = false;
+            }
+        }
+
+        function loadMoreCryEvents() {
+            loadCryEventsMobile(true);
+        }
+
+        async function showCryDetail(eventId) {
+            const overlay = document.getElementById('cryDetailOverlay');
+            const content = document.getElementById('cryDetailContent');
+            overlay.classList.add('active');
+            content.innerHTML = '<div class="cry-detail-loading">⏳ 加载详情中...</div>';
+
+            try {
+                let data = _cryDetailCache[eventId];
+                if (!data) {
+                    const resp = await fetch(`/api/cry_event/${eventId}`);
+                    data = await resp.json();
+                    _cryDetailCache[eventId] = data;
+                }
+
+                const recTime = new Date(data.recording_time || data.created_at);
+                const dateStr = recTime.toLocaleDateString();
+                const timeStr = recTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                const cat = (data.reason_category || 'pending').toLowerCase();
+
+                let icon = '🍼';
+                if (cat.includes('痛')||cat.includes('pain')) icon = '❤️‍🩹';
+                if (cat.includes('困')||cat.includes('sleepy')) icon = '😴';
+                if (cat.includes('情绪')||cat.includes('emotion')) icon = '🧸';
+
+                const advice = data.advice || '建议保持严密观察。';
+                let formattedAdvice = advice;
+                if (advice.includes('1.') || advice.includes('1、')) {
+                    const lines = advice.split(/(?=\d+[.,])/g);
+                    formattedAdvice = '<ol>' + lines.map(l => `<li>${l.replace(/^\d+[.,]\s*/,'')}</li>`).join('') + '</ol>';
+                }
+
+                const imgHtml = data.illustration_url && !data.illustration_url.startsWith('data:')
+                    ? `<div class="cry-detail-section"><div class="cry-detail-section-title">🎨 插图</div><div class="cry-detail-img"><img src="${data.illustration_url}" alt="插图" loading="lazy"></div></div>`
+                    : '';
+
+                // 音频列表
+                const audioUrls = data.audio_urls || [];
+                const filename = data.filename || '';
+                let audioHtml = '';
+                if (audioUrls.length > 0) {
+                    const audioItems = audioUrls.map((url, idx) => {
+                        const urlFilename = decodeURIComponent(url.split('/').pop());
+                        const isCryFile = urlFilename === filename;
+                        const audioId = `audio_${eventId}_${idx}`;
+                        return `
+                            <div class="cry-audio-item">
+                                <div class="audio-icon ${isCryFile ? 'cry' : 'context'}">
+                                    ${isCryFile ? '👶' : '🎙️'}
+                                </div>
+                                <div class="audio-info">
+                                    <div class="audio-name">${urlFilename}</div>
+                                    <div class="audio-label">${isCryFile ? '哭声片段' : '上下文音频'}</div>
+                                </div>
+                                <audio id="${audioId}" src="${url}" preload="none"></audio>
+                                <button class="play-btn ${isCryFile ? 'cry' : 'context'}" onclick="toggleAudio('${audioId}', this)">
+                                    ▶
+                                </button>
+                            </div>
+                        `;
+                    }).join('');
+
+                    audioHtml = `
+                        <div class="cry-detail-section">
+                            <div class="cry-detail-section-title">🔊 音频预览</div>
+                            <div class="cry-audio-list">
+                                ${audioItems}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                content.innerHTML = `
+                    <div class="cry-detail-header">
+                        <h2>${data.reason || '未知诱因'}</h2>
+                        <div class="cry-detail-meta">
+                            <span>${icon} ${data.reason_category || '未分类'}</span>
+                            <span>📅 ${dateStr} ${timeStr}</span>
+                            <span>⏱ ${data.start_time||0}-${data.end_time||0}s</span>
+                            ${data.file_count ? `<span>📁 ${data.file_count} 文件</span>` : ''}
+                        </div>
+                    </div>
+                    ${audioHtml}
+                    <div class="cry-detail-section">
+                        <div class="cry-detail-section-title">💡 安抚建议</div>
+                        <div class="cry-advice-box">${formattedAdvice}</div>
+                    </div>
+                    ${imgHtml}
+                `;
+            } catch(e) {
+                content.innerHTML = '<div class="cry-detail-loading" style="color:#ef4444">加载失败，请重试</div>';
+            }
+        }
+
+        function toggleAudio(audioId, btn) {
+            const audio = document.getElementById(audioId);
+            if (!audio) return;
+
+            // 停止当前播放的音频
+            if (_currentPlayingAudio && _currentPlayingAudio !== audio) {
+                _currentPlayingAudio.pause();
+                _currentPlayingAudio.currentTime = 0;
+                // 更新上一个按钮
+                const prevBtn = _currentPlayingAudio.parentElement.querySelector('.play-btn');
+                if (prevBtn) prevBtn.textContent = '▶';
+            }
+
+            if (audio.paused) {
+                audio.play().catch(() => {});
+                btn.textContent = '⏸';
+                _currentPlayingAudio = audio;
+                audio.onended = () => {
+                    btn.textContent = '▶';
+                    _currentPlayingAudio = null;
+                };
+            } else {
+                audio.pause();
+                audio.currentTime = 0;
+                btn.textContent = '▶';
+                _currentPlayingAudio = null;
+            }
+        }
+
+        function closeCryDetail() {
+            // 停止播放中的音频
+            if (_currentPlayingAudio) {
+                _currentPlayingAudio.pause();
+                _currentPlayingAudio.currentTime = 0;
+                _currentPlayingAudio = null;
+            }
+            document.getElementById('cryDetailOverlay').classList.remove('active');
+        }
     </script>
+
+    <!-- 哭声事件详情弹窗 -->
+    <div id="cryDetailOverlay" class="cry-detail-overlay" onclick="if(event.target===this)closeCryDetail()">
+        <div class="cry-detail-panel">
+            <div class="cry-detail-handle"></div>
+            <div id="cryDetailContent">
+                <div class="cry-detail-loading">⏳ 加载详情中...</div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

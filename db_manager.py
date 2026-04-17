@@ -334,8 +334,8 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
             
         cursor = conn.cursor()
         
-        # 构建动态 SQL
-        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, audio_path, confidence, illustration_url, array_length(event_files_json::jsonb, 1) as file_count FROM baby_cry_events"
+        # 构建动态 SQL — 列表只返回摘要字段，详情走 /api/cry_event/<id>
+        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, LEFT(reason, 80) as reason_preview, reason_category, LEFT(advice, 120) as suggestion_preview, jsonb_array_length(event_files_json::jsonb) as file_count, CASE WHEN illustration_url IS NOT NULL THEN true ELSE FALSE END as has_illustration FROM baby_cry_events"
         where_clauses = []
         params = []
         
@@ -375,15 +375,13 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
                 'filename': row[1],
                 'created_at': row[2].isoformat() if row[2] else None,
                 'recording_time': row[3].isoformat() if row[3] else None,
-                'start_time': row[4],
-                'end_time': row[5],
-                'reason': row[6],
-                'advice': row[7],
-                'reason_category': row[8],
-                'audio_path': row[9] if len(row) > 9 else None,
-                'confidence': row[10] if len(row) > 10 else 0.0,
-                'illustration_url': row[11] if len(row) > 11 else None,
-                'file_count': row[12] if len(row) > 12 and row[12] else 0
+                'start_time': float(row[4]) if row[4] else 0.0,
+                'end_time': float(row[5]) if row[5] else 0.0,
+                'reason_preview': row[6] or '',
+                'reason_category': row[7],
+                'suggestion_preview': row[8] or '',
+                'file_count': int(row[9]) if row[9] else 0,
+                'has_illustration': bool(row[10]) if len(row) > 10 else False,
             })
         
         return results
@@ -540,7 +538,7 @@ def update_cry_analysis(event_id: int, reason: str, advice: str,
             return_connection(conn)
 
 def update_cry_event_image(filename: str, illustration_url: str) -> bool:
-    """更新宝宝哭声事件的插图 URL"""
+    """更新宝宝哭声事件的插图 URL（按 filename 匹配）"""
     conn = None
     try:
         conn = get_connection()
@@ -561,6 +559,35 @@ def update_cry_event_image(filename: str, illustration_url: str) -> bool:
         return updated
     except Exception as e:
         print(f"  [DB Error] 更新插图失败：{e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            return_connection(conn)
+
+def update_cry_event_image_by_id(event_id: int, illustration_url: str) -> bool:
+    """更新宝宝哭声事件的插图 URL（按 ID 精确匹配，推荐使用）"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE baby_cry_events SET illustration_url = %s WHERE id = %s",
+            (illustration_url, event_id)
+        )
+        
+        conn.commit()
+        updated = cursor.rowcount > 0
+        cursor.close()
+        if updated:
+            print(f"  [DB] 已更新插图：ID={event_id}")
+        return updated
+    except Exception as e:
+        print(f"  [DB Error] 更新插图失败(ID={event_id})：{e}")
         if conn:
             conn.rollback()
         return False
@@ -1386,7 +1413,11 @@ def delete_cry_event_by_id(event_id: int) -> bool:
 
 
 def delete_cry_events_by_date(date_str: str) -> int:
-    """删除指定日期（YYYY-MM-DD）的哭声分析事件和处理进度"""
+    """删除指定日期（YYYY-MM-DD）的哭声分析事件
+    
+    注意：不再删除 processed_files_a 中的记录，保留处理进度用于智能续传。
+    如果需要完全重跑某日期，应使用独立的清理方法。
+    """
     conn = None
     deleted_count = 0
     try:
@@ -1394,24 +1425,16 @@ def delete_cry_events_by_date(date_str: str) -> int:
         if not conn: return 0
         cursor = conn.cursor()
         
-        # 1. 删除哭声事件
+        # 只删除哭声事件，保留 processed_files_a 处理进度
         cursor.execute(
             "DELETE FROM baby_cry_events WHERE recording_time::date = %s",
             (date_str,)
         )
         deleted_count = cursor.rowcount
         
-        # 2. 删除对应的处理进度 (以便重新处理)
-        # 注意：processed_files_a 中的文件名包含日期信息，如 Sony-2/2026-03-28/xxx.m4a
-        # 我们使用模糊匹配来删除
-        cursor.execute(
-            "DELETE FROM processed_files_a WHERE filename LIKE %s",
-            (f"%{date_str}%",)
-        )
-        
         conn.commit()
         cursor.close()
-        print(f"  [DB] 已清除日期 {date_str} 的 {deleted_count} 条哭声事件记录及相关处理进度")
+        print(f"  [DB] 已清除日期 {date_str} 的 {deleted_count} 条哭声事件记录")
         return deleted_count
     except Exception as e:
         print(f"  [DB Error] 清除日期记录失败: {e}")

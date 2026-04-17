@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse
+import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse, uuid
 import numpy as np
 from scipy.spatial.distance import cosine
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,7 +13,7 @@ import torch
 import torchaudio
 import shutil
 import re
-from collections import Counter
+from collections import Counter, OrderedDict
 from db_manager import save_to_db, update_topics, parse_recording_time, init_pool, init_db
 from logging.handlers import TimedRotatingFileHandler
 import whisper
@@ -232,7 +232,7 @@ class SSEHandler(logging.Handler):
         self.clients.add(client)
     
     def remove_client(self, client):
-        self.clients.remove(client)
+        self.clients.discard(client)
     
     def emit(self, record):
         msg = self.format(record)
@@ -297,7 +297,7 @@ db_lock = threading.Lock()
 llm_batch_queue = []
 llm_batch_lock = threading.Lock()
 llm_last_batch_time = time.time()
-llm_cache = {}  # 缓存 LLM 响应
+llm_cache = OrderedDict()  # 缓存 LLM 响应（LRU 淘汰）
 llm_cache_lock = threading.Lock()
 
 # =================【 历史分析锁 】=================
@@ -618,10 +618,11 @@ def call_gemini_api(prompt):
         return None
         
     try:
-        # 检查缓存
+        # 检查缓存（LRU: 命中时移到末尾）
         cache_key = hashlib.md5(prompt.encode()).hexdigest()
         with llm_cache_lock:
             if cache_key in llm_cache:
+                llm_cache.move_to_end(cache_key)  # LRU: 标记为最近使用
                 logger_sys.info(f"  [LLM] 使用缓存响应")
                 return llm_cache[cache_key]
         
@@ -639,7 +640,7 @@ def call_gemini_api(prompt):
         if text:
             with llm_cache_lock:
                 if len(llm_cache) >= LLMConfig.LLM_CACHE_SIZE:
-                    llm_cache.pop(next(iter(llm_cache)))
+                    llm_cache.popitem(last=False)  # LRU: 淘汰最久未使用的
                 llm_cache[cache_key] = text
 
         return text
@@ -905,19 +906,33 @@ def call_volcengine_ai(prompt):
                 image_urls = query_result.get('data', {}).get('image_urls', [])
                 binary_data = query_result.get('data', {}).get('binary_data_base64', [])
                 
+                # 确保插图目录存在
+                _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+                os.makedirs(_illustration_dir, exist_ok=True)
+                
                 if image_urls:
                     logger_a.info(f"🎨 [Volcengine] ✅ 图片生成成功，URL: {image_urls[0][:100]}...")
-                    # 下载图片并转换为 base64
+                    # 下载图片并保存到本地文件
                     img_response = requests.get(image_urls[0], timeout=30)
                     if img_response.status_code == 200:
-                        image_b64 = base64.b64encode(img_response.content).decode('utf-8')
-                        return f"data:image/jpeg;base64,{image_b64}"
+                        img_filename = f"{uuid.uuid4().hex[:12]}.jpg"
+                        img_path = os.path.join(_illustration_dir, img_filename)
+                        with open(img_path, 'wb') as f:
+                            f.write(img_response.content)
+                        logger_a.info(f"🎨 [Volcengine] 图片已保存到本地: {img_path} ({len(img_response.content)} bytes)")
+                        return f"/api/illustration/{img_filename}"
                     else:
                         logger_a.error(f"🎨 [Volcengine] 下载图片失败：{img_response.status_code}")
                         return None
                 elif binary_data:
                     logger_a.info(f"🎨 [Volcengine] ✅ 图片生成成功，base64 长度：{len(binary_data[0])} 字符")
-                    return f"data:image/jpeg;base64,{binary_data[0]}"
+                    img_data = base64.b64decode(binary_data[0])
+                    img_filename = f"{uuid.uuid4().hex[:12]}.jpg"
+                    img_path = os.path.join(_illustration_dir, img_filename)
+                    with open(img_path, 'wb') as f:
+                        f.write(img_data)
+                    logger_a.info(f"🎨 [Volcengine] 图片已保存到本地: {img_path} ({len(img_data)} bytes)")
+                    return f"/api/illustration/{img_filename}"
                 else:
                     logger_a.error(f"🎨 [Volcengine] 响应中没有图片数据")
                     return None
@@ -971,32 +986,50 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
     import time, re, json
     time.sleep(1) # 等待文件落盘
     if not os.path.exists(audio_path):
+        logger_a.warning(f"👶 [BabyCry] 音频文件不存在: {audio_path}")
         return None, None, None
         
     logger_a.info(f"👶 [BabyCry] 开始收集上下文音频并发送分析... ({start_time}ms - {end_time}ms)")
     
     # 搜集前后 5 分钟 (300秒) 的同目录相关录音
     audio_paths_to_send = []
-    context_files_before = []
-    context_files_after = []
     
     from db_manager import parse_recording_time
     record_dt = parse_recording_time(filename)
     
+    # 主文件（哭声文件）
+    audio_paths_to_send.append(audio_path)
+    
     if record_dt:
         date_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR, record_dt.strftime("%Y-%m-%d"))
         if os.path.exists(date_dir):
+            candidates = []
             for f in os.listdir(date_dir):
                 if f.endswith(tuple(FileMonitorConfig.SUPPORTED_FORMATS)):
                     f_dt = parse_recording_time(f)
-    
+                    if f_dt:
+                        f_path = os.path.join(date_dir, f)
+                        time_diff = (f_dt - record_dt).total_seconds()
+                        # 前后5分钟（300秒）
+                        if -300 <= time_diff <= 300:
+                            candidates.append((time_diff, f_path))
+            
+            # 按时间排序：先前的文件 → 主文件 → 后来的文件
+            candidates.sort(key=lambda x: x[0])
+            for time_diff, f_path in candidates:
+                if f_path not in audio_paths_to_send and os.path.exists(f_path):
+                    audio_paths_to_send.append(f_path)
+            
+            logger_a.info(f"👶 [BabyCry] 在 {date_dir} 中找到 {len(candidates)} 个上下文文件")
+
     context_len = len(audio_paths_to_send) - 1
-    logger_a.info(f"👶 [BabyCry] 收集完毕，共附带 {context_len} 个相邻时段记录作为多模态上下文...")
+    logger_a.info(f"👶 [BabyCry] 收集完毕，共附带 {context_len} 个相邻时段记录作为多模态上下文 (总计 {len(audio_paths_to_send)} 个文件)")
     
     prompt = "以下是多段连续的录音（时间顺序排列），其中包含了两岁半宝宝的哭泣声（位于中间的某段）。请结合完整的上下文音频（前后高达5分钟的情境），综合推理宝宝在这段时间哭泣的真正原因（如困倦Sleepy、饥饿Hungry、情绪发泄Frustration、疼痛Pain、要求未被满足等），并给出针对此时情境的安抚建议。请严格按如下JSON格式返回：{\"category\": \"核心原因简短分类(如：困倦/饥饿/疼痛/情绪等)\", \"reason\": \"结合上下文的深度分析原因\", \"advice\": \"针对此时情境的安抚建议\"}"
     response_text = call_gemini_audio_api(audio_paths_to_send, prompt)
 
     if not response_text:
+        logger_a.warning(f"👶 [BabyCry] Gemini Audio API 返回空结果")
         return None, None, None
         
     try:
@@ -1063,9 +1096,16 @@ def extract_conversation_topics(full_text, segments):
 
 def add_to_llm_queue(filename, full_text, segments):
     """添加到 LLM 批量处理队列"""
-    global llm_last_batch_time
+    global llm_last_batch_time, llm_batch_queue
     
     with llm_batch_lock:
+        # 防止队列无限增长，超过上限时丢弃最旧的条目
+        LLM_QUEUE_MAX_SIZE = LLMConfig.LLM_BATCH_SIZE * 5
+        if len(llm_batch_queue) >= LLM_QUEUE_MAX_SIZE:
+            dropped_count = len(llm_batch_queue) - LLM_QUEUE_MAX_SIZE + 1
+            del llm_batch_queue[:dropped_count]
+            logger_b.warning(f"  [LLM队列] 队列已满({LLM_QUEUE_MAX_SIZE})，丢弃 {dropped_count} 条旧记录")
+        
         llm_batch_queue.append({
             'filename': filename,
             'full_text': full_text,
@@ -1075,7 +1115,7 @@ def add_to_llm_queue(filename, full_text, segments):
         queue_size = len(llm_batch_queue)
         time_since_last = time.time() - llm_last_batch_time
         
-        logger_b.info(f"  [LLM队列] 已添加，当前队列: {queue_size}/{LLMConfig.LLM_BATCH_SIZE}")
+        logger_b.info(f"  [LLM队列] 已添加，当前队列: {queue_size}/{LLM_QUEUE_MAX_SIZE}")
         
         # 触发批量处理
         if queue_size >= LLMConfig.LLM_BATCH_SIZE or time_since_last >= LLMConfig.LLM_BATCH_TIMEOUT:
@@ -1112,32 +1152,198 @@ def process_llm_batch():
     
     logger_b.info(f"  [LLM批处理] 完成")
 
-# =========================================================
+# =================【 未完成哭声分析自动重试 】=================
+RETRY_INCOMPLETE_INTERVAL = 3600  # 每1小时检查一次未完成的分析
+RETRY_INCOMPLETE_MAX_AGE = 86400  # 只重试24小时内的未完成事件（避免对很旧的记录反复重试）
 
-def cleanup_temp_dir():
-    """清理超过1小时的临时文件"""
+def retry_incomplete_cry_analyses():
+    """定时扫描并重试未完成的哭声深度分析
+    
+    场景：检测到哭声后走 Gemini 分析但失败了（网络超时/API限额等），
+    数据库中 category 仍为 analyzing/未分类/未知，需要自动重试。
+    """
     try:
-        temp_dir = Config.TEMP_DIR
-        if not os.path.exists(temp_dir):
+        from db_manager import get_incomplete_cry_events, update_cry_analysis
+        
+        events = get_incomplete_cry_events()
+        if not events:
+            logger_a.debug("[重试] 无未完成的哭声分析")
             return
         
         current_time = time.time()
-        cleaned_count = 0
+        retried = 0
+        skipped = 0
         
-        for filename in os.listdir(temp_dir):
-            filepath = os.path.join(temp_dir, filename)
-            if os.path.isfile(filepath):
+        for event in events:
+            event_id = event.get('id')
+            filename = event.get('filename', '')
+            category = event.get('reason_category', '')
+            audio_path = event.get('audio_path', '')
+            event_files = event.get('event_files', [])
+            recording_time = event.get('recording_time', '')
+            
+            # 过滤太旧的事件
+            if recording_time:
                 try:
-                    file_age = current_time - os.path.getmtime(filepath)
-                    if file_age > 3600:  # 1小时
-                        os.remove(filepath)
-                        cleaned_count += 1
-                        logger_sys.debug(f"清理旧临时文件: {filename}")
-                except Exception as e:
-                    logger_sys.warning(f"清理文件失败 {filename}: {e}")
+                    from datetime import datetime as _dt
+                    if isinstance(recording_time, str):
+                        rt = _dt.fromisoformat(recording_time)
+                    else:
+                        rt = recording_time
+                    age_seconds = (current_time - rt.timestamp()) if hasattr(rt, 'timestamp') else 0
+                    if age_seconds > RETRY_INCOMPLETE_MAX_AGE:
+                        skipped += 1
+                        continue
+                except Exception:
+                    pass
+            
+            # 确定音频文件路径
+            # 优先用 event_files（多文件上下文），其次用 audio_path（单文件）
+            valid_paths = []
+            if event_files:
+                for p in event_files:
+                    # 兼容相对路径和绝对路径
+                    abs_p = p if os.path.isabs(p) else os.path.join(FileMonitorConfig.SOURCE_DIR, p.lstrip('/'))
+                    if os.path.exists(abs_p):
+                        valid_paths.append(abs_p)
+            
+            # 单文件兜底
+            if not valid_paths and audio_path:
+                abs_audio = audio_path if os.path.isabs(audio_path) else os.path.join(FileMonitorConfig.SOURCE_DIR, audio_path.lstrip('/'))
+                if os.path.exists(abs_audio):
+                    valid_paths = [abs_audio]
+            
+            if not valid_paths:
+                logger_a.debug(f"[重试] ID={event_id} 音频文件均不存在，跳过")
+                skipped += 1
+                continue
+            
+            # A轨正在运行时跳过（避免并发API调用冲突）
+            if _history_reprocess_running:
+                logger_a.info("[重试] A轨任务运行中，跳过本轮重试")
+                break
+            
+            logger_a.info(f"🔄 [重试] 重新分析 ID={event_id}, category={category}, 文件数={len(valid_paths)}")
+            
+            try:
+                # 复用 Gemini 分析逻辑
+                if len(valid_paths) >= 1:
+                    prompt = (
+                        "以下是多段连续的录音（时间顺序排列），其中包含了两岁半宝宝的哭泣声。"
+                        "请结合完整的上下文音频，综合推理宝宝在这段时间哭泣的真正原因"
+                        "（如困倦Sleepy、饥饿Hungry、情绪发泄Frustration、疼痛Pain、要求未被满足等），"
+                        "并给出针对此时情境的安抚建议。"
+                        "请严格按如下JSON格式返回：{\"category\": \"核心原因简短分类(如：困倦/饥饿/疼痛/情绪等)\", \"reason\": \"结合上下文的深度分析原因\", \"advice\": \"针对此时情境的安抚建议\"}"
+                    )
+                    response_text = call_gemini_audio_api(valid_paths, prompt)
+                    
+                    if response_text:
+                        import re as _re, json as _json
+                        cleaned = response_text.strip()
+                        if cleaned.startswith('```json'):
+                            cleaned = cleaned[7:]
+                        elif cleaned.startswith('```'):
+                            cleaned = cleaned[3:]
+                        if cleaned.endswith('```'):
+                            cleaned = cleaned[:-3]
+                        cleaned = cleaned.strip()
+                        
+                        parse_ok = False
+                        result = {}
+                        try:
+                            result = _json.loads(cleaned, strict=False)
+                            parse_ok = True
+                        except Exception:
+                            match = _re.search(r'\{.*\}', cleaned, _re.DOTALL)
+                            if match:
+                                try:
+                                    result = _json.loads(match.group(), strict=False)
+                                    parse_ok = True
+                                except Exception:
+                                    pass
+                        
+                        if parse_ok:
+                            new_category = result.get("category", "未知")
+                            new_reason = result.get("reason", "未知")
+                            new_advice = result.get("advice", "无")
+                            
+                            update_cry_analysis(
+                                event_id, new_reason, new_advice,
+                                reason_category=new_category,
+                                event_files=valid_paths,
+                                confidence=event.get('confidence'),
+                                details=None
+                            )
+                            retried += 1
+                            logger_a.info(f"🔄 [重试] ID={event_id} 分析完成: category={new_category}")
+                        else:
+                            logger_a.warning(f"🔄 [重试] ID={event_id} Gemini返回解析失败")
+                    else:
+                        logger_a.warning(f"🔄 [重试] ID={event_id} Gemini返回空结果")
+                
+                # 事件间延迟，避免API限流
+                time.sleep(5)
+                
+            except Exception as e:
+                logger_a.error(f"🔄 [重试] ID={event_id} 重试异常: {e}")
         
-        if cleaned_count > 0:
-            logger_sys.info(f"临时文件清理完成，删除了 {cleaned_count} 个文件")
+        if retried > 0 or skipped > 0:
+            logger_a.info(f"🔄 [重试] 本轮完成: 成功{retried}条, 跳过{skipped}条, 总计{len(events)}条")
+            
+    except Exception as e:
+        logger_a.error(f"🔄 [重试] 自动重试异常: {e}")
+    finally:
+        # 调度下一轮
+        threading.Timer(RETRY_INCOMPLETE_INTERVAL, retry_incomplete_cry_analyses).start()
+
+# =========================================================
+
+def cleanup_temp_dir():
+    """清理超过指定时间的临时文件（覆盖多个临时目录）"""
+    # 需要清理的目录列表及其最大保留时间（秒）
+    cleanup_dirs = {
+        Config.TEMP_DIR: 3600,            # temp/ - 1小时
+        "temp_cry": 7200,                  # temp_cry/ - 2小时（延迟分析可能需要更久）
+        "illustrations": 86400,            # illustrations/ - 24小时
+        Config.LONG_SENTENCES_DIR: 604800,  # long_sentences/ - 7天
+    }
+    
+    try:
+        current_time = time.time()
+        total_cleaned = 0
+        
+        for dir_name, max_age in cleanup_dirs.items():
+            if not os.path.exists(dir_name):
+                continue
+            
+            cleaned_count = 0
+            try:
+                for filename in os.listdir(dir_name):
+                    filepath = os.path.join(dir_name, filename)
+                    try:
+                        if os.path.isfile(filepath):
+                            file_age = current_time - os.path.getmtime(filepath)
+                            if file_age > max_age:
+                                os.remove(filepath)
+                                cleaned_count += 1
+                                logger_sys.debug(f"清理旧临时文件: {dir_name}/{filename}")
+                        elif os.path.isdir(filepath):
+                            dir_age = current_time - os.path.getmtime(filepath)
+                            if dir_age > max_age:
+                                shutil.rmtree(filepath, ignore_errors=True)
+                                cleaned_count += 1
+                                logger_sys.debug(f"清理旧临时目录: {dir_name}/{filename}")
+                    except Exception as e:
+                        logger_sys.warning(f"清理文件失败 {dir_name}/{filename}: {e}")
+            except Exception as e:
+                logger_sys.warning(f"扫描目录失败 {dir_name}: {e}")
+            
+            if cleaned_count > 0:
+                logger_sys.info(f"临时文件清理完成 [{dir_name}]，删除了 {cleaned_count} 个文件")
+                total_cleaned += cleaned_count
+        
+        if total_cleaned > 0:
+            logger_sys.info(f"本轮临时文件清理总计: {total_cleaned} 个文件/目录")
         
         # 每小时执行一次
         threading.Timer(3600, cleanup_temp_dir).start()
@@ -1671,6 +1877,56 @@ def manage_page():
 def baby_cry_page():
     return render_template("baby_cry.html")
 
+@app.route("/api/illustration/<filename>")
+def serve_illustration(filename):
+    """提供宝宝哭声事件插图（静态文件，支持浏览器缓存）"""
+    import os
+    # 安全检查：防止路径穿越
+    if filename != os.path.basename(filename) or '..' in filename:
+        return jsonify({"error": "Invalid filename"}), 400
+    illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+    file_path = os.path.join(illustration_dir, filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Image not found"}), 404
+    from flask import send_file
+    return send_file(file_path, mimetype='image/jpeg', max_age=86400*7)  # 缓存7天
+
+@app.route("/api/cry_event/<int:event_id>", methods=["GET"])
+def api_get_cry_event(event_id):
+    """获取单个事件的完整详情（弹窗展示用）"""
+    from db_manager import get_baby_cry_event_by_id
+    try:
+        event = get_baby_cry_event_by_id(event_id)
+        if not event:
+            return jsonify({"error": "Event not found"}), 404
+        # 构建音频URL列表
+        event_files = event.get("event_files_json", [])
+        audio_urls = []
+        for f in event_files:
+            if f.startswith(FileMonitorConfig.SOURCE_DIR):
+                f = os.path.relpath(f, FileMonitorConfig.SOURCE_DIR)
+            elif f.startswith('/'):
+                f = f.lstrip('/')
+            audio_urls.append(f"/api/audio/{f}")
+
+        return jsonify({
+            "id": event["id"],
+            "filename": event.get("filename"),
+            "recording_time": event.get("recording_time"),
+            "created_at": event.get("created_at"),
+            "start_time": event.get("start_time", 0),
+            "end_time": event.get("end_time", 0),
+            "reason": event.get("reason"),
+            "advice": event.get("advice"),
+            "reason_category": event.get("reason_category"),
+            "illustration_url": event.get("illustration_url"),
+            "file_count": len(event_files),
+            "audio_urls": audio_urls,
+        })
+    except Exception as e:
+        logger_a.error(f"获取事件详情失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/cry_events", methods=["GET"])
 def api_get_cry_events():
     from db_manager import get_baby_cry_events
@@ -1735,6 +1991,7 @@ def api_analyze_cry():
         import tempfile
         cry_confidence = 0.0
         cry_details = []
+        temp_dir = None
         try:
             logger_a.info(f"👶 [analyze_cry API] 开始运行声纹检测...")
             # 预处理音频
@@ -1743,14 +2000,12 @@ def api_analyze_cry():
             if preprocess_audio(audio_path, proc_temp):
                 _, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp)
                 logger_a.info(f"👶 [analyze_cry API] 声纹检测完成 - 置信度: {cry_confidence}, 详情数: {len(cry_details)}")
-            # 清理临时文件
-            try:
-                os.remove(proc_temp)
-                os.rmdir(temp_dir)
-            except:
-                pass
         except Exception as e:
             logger_a.warning(f"👶 [analyze_cry API] 声纹检测异常: {e}")
+        finally:
+            # 确保临时目录被清理
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
         # ── 模式1：调用方提供了完整事件文件列表，直接送 Gemini ──
         if audio_paths and isinstance(audio_paths, list) and len(audio_paths) > 0:
@@ -1847,10 +2102,11 @@ def api_analyze_cry():
                         return jsonify({"error": f"保存分析结果异常: {str(save_err)}"}), 500
 
                     # 异步生成插图（不阻塞返回）
+                    _saved_id = save_result  # 闭包捕获
                     def generate_illustration():
                         try:
                             logger_a.info(f"🎨 [插图生成] ================ 开始生成场景插图 ================")
-                            logger_a.info(f"🎨 [插图生成] 文件名: {filename}")
+                            logger_a.info(f"🎨 [插图生成] ID={_saved_id}, 文件名: {filename}")
                             logger_a.info(f"🎨 [插图生成] 原因描述: {reason}")
 
                             # 根据原因的详细描述生成场景插图
@@ -1870,8 +2126,8 @@ def api_analyze_cry():
 
                             if image_url:
                                 logger_a.info(f"🎨 [插图生成] API 返回成功，正在更新数据库...")
-                                from db_manager import update_cry_event_image
-                                update_result = update_cry_event_image(filename, image_url)
+                                from db_manager import update_cry_event_image_by_id
+                                update_result = update_cry_event_image_by_id(_saved_id, image_url)
                                 logger_a.info(f"🎨 [插图生成] 数据库更新结果: {update_result}")
                                 logger_a.info(f"🎨 [插图生成] ================ 插图生成完成 ================")
                             else:
@@ -1909,8 +2165,21 @@ def api_analyze_cry():
 @app.route("/api/trigger_reprocess", methods=["POST"])
 def trigger_reprocess():
     """触发重新处理历史音频任务"""
-    global _history_reprocess_running
+    global _history_reprocess_running, _history_reprocess_proc, _track_b_paused
     import subprocess
+    
+    # 安全检查：如果标记为运行中，但子进程已死，则自动重置状态
+    if _history_reprocess_running and _history_reprocess_proc is not None:
+        if _history_reprocess_proc.poll() is not None:
+            # 子进程已退出，重置残留状态
+            logger_sys.warning("⚠️ 检测到上次A轨进程已退出但状态未清理，自动重置。")
+            _history_reprocess_running = False
+            _history_reprocess_proc = None
+            try:
+                _history_reprocess_lock.release()
+            except RuntimeError:
+                pass  # 锁未持有，忽略
+            _track_b_paused = False
     
     # 尝试加锁
     if not _history_reprocess_lock.acquire(blocking=False):
@@ -1930,7 +2199,6 @@ def trigger_reprocess():
         # 不提前删除记录，等分析完成后再处理（避免记录消失）
             
         # 暂停 B 轨处理，直到 A 轨结束
-        global _track_b_paused
         _track_b_paused = True
         logger_sys.warning("⚠️ 由于 A 轨历史分析启动，B 轨实时分析已自动暂停。")
         
@@ -2909,18 +3177,32 @@ def transcribe_audio():
                         else:
                             # ── 正式报警：先保存占位，后续在分析和插图生成后发送邮件 ──
                             
+                            # 注意：proc_temp 会在请求结束后被 finally 清理，需要先复制到持久位置
+                            import shutil as _shutil
+                            _cry_persist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_cry")
+                            os.makedirs(_cry_persist_dir, exist_ok=True)
+                            _persist_ts = int(time.time())
+                            _persist_audio_path = os.path.join(_cry_persist_dir, f"cry_{_persist_ts}.wav")
+                            _shutil.copy2(proc_temp, _persist_audio_path)
+                            logger_b.info(f"💾 [BabyCry] 已复制音频到持久路径: {_persist_audio_path}")
+                            
                             # [即时占位] 立即写入数据库（包含声纹投票详情）
                             from db_manager import save_cry_analysis
                             placeholder_id = save_cry_analysis(
                                 file.filename, 0, audio_duration, 
                                 "深度分析中 (5分钟观察期)...", "请稍候内容更新", 
                                 reason_category="analyzing", event_files=[], 
-                                audio_path=proc_temp,
+                                audio_path=_persist_audio_path,
                                 confidence=cry_confidence,
                                 details=cry_details
                             )
+                            
+                            # 更新持久文件名包含 placeholder_id
+                            if placeholder_id:
+                                _new_persist_path = os.path.join(_cry_persist_dir, f"cry_{placeholder_id}_{_persist_ts}.wav")
+                                os.rename(_persist_audio_path, _new_persist_path)
+                                _persist_audio_path = _new_persist_path
 
-                            # 启动后台延迟分析任务
                             def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det):
                                 # ── 第1封邮件: 即时报警 (立即发送) ──
                                 logger_a.info(f"📧 [邮件] 发送即时报警邮件...")
@@ -2940,6 +3222,7 @@ def transcribe_audio():
                                 reason, advice, category = process_baby_cry_async(fname, a_path, 0, dur * 1000, placeholder_id=p_id, cry_conf=cry_conf, cry_det=cry_det)
                                 
                                 # 验证数据库更新是否成功
+                                analysis_ok = False
                                 try:
                                     from db_manager import get_baby_cry_event_by_id
                                     record = get_baby_cry_event_by_id(p_id)
@@ -2947,16 +3230,19 @@ def transcribe_audio():
                                         reason = record.get('reason')
                                         advice = record.get('advice')
                                         category = record.get('reason_category')
-                                        logger_b.info(f"✅ [BabyCry] 数据库记录已更新: category={category}, reason={reason[:50] if reason else 'None'}...")
+                                        # 判断分析是否真正完成（不是占位文本）
+                                        if category and category != 'analyzing':
+                                            analysis_ok = True
+                                        logger_b.info(f"✅ [BabyCry] 数据库记录: category={category}, reason={reason[:50] if reason else 'None'}..., 分析成功={analysis_ok}")
                                     else:
                                         logger_b.error(f"❌ [BabyCry] 数据库记录未找到 (ID={p_id})")
                                 except Exception as e:
                                     logger_b.error(f"❌ [BabyCry] 验证数据库更新失败: {e}")
 
-                                # 生成插图
-                                image_url = None
+                                # 生成插图（仅分析成功时）
+                                image_data_for_email = None
                                 try:
-                                    if reason and reason != "未知":
+                                    if analysis_ok and reason and reason != "未知" and "深度分析中" not in (reason or ""):
                                         logger_a.info(f"🎨 [邮件插图] 开始生成邮件插图...")
                                         image_prompt = (
                                             f"创作一幅温暖治愈的儿童绘本风格卡通插图。"
@@ -2969,27 +3255,64 @@ def transcribe_audio():
                                         )
                                         image_url = call_gemini_image_api(image_prompt)
                                         if image_url:
-                                            logger_a.info(f"🎨 [邮件插图] ✅ 插图生成成功!")
+                                            logger_a.info(f"🎨 [邮件插图] ✅ 插图生成成功: {image_url}")
+                                            # 更新数据库中的 illustration_url
+                                            try:
+                                                from db_manager import update_cry_event_image_by_id
+                                                update_cry_event_image_by_id(p_id, image_url)
+                                                logger_a.info(f"🎨 [邮件插图] 已更新数据库 illustration_url (ID={p_id})")
+                                            except Exception as db_img_err:
+                                                logger_a.error(f"🎨 [邮件插图] 更新数据库失败: {db_img_err}")
+                                            # 将文件路径转为 base64 以便邮件嵌入
+                                            try:
+                                                illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+                                                img_filename = image_url.replace("/api/illustration/", "")
+                                                img_full_path = os.path.join(illustration_dir, img_filename)
+                                                if os.path.exists(img_full_path):
+                                                    import base64 as _b64
+                                                    with open(img_full_path, 'rb') as _f:
+                                                        img_bytes = _f.read()
+                                                    image_data_for_email = f"data:image/jpeg;base64,{_b64.b64encode(img_bytes).decode()}"
+                                                    logger_a.info(f"🎨 [邮件插图] 已转为 base64 ({len(img_bytes)} bytes) 用于邮件嵌入")
+                                                else:
+                                                    logger_a.warning(f"🎨 [邮件插图] 插图文件不存在: {img_full_path}")
+                                            except Exception as img_err:
+                                                logger_a.error(f"🎨 [邮件插图] base64 转换失败: {img_err}")
                                         else:
                                             logger_a.warning(f"🎨 [邮件插图] 生成返回 None")
                                     else:
-                                        logger_a.warning(f"🎨 [邮件插图] 跳过生成：reason 为空 (reason={reason})")
+                                        logger_a.warning(f"🎨 [邮件插图] 跳过生成：分析未完成或 reason 无效 (category={category})")
                                 except Exception as e:
                                     logger_a.error(f"🎨 [邮件插图] 生成失败: {e}")
                                     import traceback
                                     logger_a.error(f"🎨 [邮件插图] 异常堆栈: {traceback.format_exc()}")
 
                                 # ── 第2封邮件: 完整深度分析报告 ──
-                                logger_a.info(f"📧 [邮件] 发送深度分析完整报告邮件...")
+                                if analysis_ok:
+                                    logger_a.info(f"📧 [邮件] 发送深度分析完整报告邮件...")
+                                else:
+                                    logger_a.warning(f"📧 [邮件] 分析未完成，发送失败通知邮件...")
+                                    reason = reason or "深度分析未能完成"
+                                    advice = advice or "系统自动分析失败，请稍后查看页面获取最新状态"
+                                    category = category or "分析失败"
+                                
                                 send_cry_alert_email(
                                     fname, cry_conf, cry_det,
                                     reason=reason, advice=advice, category=category,
-                                    image_data=image_url
+                                    image_data=image_data_for_email
                                 )
+                                
+                                # 清理持久音频文件
+                                try:
+                                    if os.path.exists(a_path):
+                                        os.remove(a_path)
+                                        logger_b.info(f"🗑️ [BabyCry] 已清理持久音频: {a_path}")
+                                except:
+                                    pass
                             
                             threading.Thread(
                                 target=start_delayed_analysis, 
-                                args=(file.filename, proc_temp, audio_duration, placeholder_id, cry_confidence, cry_details), 
+                                args=(file.filename, _persist_audio_path, audio_duration, placeholder_id, cry_confidence, cry_details), 
                                 daemon=True
                             ).start()
             except Exception as ex:
@@ -3423,17 +3746,28 @@ def serve_event_audio(event_id):
 def stream_logs():
     """SSE endpoint for real-time log streaming"""
     def generate_logs():
-        # 创建一个新的客户端连接
-        client = type('Client', (), {'write': lambda self, msg: print(msg, end='', flush=True) or msg})
+        # 创建一个带真实写入检测的客户端对象
+        class SSEClient:
+            def __init__(self):
+                self._closed = False
+            def write(self, msg):
+                if self._closed:
+                    raise ConnectionError("Client disconnected")
+                return msg
+        
+        client = SSEClient()
         
         # 添加客户端到SSE处理器
         sse_handler.add_client(client)
         try:
-            # 保持连接打开
+            # 保持连接打开，每30秒发送心跳以检测连接状态
             while True:
-                time.sleep(1)
+                time.sleep(30)
+                yield ": heartbeat\n\n"
         except GeneratorExit:
-            # 客户端断开连接时移除客户端
+            pass
+        finally:
+            client._closed = True
             sse_handler.remove_client(client)
     
     return Response(generate_logs(), mimetype='text/event-stream')
@@ -3482,6 +3816,10 @@ if __name__ == "__main__":
     # 启动临时文件清理定时任务
     cleanup_temp_dir()
     logger_sys.info("临时文件清理定时任务已启动")
+    
+    # 启动未完成哭声分析自动重试
+    threading.Timer(120, retry_incomplete_cry_analyses).start()  # 启动2分钟后首次执行，给系统初始化时间
+    logger_sys.info(f"未完成哭声分析自动重试已启动 (间隔{RETRY_INCOMPLETE_INTERVAL}秒)")
     
     # 启动文件监控模块 (已解耦)
     _track_b_running = True

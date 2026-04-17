@@ -474,7 +474,30 @@ def proxy_cry_events():
     try:
         limit = request.args.get('limit', 100)
         offset = request.args.get('offset', 0)
-        response = requests.get(f"{ASR_SERVER_URL}/api/cry_events?limit={limit}&offset={offset}", timeout=10)
+        date_filter = request.args.get('date', '')
+        params = f"limit={limit}&offset={offset}"
+        if date_filter:
+            params += f"&date={date_filter}"
+        response = requests.get(f"{ASR_SERVER_URL}/api/cry_events?{params}", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/cry_event/<int:event_id>', methods=['GET'])
+@login_required
+def proxy_cry_event(event_id):
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/cry_event/{event_id}", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/illustration/<filename>')
+@login_required
+def proxy_illustration(filename):
+    """代理插图请求到 ASR 服务器"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/illustration/{filename}", timeout=10)
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

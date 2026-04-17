@@ -122,5 +122,8 @@ long_sentences/
 # 声纹数据库
 speaker_db_multi.json
 
+# 插图文件
+illustrations/
+
 # 本地配置（可能包含敏感信息）
 config.local.py

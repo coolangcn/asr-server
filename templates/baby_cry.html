@@ -264,6 +264,181 @@
             animation: loading-pulse 1.5s infinite;
         }
 
+        .ill-placeholder {
+            font-size: 2.5rem;
+            opacity: 0.7;
+        }
+
+        /* 紧凑模式卡片 */
+        .card-body-compact {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0;
+        }
+        .reason-preview {
+            flex: 1;
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .ill-tag {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+            opacity: 0.7;
+        }
+
+        /* 建议预览 */
+        .suggestion-preview {
+            background: rgba(16, 185, 129, 0.06);
+            border-left: 2px solid rgba(16, 185, 129, 0.4);
+            border-radius: 0 8px 8px 0;
+            padding: 0.5rem 0.7rem;
+            margin-top: 0.6rem;
+            font-size: 0.78rem;
+            line-height: 1.5;
+            color: #6ee7b7;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .suggestion-preview .sug-label {
+            font-weight: 600;
+            color: rgba(16, 185, 129, 0.8);
+            margin-right: 4px;
+        }
+
+        /* 卡片内播放按钮 */
+        .card-play-btns {
+            display: flex;
+            gap: 6px;
+            margin-top: 0.6rem;
+        }
+        .card-play-btn {
+            padding: 5px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-dim);
+            font-size: 0.72rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .card-play-btn:hover {
+            border-color: var(--primary-light);
+            color: var(--primary-light);
+            background: rgba(99,102,241,0.1);
+        }
+        .card-play-btn.playing {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(16,185,129,0.1);
+        }
+        .card-play-btn .play-icon { font-size: 0.8rem; }
+        .card-footer {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            padding-top: 0.6rem;
+        }
+
+        /* 详情弹窗 */
+        .detail-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(12px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.15s ease;
+        }
+        .detail-overlay.active { display: flex; }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        .detail-panel {
+            background: var(--card-bg);
+            border-radius: 24px;
+            width: 90%; max-width: 600px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 2rem;
+            position: relative;
+            box-shadow: 0 25px 60px -10px rgba(0,0,0,0.45);
+            animation: slideUp 0.25s ease;
+        }
+        @keyframes slideUp { from{transform:translateY(30px);opacity:0} to{transform:translateY(0);opacity:1} }
+        .detail-close {
+            position: absolute; top: 1rem; right: 1rem;
+            background: none; border: none; color: var(--text-muted);
+            font-size: 1.5rem; cursor: pointer;
+            transition: color 0.2s, transform 0.2s;
+        }
+        .detail-close:hover { color: #fca5a5; transform: rotate(90deg); }
+        .detail-header { margin-bottom: 1.25rem; }
+        .detail-header h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.35rem; margin-bottom: 0.5rem;
+            line-height: 1.4; color: #fff;
+        }
+        .detail-meta { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-muted); }
+        .detail-body { display: grid; gap: 1.25rem; }
+        .detail-section-title {
+            font-size: 0.78rem; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--primary-light);
+            font-weight: 700; margin-bottom: 0.5rem;
+        }
+        .advice-box-detail {
+            background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(99,102,241,0.06));
+            border-left: 3px solid #10b981;
+            border-radius: 0 12px 12px 0;
+            padding: 1rem 1.1rem; font-size: 0.9rem;
+            line-height: 1.7; color: #d1d5db;
+        }
+        .advice-box-detail ol { margin: 0.5rem 0 0 1.1rem; padding: 0; }
+        .advice-box-detail li { margin-bottom: 0.35rem; }
+        .detail-img-wrap {
+            display: flex; justify-content: center; padding: 0.5rem 0;
+        }
+        .detail-img-wrap img {
+            border-radius: 16px; max-width: 280px; max-height: 280px;
+            object-fit: cover; box-shadow: 0 8px 24px -6px rgba(0,0,0,0.3);
+        }
+        .detail-loading {
+            text-align: center; color: var(--text-muted);
+            padding: 3rem; font-size: 0.9rem;
+        }
+
+        /* 详情弹窗音频列表 */
+        .detail-section { margin-bottom: 1.25rem; }
+        .detail-audio-list {
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .detail-audio-item {
+            display: flex; align-items: center; gap: 10px;
+            background: rgba(0,0,0,0.2); border-radius: 10px; padding: 8px 12px;
+        }
+        .detail-audio-icon { font-size: 1rem; flex-shrink: 0; }
+        .detail-audio-label { font-size: 0.72rem; color: var(--primary-light); font-weight: 600; flex-shrink: 0; }
+        .detail-audio-name { font-size: 0.7rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+        .detail-audio-item audio { display: none; }
+        .detail-play-btn {
+            padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(99,102,241,0.3);
+            background: rgba(99,102,241,0.1); color: var(--primary-light); font-size: 0.72rem;
+            cursor: pointer; flex-shrink: 0; transition: all 0.2s; font-family: inherit;
+        }
+        .detail-play-btn:hover { background: rgba(99,102,241,0.2); }
+
         @keyframes loading-pulse {
             0%, 100% { opacity: 0.5; }
             50% { opacity: 0.8; }
@@ -530,6 +705,7 @@
         let renderedEventIds = new Set();
         let lastEventsHash = '';
         let eventsLoading = false;  // 防止并发请求
+        let _webPlayingAudio = null;  // 当前播放的音频
 
         async function loadCryEvents() {
             if (eventsLoading) return;
@@ -548,26 +724,18 @@
                         return;
                     }
 
-                    // 【优化】计算事件哈希，如果数据没变就不重新渲染
-                    const eventsHash = events.map(e => e.id + (e.created_at || '')).join(',');
+                    // 计算事件哈希（包含分类信息，这样分析完成后会触发重渲染）
+                    const eventsHash = events.map(e => e.id + ':' + (e.reason_category || '') + ':' + (e.suggestion_preview || '')).join(',');
                     if (eventsHash === lastEventsHash) {
                         console.log('[BabyCry] 数据无变化，跳过渲染');
                         return;
                     }
                     lastEventsHash = eventsHash;
 
-                    // 【优化】增量渲染：只渲染新事件
+                    // 全量重新渲染（确保分类变化时UI同步更新）
                     let html = '';
-                    let newEventsCount = 0;
 
                     events.forEach((ev, index) => {
-                        // 如果已经渲染过，跳过
-                        if (renderedEventIds.has(ev.id)) {
-                            return;
-                        }
-                        renderedEventIds.add(ev.id);
-                        newEventsCount++;
-
                         const recTime = new Date(ev.recording_time || ev.created_at);
                         const dateStr = recTime.toLocaleDateString();
                         const timeStr = recTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -575,83 +743,77 @@
                         const start = ev.start_time.toFixed(1);
                         const end = ev.end_time.toFixed(1);
 
-                        const reason = ev.reason || '未知诱因';
+                        const reason = ev.reason_preview || '未知诱因';
                         const category = (ev.reason_category || 'pending').toLowerCase();
-                        const advice = ev.advice || '建议保持严密观察并在必要时提供安抚。';
-                        const illustrationUrl = ev.illustration_url || null;
+                        const hasIllustration = ev.has_illustration || false;
 
                         // 判断是否为不完整事件
-                        const isIncomplete = !ev.reason || ev.reason === '未知'
-                            || category === 'analyzing' || category === '未分类'
-                            || !ev.reason_category;
+                        const isIncomplete = !ev.reason_category || ev.reason_category === '未知'
+                            || category === 'analyzing' || category === '未分类';
                         const incompleteClass = isIncomplete ? ' incomplete' : '';
                         const incompleteCatClass = isIncomplete ? ' incomplete' : '';
 
                         // Map category to icon
                         let icon = '🍼';
-                        let illustrationIcon = '👶';
-                        if (category.includes('饿') || category.includes('hungry')) { icon = '🍼'; illustrationIcon = '🍼'; }
-                        if (category.includes('痛') || category.includes('pain')) { icon = '❤️‍🩹'; illustrationIcon = '😢'; }
-                        if (category.includes('困') || category.includes('sleepy')) { icon = '😴'; illustrationIcon = '💤'; }
-                        if (category.includes('情绪') || category.includes('emotion')) { icon = '🧸'; illustrationIcon = '🤗'; }
+                        if (category.includes('饿') || category.includes('hungry')) icon = '🍼';
+                        if (category.includes('痛') || category.includes('pain')) icon = '❤️‍🩹';
+                        if (category.includes('困') || category.includes('sleepy')) icon = '😴';
+                        if (category.includes('情绪') || category.includes('emotion')) icon = '🧸';
 
-                        // 处理安抚建议的换行（支持 1. 2. 3. 格式）
-                        let formattedAdvice = advice;
-                        if (advice.includes('1.') || advice.includes('1、')) {
-                            const adviceLines = advice.split(/(?=\d+[.,])/g);
-                            formattedAdvice = '<ol>' + adviceLines.map(line => `<li>${line.replace(/^\d+[.,]\s*/, '')}</li>`).join('') + '</ol>';
+                        const reasonPreview = reason;
+
+                        // 建议预览
+                        let sugHtml = '';
+                        if (ev.suggestion_preview) {
+                            sugHtml = `<div class="suggestion-preview"><span class="sug-label">💡</span>${ev.suggestion_preview}</div>`;
+                        } else if (isIncomplete) {
+                            sugHtml = `<div class="suggestion-preview" style="border-left-color:rgba(245,158,11,0.4);color:rgba(245,158,11,0.7);background:rgba(245,158,11,0.05);"><span class="sug-label">⏳</span>等待历史回顾分析</div>`;
+                        }
+
+                        // 播放按钮（仅已完成事件）
+                        let playBtns = '';
+                        if (!isIncomplete) {
+                            playBtns = `
+                                <div class="card-play-btns">
+                                    <button class="card-play-btn" onclick="event.stopPropagation();playWebCryAudio(${ev.id}, this)">
+                                        <span class="play-icon">▶</span> 哭声原声
+                                    </button>
+                                    <button class="card-play-btn" onclick="event.stopPropagation();playWebContextAudio(${ev.id}, this)">
+                                        <span class="play-icon">📝</span> 上下文
+                                    </button>
+                                </div>`;
                         }
 
                         html += `
-                            <div class="event-card${incompleteClass}" data-event-id="${ev.id}">
+                            <div class="event-card${incompleteClass}" data-event-id="${ev.id}" onclick="showEventDetail(${ev.id})" style="cursor:pointer;">
                                 <div class="card-header">
                                     <div class="category-badge${incompleteCatClass}">${isIncomplete ? '⚠️' : icon} ${isIncomplete ? '分析未完成' : (ev.reason_category || '行为分析')}</div>
                                     <div class="time-info">
-                                        <div style="font-size: 0.9rem; color: #fff;">${timeStr}</div>
+                                        <div style="font-size:0.9rem;color:#fff;">${timeStr}</div>
                                         <div>${dateStr}</div>
                                     </div>
                                 </div>
-                                ${isIncomplete ? `<div class="incomplete-warning"><span class="warn-icon">⚠️</span><span>该事件分析未完成（${ev.reason_category || '无分类'}${!ev.reason ? '，原因缺失' : ''}），下次历史回顾分析将自动重跑</span></div>` : ''}
-                                <div class="card-body">
-                                    <div class="reason-content">
-                                        <h3>${reason}</h3>
-                                        ${!isIncomplete ? `<div class="advice-box">${formattedAdvice}</div>` : ''}
-                                    </div>
-                                    <div class="cry-illustration" title="${ev.reason_category || '未知'}">
-                                        ${illustrationUrl ? `<img src="${illustrationUrl}" alt="${ev.reason_category}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;">` : (isIncomplete ? '❓' : illustrationIcon)}
-                                    </div>
+                                ${isIncomplete ? `<div class="incomplete-warning"><span class="warn-icon">⚠️</span><span>该事件分析未完成（${ev.reason_category||'无分类'}），下次历史回顾将自动重跑</span></div>` : ''}
+                                <div class="card-body-compact">
+                                    <div class="reason-preview">${reasonPreview}</div>
+                                    ${hasIllustration ? '<span class="ill-tag" title="有插图">🎨</span>' : ''}
                                 </div>
+                                ${sugHtml}
+                                ${playBtns}
                                 <div class="card-footer">
-                                    <div class="duration-tag">⏱️ 时段：${start} - ${end}s</div>
-                                    <div>文件：${ev.filename.slice(-15)}</div>
+                                    <div>⏱️ ${start}-${end}s</div>
+                                    <div>📁 ${ev.file_count||0} 文件</div>
+                                    <div style="color:var(--text-muted);margin-left:auto;font-size:0.75rem;">点击查看详情 ▸</div>
                                 </div>
                             </div>
                         `;
                     });
 
-                    // 【优化】如果有新事件，插入到顶部；否则保持现有内容
-                    if (newEventsCount > 0) {
-                        if (container.querySelector('.status')) {
-                            // 如果是空状态，直接替换
-                            container.innerHTML = html;
-                        } else {
-                            // 插入新事件到顶部
-                            container.insertAdjacentHTML('afterbegin', html);
-                            console.log(`[BabyCry] 新增 ${newEventsCount} 个事件`);
-                        }
+                    container.innerHTML = html;
+                    renderedEventIds = new Set(events.map(e => e.id));
 
-                        // 限制DOM节点数量，最多保留30个（性能优化）
-                        const cards = container.querySelectorAll('.event-card');
-                        if (cards.length > 30) {
-                            const toRemove = cards.length - 30;
-                            for (let i = cards.length - 1; i >= cards.length - toRemove; i--) {
-                                renderedEventIds.delete(parseInt(cards[i].dataset.eventId));
-                                cards[i].remove();
-                            }
-                        }
-                    }
                 } else {
-                    container.innerHTML = `<div class="status" style="grid-column: 1/-1; color: var(--danger);">� 系统同步异常: ${result.error}</div>`;
+                    container.innerHTML = `<div class="status" style="grid-column: 1/-1; color: var(--danger);">⚠️ 系统同步异常: ${result.error}</div>`;
                 }
             } catch (error) {
                 console.error('[BabyCry] 加载失败:', error);
@@ -714,6 +876,8 @@
             }
         }
 
+        // 按需加载插图（点击图标时）
+        const _illCache = {};  // 插图URL缓存
         async function triggerReprocess() {
             const btn = document.getElementById('reprocessBtn');
             const statusLabel = document.getElementById('triggerStatus');
@@ -752,6 +916,180 @@
                 stopLogPolling();
             }
         }
+
+        // 详情弹窗
+        const _detailCache = {};
+        async function showEventDetail(eventId) {
+            const overlay = document.getElementById('detailOverlay');
+            const content = document.getElementById('detailContent');
+            if (!overlay) return;
+            
+            overlay.classList.add('active');
+            content.innerHTML = '<div class="detail-loading">⏳ 加载详情中...</div>';
+
+            try {
+                // 使用缓存
+                let data = _detailCache[eventId];
+                if (!data) {
+                    const resp = await fetch(`/api/cry_event/${eventId}`);
+                    data = await resp.json();
+                    _detailCache[eventId] = data;
+                }
+
+                const recTime = new Date(data.recording_time || data.created_at);
+                const dateStr = recTime.toLocaleDateString();
+                const timeStr = recTime.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+                const cat = (data.reason_category || 'pending').toLowerCase();
+                
+                let icon = '🍼';
+                if (cat.includes('痛')||cat.includes('pain')) icon = '❤️‍🩹';
+                if (cat.includes('困')||cat.includes('sleepy')) icon = '😴';
+                if (cat.includes('情绪')||cat.includes('emotion')) icon = '🧸';
+
+                const advice = data.advice || '建议保持严密观察。';
+                let formattedAdvice = advice;
+                if (advice.includes('1.') || advice.includes('1、')) {
+                    const lines = advice.split(/(?=\d+[.,])/g);
+                    formattedAdvice = '<ol>' + lines.map(l => `<li>${l.replace(/^\d+[.,]\s*/,'')}</li>`).join('') + '</ol>';
+                }
+
+                const imgHtml = data.illustration_url && !data.illustration_url.startsWith('data:')
+                    ? `<div class="detail-section-title">🎨 分析插图</div><div class="detail-img-wrap"><img src="${data.illustration_url}" alt="插图" loading="lazy"></div>`
+                    : '';
+
+                // 音频列表
+                const audioUrls = data.audio_urls || [];
+                const filename = data.filename || '';
+                let audioHtml = '';
+                if (audioUrls.length > 0) {
+                    const audioItems = audioUrls.map((url, idx) => {
+                        const urlFilename = decodeURIComponent(url.split('/').pop());
+                        const isCryFile = urlFilename === filename;
+                        const audioId = `detail_audio_${eventId}_${idx}`;
+                        return `
+                            <div class="detail-audio-item">
+                                <span class="detail-audio-icon">${isCryFile ? '👶' : '🎙️'}</span>
+                                <span class="detail-audio-label">${isCryFile ? '哭声片段' : '上下文音频'}</span>
+                                <span class="detail-audio-name">${urlFilename}</span>
+                                <audio id="${audioId}" src="${url}" preload="none"></audio>
+                                <button class="detail-play-btn" onclick="toggleDetailAudio('${audioId}', this)">${isCryFile ? '▶ 哭声' : '▶ 上下文'}</button>
+                            </div>
+                        `;
+                    }).join('');
+                    audioHtml = `
+                        <div class="detail-section">
+                            <div class="detail-section-title">🔊 音频预览</div>
+                            <div class="detail-audio-list">${audioItems}</div>
+                        </div>
+                    `;
+                }
+
+                // 置信度
+                const confidence = data.confidence ? Math.round(data.confidence * 100) : 0;
+                const confHtml = confidence > 0 ? `<span>🎯 置信度 ${confidence}%</span>` : '';
+
+                content.innerHTML = `
+                    <button class="detail-close" onclick="closeDetail()">✕</button>
+                    <div class="detail-header">
+                        <h2>${data.reason||'未知诱因'}</h2>
+                        <div class="detail-meta">
+                            <span>${icon} ${data.reason_category||'未分类'}</span>
+                            <span>📅 ${dateStr} ${timeStr}</span>
+                            <span>⏱️ ${data.start_time||0}-${data.end_time||0}s</span>
+                            ${data.file_count ? `<span>📁 ${data.file_count} 文件</span>` : ''}
+                            ${confHtml}
+                        </div>
+                    </div>
+                    <div class="detail-body">
+                        ${audioHtml}
+                        <div>
+                            <div class="detail-section-title">💡 安抚建议</div>
+                            <div class="advice-box-detail">${formattedAdvice}</div>
+                        </div>
+                        ${imgHtml}
+                    </div>
+                `;
+            } catch(e) {
+                content.innerHTML = '<div class="detail-loading" style="color:var(--danger)">加载失败，请重试</div>';
+            }
+
+            // 点击遮罩关闭
+            overlay.onclick = function(e) { if(e.target===overlay) closeDetail(); };
+        }
+
+        function toggleDetailAudio(audioId, btn) {
+            const audio = document.getElementById(audioId);
+            if (!audio) return;
+            if (_webPlayingAudio && _webPlayingAudio !== audio) {
+                _webPlayingAudio.pause();
+                _webPlayingAudio.currentTime = 0;
+                const prevBtn = _webPlayingAudio.parentElement?.querySelector('.detail-play-btn');
+                if (prevBtn) prevBtn.textContent = prevBtn.textContent.replace('⏸', '▶');
+            }
+            if (audio.paused) {
+                audio.play().catch(() => {});
+                btn.textContent = btn.textContent.replace('▶', '⏸');
+                _webPlayingAudio = audio;
+                audio.onended = () => { btn.textContent = btn.textContent.replace('⏸', '▶'); _webPlayingAudio = null; };
+            } else {
+                audio.pause();
+                audio.currentTime = 0;
+                btn.textContent = btn.textContent.replace('⏸', '▶');
+                _webPlayingAudio = null;
+            }
+        }
+
+        // 卡片上直接播放音频
+        async function playWebCryAudio(eventId, btn) {
+            let data = _detailCache[eventId];
+            if (!data) {
+                try {
+                    const resp = await fetch(`/api/cry_event/${eventId}`);
+                    data = await resp.json();
+                    _detailCache[eventId] = data;
+                } catch(e) { return; }
+            }
+            const urls = data.audio_urls || [];
+            const filename = data.filename || '';
+            const cryUrl = urls.find(u => decodeURIComponent(u.split('/').pop()) === filename);
+            if (cryUrl) toggleCardPlay(cryUrl, btn);
+        }
+        async function playWebContextAudio(eventId, btn) {
+            let data = _detailCache[eventId];
+            if (!data) {
+                try {
+                    const resp = await fetch(`/api/cry_event/${eventId}`);
+                    data = await resp.json();
+                    _detailCache[eventId] = data;
+                } catch(e) { return; }
+            }
+            const urls = data.audio_urls || [];
+            const filename = data.filename || '';
+            const ctxUrl = urls.find(u => decodeURIComponent(u.split('/').pop()) !== filename);
+            if (ctxUrl) toggleCardPlay(ctxUrl, btn);
+        }
+        function toggleCardPlay(url, btn) {
+            if (_webPlayingAudio) { _webPlayingAudio.pause(); _webPlayingAudio.currentTime = 0; _webPlayingAudio = null; }
+            document.querySelectorAll('.card-play-btn.playing').forEach(b => { b.classList.remove('playing'); b.querySelector('.play-icon').textContent = '▶'; });
+
+            const audio = new Audio(url);
+            audio.play().then(() => {
+                btn.classList.add('playing');
+                btn.querySelector('.play-icon').textContent = '⏸';
+                _webPlayingAudio = audio;
+                audio.onended = () => { btn.classList.remove('playing'); btn.querySelector('.play-icon').textContent = '▶'; _webPlayingAudio = null; };
+                audio.onerror = () => { btn.classList.remove('playing'); btn.querySelector('.play-icon').textContent = '▶'; _webPlayingAudio = null; };
+            }).catch(() => {});
+        }
+
+        function closeDetail() {
+            document.getElementById('detailOverlay').classList.remove('active');
+        }
     </script>
+
+    <!-- 详情弹窗 -->
+    <div id="detailOverlay" class="detail-overlay">
+        <div class="detail-panel" id="detailContent"></div>
+    </div>
 </body>
 </html>
