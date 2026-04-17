@@ -560,10 +560,28 @@
             border: 1px solid rgba(255,255,255,0.1);
             cursor: pointer;
             transition: all 0.2s ease;
+            display: flex;
+            gap: 12px;
         }
         .cry-event-card:active {
             transform: scale(0.98);
             border-color: rgba(244, 114, 182, 0.5);
+        }
+
+        .cry-event-index {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.2), rgba(99, 102, 241, 0.2));
+            border: 1px solid rgba(244, 114, 182, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #f472b6;
+            margin-top: 2px;
         }
 
         .cry-card-top {
@@ -653,6 +671,30 @@
             overflow-y: auto;
             padding: 20px 20px 40px;
             animation: slideUpPanel 0.3s ease;
+            position: relative;
+        }
+
+        .cry-detail-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: #fff;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+        .cry-detail-close:active {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(0.95);
         }
         @keyframes slideUpPanel {
             from { transform: translateY(100%); }
@@ -818,11 +860,11 @@
         <div class="track-tabs">
             <button class="track-tab track-a active" onclick="switchTrack('a')">
                 <i class="fa-solid fa-folder-open"></i>
-                A轨
+                A
             </button>
             <button class="track-tab track-b" onclick="switchTrack('b')">
                 <i class="fa-solid fa-microphone"></i>
-                B轨
+                B
             </button>
             <button class="track-tab track-cry" onclick="switchTrack('cry')">
                 <i class="fa-solid fa-heart-crack"></i>
@@ -1040,21 +1082,21 @@
             document.querySelectorAll('.track-content').forEach(c => c.classList.remove('active'));
             document.getElementById(`track-${track}-content`).classList.add('active');
             
+            const logCard = document.querySelector('.log-card');
             if (track === 'cry') {
-                // 切到哭声事件时加载数据
+                logCard.style.display = 'none';
                 if (!cryEventsInterval) {
                     loadCryEventsMobile();
                     cryEventsInterval = setInterval(loadCryEventsMobile, 30000);
                 }
             } else {
-                // 切走时停止哭声事件轮询
+                logCard.style.display = 'block';
                 if (cryEventsInterval) {
                     clearInterval(cryEventsInterval);
                     cryEventsInterval = null;
                 }
             }
             
-            // 切换时刷新数据
             fetchData();
         }
 
@@ -1602,7 +1644,8 @@
                 if (!append) cryEventsHash = newHash;
 
                 let html = '';
-                events.forEach(ev => {
+                const startIndex = (cryCurrentOffset === 0 ? 0 : cryCurrentOffset) + 1;
+                events.forEach((ev, idx) => {
                     const recTime = new Date(ev.recording_time || ev.created_at);
                     const dateStr = recTime.toLocaleDateString();
                     const timeStr = recTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
@@ -1619,21 +1662,25 @@
 
                     const reason = ev.reason_preview || '未知诱因';
                     const hasIll = ev.has_illustration ? '🎨' : '';
+                    const index = startIndex + idx;
 
                     html += `
                         <div class="cry-event-card" onclick="showCryDetail(${ev.id})">
-                            <div class="cry-card-top">
-                                <span class="cry-cat-badge ${catClass}">${isIncomplete ? '未完成' : (ev.reason_category || '分析')}</span>
-                                <div class="cry-time">
-                                    <div class="time-main">${timeStr}</div>
-                                    <div>${dateStr}</div>
+                            <div class="cry-event-index">${index}</div>
+                            <div style="flex: 1; min-width: 0;">
+                                <div class="cry-card-top">
+                                    <span class="cry-cat-badge ${catClass}">${isIncomplete ? '未完成' : (ev.reason_category || '分析')}</span>
+                                    <div class="cry-time">
+                                        <div class="time-main">${timeStr}</div>
+                                        <div>${dateStr}</div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="cry-reason">${icon} ${reason} ${hasIll}</div>
-                            <div class="cry-card-footer">
-                                <span>⏱ ${ev.start_time?.toFixed(1)||0}-${ev.end_time?.toFixed(1)||0}s</span>
-                                <span>📁 ${ev.file_count||0} 文件</span>
-                                <span class="arrow">▸</span>
+                                <div class="cry-reason">${icon} ${reason} ${hasIll}</div>
+                                <div class="cry-card-footer">
+                                    <span>⏱ ${ev.start_time?.toFixed(1)||0}-${ev.end_time?.toFixed(1)||0}s</span>
+                                    <span>📁 ${ev.file_count||0} 文件</span>
+                                    <span class="arrow">▸</span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -1806,6 +1853,9 @@
     <!-- 哭声事件详情弹窗 -->
     <div id="cryDetailOverlay" class="cry-detail-overlay" onclick="if(event.target===this)closeCryDetail()">
         <div class="cry-detail-panel">
+            <button class="cry-detail-close" onclick="closeCryDetail()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
             <div class="cry-detail-handle"></div>
             <div id="cryDetailContent">
                 <div class="cry-detail-loading">⏳ 加载详情中...</div>
