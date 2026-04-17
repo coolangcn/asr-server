@@ -105,8 +105,8 @@
 
         .track-tab {
             flex: 1;
-            padding: 14px 16px;
-            border-radius: 16px;
+            padding: 10px 10px;
+            border-radius: 10px;
             border: none;
             cursor: pointer;
             font-weight: 600;
@@ -860,11 +860,11 @@
         <div class="track-tabs">
             <button class="track-tab track-a active" onclick="switchTrack('a')">
                 <i class="fa-solid fa-folder-open"></i>
-                A
+                A轨
             </button>
             <button class="track-tab track-b" onclick="switchTrack('b')">
                 <i class="fa-solid fa-microphone"></i>
-                B
+                B轨
             </button>
             <button class="track-tab track-cry" onclick="switchTrack('cry')">
                 <i class="fa-solid fa-heart-crack"></i>
@@ -1614,6 +1614,17 @@
         const _cryDetailCache = {};
         let _currentPlayingAudio = null;  // 跟踪当前播放的音频
 
+        // 提取文件名中的日期部分（去除前缀）
+        function extractDateFromFilename(filename) {
+            if (!filename) return '';
+            // 匹配日期时间部分：YYYY-MM-DD_HH-mm-ss 或 YYYYMMDD-HHmmss
+            let match = filename.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
+            if (match) return match[1];
+            match = filename.match(/recording-(\d{8}-\d{6})/);
+            if (match) return match[1].replace('-', '_');
+            return filename;
+        }
+
         async function loadCryEventsMobile(append = false) {
             if (cryEventsLoading) return;
             cryEventsLoading = true;
@@ -1644,8 +1655,17 @@
                 if (!append) cryEventsHash = newHash;
 
                 let html = '';
-                const startIndex = (cryCurrentOffset === 0 ? 0 : cryCurrentOffset) + 1;
-                events.forEach((ev, idx) => {
+                // 倒序显示哭声记录，最新的在前
+                const reversedEvents = [...events].reverse();
+                
+                // 序号计算：最新的记录序号最大
+                // 第一页第一条的序号 = 总记录数（估算）
+                // 之后每条递减
+                const isFirstPage = cryCurrentOffset === 0;
+                const estimatedTotal = isFirstPage ? (events.length >= CRY_PAGE_SIZE ? CRY_PAGE_SIZE * 3 : events.length) : 0;
+                let currentIndex = isFirstPage ? estimatedTotal : (estimatedTotal - cryCurrentOffset);
+                
+                reversedEvents.forEach((ev, idx) => {
                     const recTime = new Date(ev.recording_time || ev.created_at);
                     const dateStr = recTime.toLocaleDateString();
                     const timeStr = recTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
@@ -1662,7 +1682,8 @@
 
                     const reason = ev.reason_preview || '未知诱因';
                     const hasIll = ev.has_illustration ? '🎨' : '';
-                    const index = startIndex + idx;
+                    // 递减序号，让最新记录显示最大序号
+                    const index = currentIndex - idx;
 
                     html += `
                         <div class="cry-event-card" onclick="showCryDetail(${ev.id})">
@@ -1760,6 +1781,7 @@
                     const audioItems = audioUrls.map((url, idx) => {
                         const urlFilename = decodeURIComponent(url.split('/').pop());
                         const isCryFile = urlFilename === filename;
+                        const displayFilename = extractDateFromFilename(urlFilename);
                         const audioId = `audio_${eventId}_${idx}`;
                         return `
                             <div class="cry-audio-item">
@@ -1767,7 +1789,7 @@
                                     ${isCryFile ? '👶' : '🎙️'}
                                 </div>
                                 <div class="audio-info">
-                                    <div class="audio-name">${urlFilename}</div>
+                                    <div class="audio-name" title="${urlFilename}">${displayFilename}</div>
                                     <div class="audio-label">${isCryFile ? '哭声片段' : '上下文音频'}</div>
                                 </div>
                                 <audio id="${audioId}" src="${url}" preload="none"></audio>
@@ -1830,6 +1852,13 @@
                 audio.onended = () => {
                     btn.textContent = '▶';
                     _currentPlayingAudio = null;
+                    // 自动播放下一首
+                    const audioItem = audio.closest('.cry-audio-item');
+                    const nextAudioItem = audioItem?.nextElementSibling?.querySelector('audio');
+                    if (nextAudioItem) {
+                        const nextBtn = nextAudioItem.parentElement.querySelector('.play-btn');
+                        toggleAudio(nextAudioItem.id, nextBtn);
+                    }
                 };
             } else {
                 audio.pause();

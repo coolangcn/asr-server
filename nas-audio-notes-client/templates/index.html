@@ -1128,6 +1128,17 @@
             return null;
         }
 
+        // 提取文件名中的日期部分（去除前缀）
+        function extractDateFromFilename(filename) {
+            if (!filename) return '';
+            // 匹配日期时间部分：YYYY-MM-DD_HH-mm-ss 或 YYYYMMDD-HHmmss
+            let match = filename.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
+            if (match) return match[1];
+            match = filename.match(/recording-(\d{8}-\d{6})/);
+            if (match) return match[1].replace('-', '_');
+            return filename;
+        }
+
         function processStats(items) {
             // 简单的数据预处理
             return items.map(item => {
@@ -3645,6 +3656,10 @@
             };
 
             let html = "";
+            // 计算总记录数，让最新记录显示最大序号
+            const totalCount = Object.values(groups).reduce((sum, arr) => sum + arr.length, 0);
+            let displayIndex = 0;
+            
             Object.keys(groups).sort().reverse().forEach(date => {
                 html += `
                 <div class="relative flex items-center justify-center my-10" data-date="${date}">
@@ -3656,7 +3671,11 @@
                     </div>
                 </div>`;
 
-                groups[date].forEach(item => {
+                // 倒序显示该日期的哭声记录（最新的在前）
+                const reversedItems = [...groups[date]].reverse();
+                reversedItems.forEach(item => {
+                    displayIndex++;
+                    const globalIndex = totalCount - displayIndex + 1;
                     const fileTime = item.recording_time || item.timestamp;
                     const fileDate = new Date(fileTime);
                     const fileYearMonth = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}`;
@@ -3668,126 +3687,37 @@
                     const isAnalyzing = category === 'analyzing' || category === '深度分析中' || (item.analysis_text && item.analysis_text.includes('分析中'));
 
                     html += `
-                    <div class="mb-10 animate-fade-in group/main" data-bc-time="${fileTime}" data-bc-year-month="${fileYearMonth}">
+                    <div class="mb-8 animate-fade-in group/main" data-bc-time="${fileTime}" data-bc-year-month="${fileYearMonth}">
                         <!-- Time Header -->
-                        <div class="flex items-center gap-3 mb-3 px-6">
-                            <div class="w-2 h-2 rounded-full bg-${color}-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] ${isAnalyzing ? 'animate-pulse' : ''}"></div>
-                            <span class="text-sm font-bold text-gray-200">${fileTime.split('T')[1].substring(0, 8)}</span>
-                            <span class="text-xs font-mono text-gray-500 overflow-hidden text-ellipsis whitespace-nowrap max-w-[200px]">${item.filename}</span>
-                            <div class="flex-1"></div>
-                            <div class="px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[10px] text-gray-500">
-                                <i class="fa-solid fa-microchip mr-1"></i>Track A
+                        <div class="flex items-center gap-2 mb-2 px-2">
+                            <div class="w-6 h-6 rounded-md bg-gradient-to-br from-${color}-500/20 to-${color}-400/10 border border-${color}-400/30 flex items-center justify-center flex-shrink-0">
+                                <span class="text-[10px] font-bold text-${color}-400">${globalIndex}</span>
                             </div>
+                            <div class="w-1.5 h-1.5 rounded-full bg-${color}-500 ${isAnalyzing ? 'animate-pulse' : ''}"></div>
+                            <span class="text-xs font-bold text-gray-300">${fileTime.split('T')[1].substring(0, 5)}</span>
+                            <span class="text-[10px] font-mono text-gray-600">${extractDateFromFilename(item.filename || '')}</span>
+                            <div class="flex-1"></div>
+                            <span class="px-2 py-0.5 rounded bg-${color}-500/10 border border-${color}-500/20 text-${color}-400 text-[10px] font-bold">
+                                ${meta.label}
+                            </span>
                         </div>
                         
                         <!-- Analysis Card -->
-                        <div class="relative mx-2 p-5 rounded-3xl bg-gradient-to-br from-gray-800/40 to-gray-900/40 border border-gray-700/30 hover:border-${color}-500/30 transition-all duration-500 shadow-xl backdrop-blur-md group-hover/main:translate-y-[-2px] group-hover/main:shadow-${color}-900/10">
+                        <div class="relative mx-2 p-4 rounded-2xl bg-gray-800/30 border border-gray-700/30 hover:border-${color}-500/30 transition-all duration-300 cursor-pointer group/card" onclick="showBabyCryDetail(${item.id || 'null'}, '${item.reason || item.analysis_text || '暂无分析'}', '${item.advice || ''}', '${item.illustration_url || ''}', '${category}', '${color}', '${meta.icon}', ${item.confidence || 0}, ${JSON.stringify(item.details || []).replace(/"/g, '&quot;')}, '${fileTime}', '${item.filename || ''}')">
                             
-                            <!-- Category Badge -->
-                            <div class="absolute -top-3 right-8 flex items-center">
-                                <div class="px-3 py-1.5 rounded-xl bg-${color}-500/20 border border-${color}-400/30 backdrop-blur-xl text-${color}-400 text-xs font-black shadow-lg flex items-center gap-2">
-                                    <i class="fa-solid ${meta.icon}"></i>
-                                    ${meta.label}
-                                    ${item.confidence ? `<span class="ml-1 opacity-60 text-[10px]">| ${(item.confidence * 100).toFixed(0)}%</span>` : ''}
+                            <!-- 插图或占位 -->
+                            ${item.illustration_url ? `
+                                <div class="mb-3">
+                                    <img src="${item.illustration_url}" alt="场景插图" class="w-full h-40 object-cover rounded-xl border border-white/5">
                                 </div>
-                            </div>
-
-                            <!-- 第一块：插图 -->
-                            <div class="mb-6">
-                                ${item.illustration_url ? `
-                                <div class="relative">
-                                    <img src="${item.illustration_url}" alt="场景插图" class="w-full h-auto rounded-2xl shadow-lg border border-white/10">
-                                    <!-- 置信度进度条覆盖在图片底部 -->
-                                    <div class="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm rounded-b-2xl px-4 py-2">
-                                        <div class="bg-white/20 rounded-full h-1.5 w-full overflow-hidden">
-                                            <div class="h-full bg-gradient-to-r from-${color}-400 to-${color}-300 transition-all duration-1000 ${isAnalyzing ? 'animate-pulse' : ''}" style="width: ${isAnalyzing ? '30' : (item.confidence * 100 || 0)}%"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                ` : (!isAnalyzing && item.reason) ? `
-                                <div class="flex flex-col items-center justify-center py-12 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-2xl border border-purple-500/20">
-                                    <i class="fa-solid fa-palette fa-spin text-purple-400 text-4xl mb-4"></i>
-                                    <p class="text-purple-300 font-medium text-sm animate-pulse">正在生成场景插图...</p>
-                                    <p class="text-[10px] text-gray-500 mt-2">请稍候，插图正在创作中</p>
-                                </div>
-                                ` : ''}
-                            </div>
-
-                            <!-- 第二块：声纹投票（独立一块） -->
-                            ${(item.details || []).filter(detail => !detail.includes('结论:')).length > 0 ? `
-                            <div class="mb-6">
-                                <div class="bg-black/30 rounded-2xl p-4 border border-white/5">
-                                    <h4 class="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center justify-between">
-                                        <span>VOICEPRINT VOTING / 声纹投票</span>
-                                        <i class="fa-solid fa-check-double text-emerald-500"></i>
-                                    </h4>
-                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                        ${(item.details || []).filter(detail => !detail.includes('结论:')).map(detail => {
-                                            const isPass = detail.includes('✅ PASS');
-                                            const modelName = detail.split(':')[0].trim();
-                                            const scoreText = detail.split(':')[1]?.replace('✅ PASS', '').replace('❌ FAIL', '').trim() || '';
-                                            return `
-                                            <div class="bg-gray-800/30 rounded-xl p-3 min-w-0">
-                                                <div class="flex items-center gap-2 text-[10px] mb-1 min-w-0">
-                                                    <span class="text-gray-400 truncate flex-1 min-w-0">${modelName}</span>
-                                                    <span class="${isPass ? 'text-emerald-400' : 'text-red-400'} font-bold shrink-0 w-8 text-right">${isPass ? 'OK' : 'MIS'}</span>
-                                                </div>
-                                                <div class="text-[8px] text-gray-500 font-mono mb-1 truncate">${scoreText}</div>
-                                                <div class="w-full bg-gray-700/30 h-1 rounded-full overflow-hidden">
-                                                    <div class="h-full ${isPass ? 'bg-emerald-500' : 'bg-red-500/50'} " style="width: ${detail.includes('=') ? parseFloat(detail.split('=')[1]) * 100 : 0}%"></div>
-                                                </div>
-                                            </div>`;
-                                        }).join('')}
-                                    </div>
-                                </div>
-                            </div>
                             ` : ''}
 
-                            <!-- 第二块：文字分析（单独一块） -->
-                            <div class="bg-gray-800/30 rounded-2xl p-5 border border-white/5 mb-6">
-                                <!-- Reason/Analysis -->
-                                <div class="relative z-10 text-gray-200 text-[14px] leading-relaxed">
-                                    ${isAnalyzing ? 
-                                        `<div class="flex flex-col items-center py-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
-                                            <i class="fa-solid fa-spinner fa-spin text-blue-400 text-2xl mb-4"></i>
-                                            <p class="text-blue-300 font-medium font-mono text-sm animate-pulse">Gemini Pro 2.5 正在深度对等识别中...</p>
-                                            <p class="text-[10px] text-gray-500 mt-2">（观察期通常为发现哭声后的 5 分钟内）</p>
-                                        </div>` : 
-                                        `<div class="whitespace-pre-line">${((item.analysis_text || item.reason || '暂无详细分析内容').trim())}</div>`
-                                    }
-                                </div>
-                            </div>
-                                
-                            <!-- Advice -->
-                                ${!isAnalyzing ? `
-                                <div class="bg-emerald-500/5 p-4 rounded-2xl text-emerald-300/90 text-sm border border-emerald-500/10 flex items-start gap-3 shadow-lg">
-                                    <div class="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0 text-amber-300 shadow-inner">
-                                        <i class="fa-solid fa-wand-magic-sparkles animate-pulse"></i>
-                                    </div>
-                                    <div class="flex-1 py-1">
-                                        <div class="text-[10px] uppercase tracking-wider text-emerald-500 font-black mb-1">妈咪安抚建议 / Suggestion</div>
-                                        <div class="leading-relaxed font-medium text-gray-300" style="white-space: pre-line;">${(item.advice || '请持续关注宝宝情绪状态，建议观察是否有生理需求。').trim()}</div>
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- Actions -->
-                                <div class="flex items-center gap-3 pt-6">
-                                    ${item.audio_path || item.filename ?
-                                    `<button onclick="playAudio('${item.audio_path || '/api/audio/' + item.filename}')" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-${color}-500/10 hover:bg-${color}-500/20 border border-${color}-500/20 transition-all text-${color}-400 font-bold text-xs group/btn active:scale-95 shadow-lg">
-                                        <div class="w-6 h-6 rounded-full bg-${color}-500/20 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
-                                            <i class="fa-solid fa-play text-[10px]"></i>
-                                        </div>
-                                        播放现场原声
-                                    </button>` : ''}
-                                    ${item.id ?
-                                    `<button onclick="playEventAudio(${item.id})" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 transition-all text-purple-400 font-bold text-xs group/btn active:scale-95 shadow-lg">
-                                        <div class="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
-                                            <i class="fa-solid fa-layer-group text-[10px]"></i>
-                                        </div>
-                                        播放上下文语音
-                                    </button>` : ''}
-                                </div>
+                            <!-- 分析内容 -->
+                            <div class="text-gray-300 text-sm leading-relaxed line-clamp-2">
+                                ${isAnalyzing ? 
+                                    `<span class="text-gray-500 italic">正在分析中...</span>` : 
+                                    `${(item.reason_preview || item.reason || '暂无分析').trim()}`
+                                }
                             </div>
                         </div>
                     </div>`;
@@ -3799,21 +3729,49 @@
 
         async function fetchBabyCryEvents(silent = false, targetDate = null) {
             try {
-                const dateVal = targetDate || document.getElementById('reprocessDate')?.value;
-                const startTimeVal = document.getElementById('reprocessStartTime')?.value;
-                const endTimeVal = document.getElementById('reprocessEndTime')?.value;
-                
-                let url = '/api/cry_events?1=1';
-                // silent=true 时不应用日期筛选，显示所有记录
-                if (!silent && dateVal) url += `&date=${encodeURIComponent(dateVal)}`;
-                if (!silent && startTimeVal && !targetDate) url += `&start_time=${encodeURIComponent(startTimeVal.replace(':', '-'))}`;
-                if (!silent && endTimeVal && !targetDate) url += `&end_time=${encodeURIComponent(endTimeVal.replace(':', '-'))}`;
-
-                const response = await fetch(url);
-                const data = await response.json();
-                renderBabyCry(data.events || []);
-                // 自动滚动到顶部
                 const container = document.getElementById('babycry-content');
+                const timelineContainer = document.getElementById('babycry-timeline-container');
+                
+                // 显示加载状态
+                if (!silent) {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center justify-center mt-20">
+                            <i class="fa-solid fa-spinner fa-spin text-4xl text-primary-500 mb-4"></i>
+                            <p class="text-gray-400">正在加载哭声记录...</p>
+                        </div>`;
+                }
+                
+                // 使用与移动端相同的 API
+                let url = '/api/cry_events?limit=50&offset=0';
+                
+                const response = await fetch(url);
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    container.innerHTML = '<div class="text-center text-red-500 mt-20">数据加载失败</div>';
+                    return;
+                }
+                
+                const items = result.events || [];
+                
+                if (items.length === 0) {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center justify-center mt-20 opacity-40">
+                            <i class="fa-solid fa-baby-carriage text-6xl mb-4"></i>
+                            <p class="text-xl font-medium text-gray-400">暂无哭声记录</p>
+                            <p class="text-sm text-gray-500 mt-2 text-center max-w-xs">当宝宝哭声被检测到时<br>这里会显示分析结果</p>
+                        </div>`;
+                    if (timelineContainer) timelineContainer.style.display = 'none';
+                    return;
+                }
+                
+                // 渲染列表
+                renderBabyCry(items);
+                
+                // 显示时间轴
+                if (timelineContainer) timelineContainer.style.display = 'flex';
+                
+                // 自动滚动到顶部
                 if (container) container.scrollTop = 0;
                 
                 setTimeout(initBabyCryTimeline, 100);
@@ -3886,7 +3844,307 @@
             });
             updateIndicator();
         }
+
+        // 显示宝宝哭声详情
+        async function showBabyCryDetail(id, reason, advice, illustrationUrl, category, color, icon, confidence, details, fileTime, filename) {
+            const modal = document.getElementById('babycry-detail-modal');
+            const content = document.getElementById('babycry-detail-content');
+            
+            // 显示加载状态
+            content.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-20">
+                    <i class="fa-solid fa-spinner fa-spin text-4xl text-primary-500 mb-4"></i>
+                    <p class="text-gray-400">正在加载详情...</p>
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            try {
+                // 从 API 获取完整数据
+                const response = await fetch(`/api/cry_event/${id}`);
+                const data = await response.json();
+                
+                if (!response.ok || !data) {
+                    throw new Error('Failed to fetch detail');
+                }
+                
+                const isAnalyzing = !data.reason_category || data.reason_category === '未知' || data.reason_category === 'analyzing';
+                const dateObj = new Date(data.recording_time || data.created_at);
+                const dateStr = dateObj.toLocaleDateString();
+                const timeStr = dateObj.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                
+                // 分类图标
+                const cat = (data.reason_category || 'pending').toLowerCase();
+                let detailIcon = '🍼';
+                if (cat.includes('痛')||cat.includes('pain')) detailIcon = '❤️‍🩹';
+                if (cat.includes('困')||cat.includes('sleepy')) detailIcon = '😴';
+                if (cat.includes('情绪')||cat.includes('emotion')) detailIcon = '🧸';
+                if (cat.includes('饿')||cat.includes('hungry')) detailIcon = '🍼';
+                
+                // 格式化建议文本（支持列表）
+                let formattedAdvice = data.advice || '建议保持严密观察。';
+                if (formattedAdvice.includes('1.') || formattedAdvice.includes('1、')) {
+                    const lines = formattedAdvice.split(/(?=\d+[.,])/g);
+                    formattedAdvice = '<ol class="list-decimal list-inside space-y-2 mt-2">' + lines.map(l => `<li class="text-gray-300">${l.replace(/^\d+[.,]\s*/,'')}</li>`).join('') + '</ol>';
+                }
+                
+                // 声纹投票详情
+                let detailsHtml = '';
+                if (data.details && data.details.length > 0) {
+                    detailsHtml = `
+                        <div class="mb-8">
+                            <h4 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-check-double text-emerald-500"></i>
+                                声纹投票分析
+                            </h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                ${data.details.map(detail => {
+                                    const isPass = detail.includes('✅ PASS');
+                                    const modelName = detail.split(':')[0].trim();
+                                    const scoreText = detail.split(':')[1]?.replace('✅ PASS', '').replace('❌ FAIL', '').trim() || '';
+                                    return `
+                                        <div class="bg-gray-800/50 rounded-xl p-4 border border-white/5">
+                                            <div class="flex items-center justify-between text-xs mb-2">
+                                                <span class="text-gray-400 truncate">${modelName}</span>
+                                                <span class="${isPass ? 'text-emerald-400' : 'text-red-400'} font-bold">${isPass ? '✓' : '✗'}</span>
+                                            </div>
+                                            <div class="text-[10px] text-gray-500 font-mono mb-2 truncate">${scoreText}</div>
+                                            <div class="w-full bg-gray-700/50 h-1.5 rounded-full overflow-hidden">
+                                                <div class="h-full ${isPass ? 'bg-emerald-500' : 'bg-red-500/50'}" style="width: ${detail.includes('=') ? parseFloat(detail.split('=')[1]) * 100 : 0}%"></div>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // 音频列表
+                let audioHtml = '';
+                if (data.audio_urls && data.audio_urls.length > 0) {
+                    audioHtml = `
+                        <div class="mb-8">
+                            <h4 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-headphones text-purple-400"></i>
+                                音频预览
+                            </h4>
+                            <div class="space-y-3">
+                                ${data.audio_urls.map((url, idx) => {
+                                    const urlFilename = decodeURIComponent(url.split('/').pop());
+                                    const isCryFile = urlFilename === data.filename;
+                                    const displayFilename = extractDateFromFilename(urlFilename);
+                                    const audioId = `detail_audio_${id}_${idx}`;
+                                    return `
+                                        <div class="flex items-center gap-3 bg-gray-800/50 rounded-xl p-3 border border-white/5">
+                                            <div class="w-10 h-10 rounded-full bg-${isCryFile ? 'pink' : 'blue'}-500/20 flex items-center justify-center flex-shrink-0">
+                                                <i class="fa-solid ${isCryFile ? 'fa-baby' : 'fa-microphone'} text-${isCryFile ? 'pink' : 'blue'}-400"></i>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-sm text-gray-300 truncate" title="${urlFilename}">${displayFilename}</div>
+                                                <div class="text-xs text-gray-500">${isCryFile ? '哭声片段' : '上下文音频'}</div>
+                                            </div>
+                                            <audio id="${audioId}" src="${url}" preload="none"></audio>
+                                            <button onclick="toggleDetailAudio('${audioId}', this)" class="w-10 h-10 rounded-full bg-${isCryFile ? 'pink' : 'blue'}-500/20 hover:bg-${isCryFile ? 'pink' : 'blue'}-500/30 flex items-center justify-center transition-all text-${isCryFile ? 'pink' : 'blue'}-400">
+                                                <i class="fa-solid fa-play text-xs"></i>
+                                            </button>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                content.innerHTML = `
+                    <!-- 头部信息 -->
+                    <div class="flex items-start justify-between mb-6">
+                        <div>
+                            <div class="flex items-center gap-3 mb-2">
+                                <span class="px-3 py-1 rounded-xl bg-${color}-500/20 border border-${color}-400/30 text-${color}-400 text-sm font-bold flex items-center gap-2">
+                                    <i class="fa-solid ${icon}"></i>
+                                    ${data.reason_category || '未分类'}
+                                </span>
+                                ${data.confidence ? `
+                                    <span class="px-3 py-1 rounded-xl bg-white/5 border border-white/10 text-gray-400 text-xs font-mono">
+                                        置信度：${(data.confidence * 100).toFixed(0)}%
+                                    </span>
+                                ` : ''}
+                            </div>
+                            <div class="text-gray-400 text-sm">
+                                <i class="fa-regular fa-calendar mr-2"></i>${dateStr}
+                                <span class="mx-2">•</span>
+                                <i class="fa-regular fa-clock mr-2"></i>${timeStr}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 插图 -->
+                    ${data.illustration_url && !data.illustration_url.startsWith('data:') ? `
+                        <div class="mb-8">
+                            <img src="${data.illustration_url}" alt="场景插图" class="w-full h-auto rounded-2xl shadow-2xl border border-white/10">
+                            ${data.confidence ? `
+                                <div class="mt-3 bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-white/5">
+                                    <div class="flex items-center justify-between text-xs text-gray-400 mb-2">
+                                        <span>分析置信度</span>
+                                        <span class="text-${color}-400 font-bold">${(data.confidence * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <div class="bg-white/10 rounded-full h-2 overflow-hidden">
+                                        <div class="h-full bg-gradient-to-r from-${color}-400 to-${color}-300" style="width: ${data.confidence * 100}%"></div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    ` : (!isAnalyzing && data.reason) ? `
+                        <div class="mb-8 flex flex-col items-center justify-center py-16 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-2xl border border-purple-500/20">
+                            <i class="fa-solid fa-palette fa-spin text-purple-400 text-5xl mb-4"></i>
+                            <p class="text-purple-300 font-medium text-base animate-pulse">正在生成场景插图...</p>
+                            <p class="text-xs text-gray-500 mt-2">请稍候，AI 正在创作中</p>
+                        </div>
+                    ` : ''}
+                    
+                    <!-- 声纹投票 -->
+                    ${detailsHtml}
+                    
+                    <!-- 音频播放 -->
+                    ${audioHtml}
+                    
+                    <!-- 分析内容 -->
+                    <div class="mb-8">
+                        <h4 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-brain text-${color}-400"></i>
+                            深度分析
+                        </h4>
+                        <div class="bg-gray-800/50 rounded-2xl p-6 border border-white/5">
+                            ${isAnalyzing ? 
+                                `<div class="flex flex-col items-center py-8">
+                                    <i class="fa-solid fa-spinner fa-spin text-${color}-400 text-4xl mb-4"></i>
+                                    <p class="text-${color}-300 font-medium text-sm animate-pulse">正在深度分析中...</p>
+                                    <p class="text-xs text-gray-500 mt-2">分析通常在 5 分钟内完成</p>
+                                </div>` : 
+                                `<div class="text-gray-200 text-base leading-relaxed whitespace-pre-line">${data.reason || '暂无详细分析内容'}</div>`
+                            }
+                        </div>
+                    </div>
+                    
+                    <!-- 安抚建议 -->
+                    ${!isAnalyzing ? `
+                        <div class="mb-8">
+                            <h4 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-wand-magic-sparkles text-emerald-400"></i>
+                                安抚建议
+                            </h4>
+                            <div class="bg-emerald-500/5 rounded-2xl p-6 border border-emerald-500/20">
+                                <div class="flex items-start gap-4">
+                                    <div class="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                                        <i class="fa-solid fa-heart text-emerald-400 text-xl animate-pulse"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="text-emerald-400 text-xs font-bold mb-2">SUGGESTION FOR MOMMY</div>
+                                        ${formattedAdvice}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <!-- 音频播放按钮 -->
+                    <div class="flex items-center gap-3 pt-4 border-t border-white/10">
+                        ${data.filename ? `
+                            <button onclick="playAudio('/api/audio/${data.filename}')" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-${color}-500/10 hover:bg-${color}-500/20 border border-${color}-500/20 transition-all text-${color}-400 font-bold text-sm active:scale-95 shadow-lg">
+                                <div class="w-8 h-8 rounded-full bg-${color}-500/20 flex items-center justify-center">
+                                    <i class="fa-solid fa-play text-xs"></i>
+                                </div>
+                                播放现场原声
+                            </button>
+                        ` : ''}
+                        ${data.file_count ? `
+                            <button onclick="playEventAudio(${id})" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 transition-all text-purple-400 font-bold text-sm active:scale-95 shadow-lg">
+                                <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                                    <i class="fa-solid fa-layer-group text-xs"></i>
+                                </div>
+                                播放上下文语音
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+            } catch (e) {
+                console.error('Failed to fetch cry detail:', e);
+                content.innerHTML = `
+                    <div class="text-center text-red-400 py-20">
+                        <i class="fa-solid fa-triangle-exclamation text-4xl mb-4"></i>
+                        <p>加载失败，请重试</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // 切换详情弹窗音频播放
+        let _currentDetailAudio = null;
+        function toggleDetailAudio(audioId, btn) {
+            const audio = document.getElementById(audioId);
+            if (!audio) return;
+
+            // 停止当前播放的音频
+            if (_currentDetailAudio && _currentDetailAudio !== audio) {
+                _currentDetailAudio.pause();
+                _currentDetailAudio.currentTime = 0;
+                const prevBtn = _currentDetailAudio.parentElement.querySelector('button');
+                if (prevBtn) prevBtn.innerHTML = '<i class="fa-solid fa-play text-xs"></i>';
+            }
+
+            if (audio.paused) {
+                audio.play().catch(() => {});
+                btn.innerHTML = '<i class="fa-solid fa-pause text-xs"></i>';
+                _currentDetailAudio = audio;
+                audio.onended = () => {
+                    btn.innerHTML = '<i class="fa-solid fa-play text-xs"></i>';
+                    _currentDetailAudio = null;
+                    // 自动播放下一首
+                    const audioItem = audio.closest('.flex.items-center.gap-3');
+                    const nextAudioItem = audioItem?.nextElementSibling?.querySelector('audio');
+                    if (nextAudioItem) {
+                        const nextBtn = nextAudioItem.parentElement.querySelector('button');
+                        toggleDetailAudio(nextAudioItem.id, nextBtn);
+                    }
+                };
+            } else {
+                audio.pause();
+                audio.currentTime = 0;
+                btn.innerHTML = '<i class="fa-solid fa-play text-xs"></i>';
+                _currentDetailAudio = null;
+            }
+        }
+        
+        // 关闭宝宝哭声详情
+        function closeBabyCryDetail() {
+            const modal = document.getElementById('babycry-detail-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            // 停止播放中的音频
+            if (_currentDetailAudio) {
+                _currentDetailAudio.pause();
+                _currentDetailAudio = null;
+            }
+        }
     </script>
+
+    <!-- 宝宝哭声详情弹窗 -->
+    <div id="babycry-detail-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] hidden items-center justify-center p-4" onclick="if(event.target===this)closeBabyCryDetail()">
+        <div class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-700/50 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col relative animate-fade-in">
+            <!-- 关闭按钮 -->
+            <button onclick="closeBabyCryDetail()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all z-50">
+                <i class="fa-solid fa-xmark text-white text-lg"></i>
+            </button>
+            
+            <!-- 内容区域 -->
+            <div id="babycry-detail-content" class="overflow-y-auto flex-1 p-8">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+    </div>
 
     <!-- 播放列表弹窗 -->
     <div id="playlist-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden items-center justify-center p-4">

@@ -330,8 +330,7 @@ class CryDetectionConfig:
     VOICEPRINT_THRESHOLD = 0.65     # 极致严格门槛 (用户倾向严格)
     VOICEPRINT_GAP = 0.15           # 严格置信度间隔 (原为0.02/0.10)
     
-    # 二票放行: 必须 2 个模型命中才进入下一步校验 (三选二)
-    MIN_VOTES = 2
+    MIN_VOTES = 3
     MIN_AVG_CONFIDENCE = 0.82      # 拦截中等分数的 2 票误判
     STRONG_MODEL_SCORE = 0.85      # 至少要有一个模型达到强命中
     MIN_STRONG_MODELS = 1
@@ -1182,20 +1181,7 @@ def retry_incomplete_cry_analyses():
             event_files = event.get('event_files', [])
             recording_time = event.get('recording_time', '')
             
-            # 过滤太旧的事件
-            if recording_time:
-                try:
-                    from datetime import datetime as _dt
-                    if isinstance(recording_time, str):
-                        rt = _dt.fromisoformat(recording_time)
-                    else:
-                        rt = recording_time
-                    age_seconds = (current_time - rt.timestamp()) if hasattr(rt, 'timestamp') else 0
-                    if age_seconds > RETRY_INCOMPLETE_MAX_AGE:
-                        skipped += 1
-                        continue
-                except Exception:
-                    pass
+            # 不过滤时间，重试所有未完成事件
             
             # 确定音频文件路径
             # 优先用 event_files（多文件上下文），其次用 audio_path（单文件）
