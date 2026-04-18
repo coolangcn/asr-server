@@ -318,6 +318,104 @@
             letter-spacing: 0.3px;
         }
 
+        /* 日期方块 */
+        .date-block-container {
+            margin-top: 14px;
+        }
+        .date-block-label {
+            font-size: 0.62rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        .date-block-scroll {
+            overflow-x: auto;
+            padding-bottom: 3px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .date-block-scroll::-webkit-scrollbar {
+            height: 2px;
+        }
+        .date-block-scroll::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+            border-radius: 2px;
+        }
+        .date-block-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.15);
+            border-radius: 2px;
+        }
+        .date-block-list {
+            display: inline-flex;
+            gap: 5px;
+            min-width: 100%;
+        }
+        .date-block {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            padding: 4px 6px;
+            border-radius: 8px;
+            border: 1px solid;
+            min-width: 48px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        .date-block:active {
+            transform: scale(0.94);
+        }
+        .date-block.pending {
+            background: rgba(156, 163, 175, 0.12);
+            border-color: rgba(156, 163, 175, 0.25);
+        }
+        .date-block.processing {
+            background: rgba(245, 158, 11, 0.12);
+            border-color: rgba(245, 158, 11, 0.35);
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.15);
+        }
+        .date-block.completed {
+            background: rgba(16, 185, 129, 0.12);
+            border-color: rgba(16, 185, 129, 0.35);
+        }
+        .date-block.error {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.35);
+        }
+        .date-block.paused {
+            background: rgba(251, 146, 60, 0.12);
+            border-color: rgba(251, 146, 60, 0.35);
+        }
+        .date-block.selected {
+            ring: 2px;
+            ring-color: rgba(99, 102, 241, 0.6);
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+        }
+        .date-block-icon {
+            font-size: 0.65rem;
+        }
+        .date-block.pending .date-block-icon { color: #9ca3af; }
+        .date-block.processing .date-block-icon { color: #f59e0b; }
+        .date-block.completed .date-block-icon { color: #10b981; }
+        .date-block.error .date-block-icon { color: #ef4444; }
+        .date-block.paused .date-block-icon { color: #fb923c; }
+        .date-block-date {
+            font-size: 0.58rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .date-block.pending .date-block-date { color: #9ca3af; }
+        .date-block.processing .date-block-date { color: #f59e0b; }
+        .date-block.completed .date-block-date { color: #10b981; }
+        .date-block.error .date-block-date { color: #ef4444; }
+        .date-block.paused .date-block-date { color: #fb923c; }
+        .date-block-count {
+            font-size: 0.5rem;
+            color: var(--text-secondary);
+        }
+
         /* 内容卡片 */
         .content-card {
             background: var(--bg-card);
@@ -959,10 +1057,13 @@
                 </div>
             </div>
 
-            <div class="content-card">
-                <h3><i class="fa-solid fa-folder-open"></i> 当前处理</h3>
-                <div class="current-date" id="aCurrentDate">--</div>
-                <div class="current-file" id="aCurrentFile">等待任务开始...</div>
+            <div class="content-card date-block-container">
+                <div class="date-block-label"><i class="fa-solid fa-calendar-days"></i> 日期队列</div>
+                <div class="date-block-scroll">
+                    <div class="date-block-list" id="aDateBlocks">
+                        <div class="text-xs text-gray-500 py-2">等待分析任务...</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1404,27 +1505,143 @@
                 }
             }
 
-            // 当前处理日期
+            // 更新日期方块
+            updateMobileDateBlocks(logs, progress);
+        }
+
+        // 移动端日期方块状态管理
+        const mobileDateQueueState = {
+            dates: new Map(),
+            currentDate: null,
+            selectedDate: null,
+            allDates: [],
+            lastScanDatesTime: 0
+        };
+
+        function updateMobileDateBlocks(logs, progress) {
+            const dateBlocksEl = document.getElementById('aDateBlocks');
+            if (!dateBlocksEl) return;
+
+            // 从日志中提取日期状态
+            const datePattern = /\[.*?\]\s*(?:📅|处理日期:)\s*(\d{4}-\d{2}-\d{2})/g;
+            let match;
+            const foundDates = new Set();
+            
+            while ((match = datePattern.exec(logs)) !== null) {
+                foundDates.add(match[1]);
+            }
+
+            // 从进度中获取当前日期
             if (progress && progress.current_date) {
-                document.getElementById('aCurrentDate').textContent = '📅 ' + progress.current_date;
-            } else {
-                const dateMatch = logs.match(/📅【正在处理日期】(\d{4}-\d{2}-\d{2})/);
-                if (dateMatch) {
-                    document.getElementById('aCurrentDate').textContent = '📅 ' + dateMatch[1];
+                foundDates.add(progress.current_date);
+                mobileDateQueueState.currentDate = progress.current_date;
+            }
+
+            // 更新日期状态
+            foundDates.forEach(dateStr => {
+                if (!mobileDateQueueState.dates.has(dateStr)) {
+                    mobileDateQueueState.dates.set(dateStr, { status: 'pending', fileCount: 0 });
+                }
+            });
+
+            // 更新当前处理日期状态
+            if (mobileDateQueueState.currentDate && mobileDateQueueState.dates.has(mobileDateQueueState.currentDate)) {
+                mobileDateQueueState.dates.get(mobileDateQueueState.currentDate).status = 'processing';
+            }
+
+            // 从日志中检测已完成的日期
+            const completedPattern = /✅\s*(\d{4}-\d{2}-\d{2})\s*完成/g;
+            while ((match = completedPattern.exec(logs)) !== null) {
+                const completedDate = match[1];
+                if (mobileDateQueueState.dates.has(completedDate)) {
+                    mobileDateQueueState.dates.get(completedDate).status = 'completed';
                 }
             }
 
-            // 当前处理文件
-            if (progress && progress.current_file) {
-                document.getElementById('aCurrentFile').textContent = progress.current_file;
-            } else {
-                const fileMatch = logs.match(/正在发起云端分析请求：(.+\.(?:m4a|mp3|wav|acc|aac))/i);
-                if (fileMatch) {
-                    const filepath = fileMatch[1];
-                    const filename = filepath.split('/').pop();
-                    document.getElementById('aCurrentFile').textContent = filename || filepath;
+            // 更新文件数量
+            const fileCountPattern = /📊\s*进度:\s*(\d+)\/(\d+)\s*\|\s*哭声:\s*(\d+)/g;
+            while ((match = fileCountPattern.exec(logs)) !== null) {
+                if (mobileDateQueueState.currentDate && mobileDateQueueState.dates.has(mobileDateQueueState.currentDate)) {
+                    mobileDateQueueState.dates.get(mobileDateQueueState.currentDate).fileCount = parseInt(match[2]) || 0;
                 }
             }
+
+            // 排序日期
+            const sortedDates = Array.from(mobileDateQueueState.dates.keys()).sort((a, b) => new Date(a) - new Date(b));
+            mobileDateQueueState.allDates = sortedDates;
+
+            // 渲染日期方块
+            let html = '';
+            sortedDates.forEach(dateStr => {
+                const state = mobileDateQueueState.dates.get(dateStr);
+                html += createMobileDateBlock(dateStr, state);
+            });
+
+            if (sortedDates.length === 0) {
+                html = '<div class="text-xs text-gray-500 py-2">等待分析任务...</div>';
+            }
+
+            dateBlocksEl.innerHTML = html;
+        }
+
+        function createMobileDateBlock(dateStr, state) {
+            let icon = 'fa-clock';
+            let statusClass = 'pending';
+            
+            switch(state.status) {
+                case 'processing':
+                    icon = 'fa-circle-notch fa-spin';
+                    statusClass = 'processing';
+                    break;
+                case 'completed':
+                    icon = 'fa-check-circle';
+                    statusClass = 'completed';
+                    break;
+                case 'error':
+                    icon = 'fa-exclamation-circle';
+                    statusClass = 'error';
+                    break;
+                case 'paused':
+                    icon = 'fa-pause-circle';
+                    statusClass = 'paused';
+                    break;
+            }
+
+            const selectedClass = dateStr === mobileDateQueueState.selectedDate ? ' selected' : '';
+
+            return `
+                <div class="date-block ${statusClass}${selectedClass}" 
+                     onclick="selectMobileDateBlock('${dateStr}')"
+                     title="点击查看该日期日志">
+                    <i class="fa-solid ${icon} date-block-icon"></i>
+                    <span class="date-block-date">${dateStr}</span>
+                    <span class="date-block-count">${state.fileCount}个</span>
+                </div>
+            `;
+        }
+
+        function selectMobileDateBlock(dateStr) {
+            if (mobileDateQueueState.selectedDate === dateStr) {
+                mobileDateQueueState.selectedDate = null;
+            } else {
+                mobileDateQueueState.selectedDate = dateStr;
+            }
+            // 触发日志和事件过滤
+            filterMobileLogsByDate(mobileDateQueueState.selectedDate);
+            updateMobileDateBlocks('', null);
+        }
+
+        function filterMobileLogsByDate(dateStr) {
+            const logContainer = document.getElementById('logContainer');
+            if (!logContainer || !window.fullMobileLogs) return;
+
+            if (!dateStr) {
+                renderMobileLogs(window.fullMobileLogs);
+                return;
+            }
+
+            const filteredLines = window.fullMobileLogs.split('\n').filter(line => line.includes(dateStr));
+            renderMobileLogs(filteredLines.join('\n'));
         }
 
         function updateTrackB(statusData, liveLogs) {
@@ -1519,6 +1736,16 @@
         }
 
         function updateLogs(logs) {
+            // 存储完整日志用于过滤
+            window.fullMobileLogs = logs;
+            
+            // 如果当前有选中的日期，则过滤日志
+            if (mobileDateQueueState.selectedDate) {
+                const filteredLines = logs.split('\n').filter(line => line.includes(mobileDateQueueState.selectedDate));
+                renderMobileLogs(filteredLines.join('\n'));
+                return;
+            }
+            
             const logContainer = document.getElementById('logContainer');
             // 获取最后 50 行日志（最新）
             const allLines = logs.split('\n').filter(l => l.trim());
@@ -1563,6 +1790,47 @@
                 </div>`;
             }
             logContainer.innerHTML = html || '<div class="log-line"><span class="log-time">--:--:--</span><span class="log-content">无日志</span></div>';
+        }
+
+        function renderMobileLogs(logText) {
+            const logContainer = document.getElementById('logContainer');
+            if (!logContainer) return;
+
+            const lines = logText.split('\n').filter(line => line.trim());
+            let html = '';
+            lines.forEach(line => {
+                let time = '';
+                let content = line;
+
+                const aMatch = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/);
+                if (aMatch) {
+                    time = aMatch[1].split(' ')[1];
+                    content = line.substring(line.indexOf(']') + 1).trim();
+                } else {
+                    const bMatch = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+                    if (bMatch) {
+                        time = bMatch[1].split(' ')[1];
+                        content = line.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d+)?\s*\|\s*\w+\s*\|\s*/, '');
+                    } else {
+                        content = line;
+                    }
+                }
+
+                let cls = '';
+                if (content.includes('成功') || content.includes('✓')) cls = 'success';
+                else if (content.includes('错误') || content.includes('❌') || content.includes('失败')) cls = 'error';
+                else if (content.includes('警告') || content.includes('⚠️')) cls = 'warning';
+                else if (content.includes('🚀') || content.includes('📊') || content.includes('💓')) cls = 'heart';
+                else if (content.includes('🌐') || content.includes('⏱️')) cls = 'info';
+                else if (content.includes('[Valkey]')) cls = 'info';
+
+                html += `<div class="log-line">
+                    <span class="log-time">${time || ''}</span>
+                    <span class="log-content ${cls}">${escapeHtml(content)}</span>
+                </div>`;
+            });
+            logContainer.innerHTML = html || '<div class="log-line"><span class="log-time">--:--:--</span><span class="log-content">无日志</span></div>';
+            logContainer.scrollTop = 0;
         }
 
         function escapeHtml(text) {

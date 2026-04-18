@@ -337,7 +337,7 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
         cursor = conn.cursor()
         
         # 构建 WHERE 子句
-        where_clauses = []
+        where_clauses = ["is_deleted = FALSE"]
         params = []
         
         # 1. 日期过滤 (YYYY-MM-DD)
@@ -356,7 +356,7 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
             where_clauses.append("recording_time::time <= %s")
             params.append(sql_end)
         
-        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        where_sql = " WHERE " + " AND ".join(where_clauses)
             
         # 查询总数
         count_query = f"SELECT COUNT(*) FROM baby_cry_events{where_sql}"
@@ -408,7 +408,7 @@ def get_baby_cry_count(date_filter: str = None) -> int:
         cursor = conn.cursor()
         target_date = date_filter or datetime.now(UTC_PLUS_8).date().isoformat()
         cursor.execute(
-            "SELECT COUNT(*) FROM baby_cry_events WHERE COALESCE(recording_time, created_at)::date = %s",
+            "SELECT COUNT(*) FROM baby_cry_events WHERE COALESCE(recording_time, created_at)::date = %s AND is_deleted = FALSE",
             (target_date,)
         )
         row = cursor.fetchone()
@@ -709,13 +709,13 @@ def get_date_processing_stats() -> dict:
         if conn: return_connection(conn)
 
 def get_processed_files_for_date(date_str: str) -> set:
-    """获取特定日期已处理的文件路径集合（用于精确断点续传）
+    """获取特定日期已处理的文件**名称**集合（用于精确断点续传）
     
     Args:
         date_str: 日期字符串，格式: YYYY-MM-DD
     
     Returns:
-        已处理文件的完整路径集合
+        已处理文件的文件名集合（统一使用 os.path.basename 提取）
     
     支持的文件名格式:
         1. /path/2025-11-15/file.m4a (日期文件夹)
@@ -731,42 +731,37 @@ def get_processed_files_for_date(date_str: str) -> set:
         result = set()
 
         # 格式1: 路径中包含 /YYYY-MM-DD/ (日期文件夹)
-        # 示例: /Volumes/download/records/Sony-2/processed/2025-11-15/file.m4a
         cursor.execute(
             "SELECT filename FROM processed_files_a WHERE filename LIKE %s",
             (f'%/{date_str}/%',)
         )
         for row in cursor.fetchall():
-            result.add(row[0])
+            result.add(os.path.basename(row[0]))
 
         # 格式2: 文件名中包含 _YYYY-MM-DD_ 或 -YYYY-MM-DD- (有横杠格式)
-        # 示例: TermuxAudioRecording_2025-11-15_12-56-54.m4a
         cursor.execute(
             "SELECT filename FROM processed_files_a WHERE filename ~ %s",
             (f'[_-]{date_str}[_-]',)
         )
         for row in cursor.fetchall():
-            result.add(row[0])
+            result.add(os.path.basename(row[0]))
 
         # 格式3: 文件名中包含 YYYYMMDD (无横杠格式)
-        # 示例: recording-20251115-125944.m4a
-        date_no_dash = date_str.replace('-', '')  # '2025-11-15' → '20251115'
+        date_no_dash = date_str.replace('-', '')
         cursor.execute(
             "SELECT filename FROM processed_files_a WHERE filename ~ %s",
             (date_no_dash,)
         )
         for row in cursor.fetchall():
-            result.add(row[0])
+            result.add(os.path.basename(row[0]))
 
         # 格式4: 文件名中包含 YYYY-MM-DD 但前后分隔符不固定 (混合格式)
-        # 示例: recording-2025-11-15-125944.m4a 或 backup_2025-11-15_old.m4a
-        # 使用更宽松的正则：只要包含完整日期即可
         cursor.execute(
             "SELECT filename FROM processed_files_a WHERE filename ~ %s",
             (date_str,)
         )
         for row in cursor.fetchall():
-            result.add(row[0])
+            result.add(os.path.basename(row[0]))
 
         cursor.close()
         return result
@@ -848,6 +843,7 @@ def get_unanalyzed_cry_dates() -> list:
             SELECT DISTINCT recording_time::date::text
             FROM baby_cry_events
             WHERE recording_time IS NOT NULL
+              AND is_deleted = FALSE
               AND (reason IS NULL OR reason = '' OR reason = '未知'
                    OR reason_category = 'analyzing' 
                    OR reason_category = '未分类' OR reason_category = '未知'
@@ -887,7 +883,8 @@ def get_incomplete_cry_events(date_str: str = None) -> list:
             SELECT id, filename, recording_time, reason_category, reason, advice, 
                    event_files_json, audio_path, confidence
             FROM baby_cry_events
-            WHERE (reason IS NULL OR reason = '' OR reason = '未知'
+            WHERE is_deleted = FALSE
+              AND (reason IS NULL OR reason = '' OR reason = '未知'
                    OR reason_category = 'analyzing' 
                    OR reason_category = '未分类' OR reason_category = '未知'
                    OR reason_category IS NULL)
@@ -921,14 +918,87 @@ def get_incomplete_cry_events(date_str: str = None) -> list:
         if conn: return_connection(conn)
 
 
+def soft_delete_incomplete_events_for_files(date_str: str, filenames: list) -> int:
+    """软删除指定日期中，与给定文件名列表相关的未完成事件
+    
+    只软删除（标记 is_deleted = TRUE），不物理删除。
+    只删除与 filenames 相关的事件，且事件必须是不完整的。
+    
+    Args:
+        date_str: 日期字符串 YYYY-MM-DD
+        filenames: 文件名列表（只删除这些文件涉及的事件）
+    
+    Returns:
+        软删除的记录数
+    """
+    if not filenames:
+        return 0
+    
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return 0
+        cursor = conn.cursor()
+        
+        # 构建文件名占位符
+        placeholders = ','.join(['%s'] * len(filenames))
+        
+        # 软删除条件：
+        # 1. 日期匹配
+        # 2. filename 在给定列表中，或 event_files_json 中包含这些文件名
+        # 3. 事件不完整（reason/category 为空或未知）
+        # 4. 尚未被软删除
+        
+        # 构建 LIKE 模式数组（避免 f-string 中使用反斜杠）
+        like_patterns = []
+        pattern_params = []
+        for fn in filenames:
+            like_patterns.append('%s')
+            pattern_params.append('%' + fn + '%')
+        
+        patterns_sql = ','.join(like_patterns)
+        
+        cursor.execute("""
+            UPDATE baby_cry_events 
+            SET is_deleted = TRUE
+            WHERE recording_time::date = %s
+              AND is_deleted = FALSE
+              AND (
+                  filename IN ({placeholders})
+                  OR event_files_json::text LIKE ANY(ARRAY[{patterns_sql}])
+              )
+              AND (reason IS NULL OR reason = '' OR reason = '未知'
+                   OR reason_category = 'analyzing' 
+                   OR reason_category = '未分类' OR reason_category = '未知'
+                   OR reason_category IS NULL)
+        """.format(placeholders=placeholders, patterns_sql=patterns_sql), 
+        [date_str] + filenames + pattern_params)
+        
+        deleted = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        
+        if deleted > 0:
+            print(f"  [DB] 已软删除 {date_str} 的 {deleted} 条未完成事件（涉及 {len(filenames)} 个文件）")
+        return deleted
+    except Exception as e:
+        print(f"  [DB Error] 软删除未完成事件失败: {e}")
+        if conn: conn.rollback()
+        return 0
+    finally:
+        if conn: return_connection(conn)
+
+
 def delete_incomplete_cry_events(date_str: str) -> int:
-    """删除指定日期的分析不完整事件（重新分析前清理）
+    """软删除指定日期的分析不完整事件（重新分析前清理）
+    
+    改为软删除：标记 is_deleted = TRUE，不物理删除。
     
     Args:
         date_str: 日期字符串 YYYY-MM-DD
     
     Returns:
-        删除的记录数
+        软删除的记录数
     """
     conn = None
     try:
@@ -936,20 +1006,24 @@ def delete_incomplete_cry_events(date_str: str) -> int:
         if not conn: return 0
         cursor = conn.cursor()
         cursor.execute(
-            """DELETE FROM baby_cry_events 
+            """UPDATE baby_cry_events 
+               SET is_deleted = TRUE
                WHERE recording_time::date = %s
-               AND (reason IS NULL OR reason = '' OR reason = '未知'
-                    OR reason_category = 'analyzing' 
-                    OR reason_category = '未分类' OR reason_category = '未知'
-                    OR reason_category IS NULL)""",
+                 AND is_deleted = FALSE
+                 AND (reason IS NULL OR reason = '' OR reason = '未知'
+                      OR reason_category = 'analyzing' 
+                      OR reason_category = '未分类' OR reason_category = '未知'
+                      OR reason_category IS NULL)""",
             (date_str,)
         )
         deleted = cursor.rowcount
         conn.commit()
         cursor.close()
+        if deleted > 0:
+            print(f"  [DB] 已软删除 {date_str} 的 {deleted} 条不完整事件")
         return deleted
     except Exception as e:
-        print(f"  [DB Error] 删除不完整分析事件失败: {e}")
+        print(f"  [DB Error] 软删除不完整分析事件失败: {e}")
         if conn: conn.rollback()
         return 0
     finally:
@@ -974,12 +1048,12 @@ def get_uncovered_cry_count(date_str: str) -> int:
         if not conn: return 0
         cursor = conn.cursor()
 
-        # 获取该日期所有 cry 标记文件
+        # 获取该日期所有 cry 标记文件（统一提取文件名，兼容路径和纯文件名两种格式）
         cursor.execute("""
             SELECT filename FROM processed_files_a 
             WHERE status = 'cry' AND filename LIKE %s
         """, (f'%{date_str}%',))
-        cry_files = set(row[0] for row in cursor.fetchall() if row[0])
+        cry_files = set(os.path.basename(row[0]) for row in cursor.fetchall() if row[0])
 
         if not cry_files:
             return 0
@@ -987,14 +1061,14 @@ def get_uncovered_cry_count(date_str: str) -> int:
         # 获取该日期所有事件中包含的文件名（从 event_files_json 和 filename 提取）
         cursor.execute("""
             SELECT event_files_json, filename FROM baby_cry_events
-            WHERE recording_time::date = %s
+            WHERE recording_time::date = %s AND is_deleted = FALSE
         """, (date_str,))
         
         covered_files = set()
         for row in cursor.fetchall():
-            # 从 filename 字段
+            # 从 filename 字段（统一提取文件名）
             if row[1]:
-                covered_files.add(row[1])
+                covered_files.add(os.path.basename(row[1]))
             # 从 event_files_json 字段
             if row[0]:
                 try:
@@ -1396,6 +1470,26 @@ def clear_date_stats_in_redis() -> bool:
     except Exception as e:
         print(f"  [Valkey Error] 清空日期统计失败: {e}")
         return False
+
+def soft_delete_event_by_id(event_id: int) -> bool:
+    """按 ID 软删除单条哭声事件记录"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return False
+        cursor = conn.cursor()
+        cursor.execute("UPDATE baby_cry_events SET is_deleted = TRUE WHERE id = %s", (event_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+        cursor.close()
+        return deleted
+    except Exception as e:
+        print(f"  [DB Error] 软删除事件失败 (ID={event_id}): {e}")
+        if conn: conn.rollback()
+        return False
+    finally:
+        if conn: return_connection(conn)
+
 
 def delete_cry_event_by_id(event_id: int) -> bool:
     """按 ID 删除单条哭声事件记录"""

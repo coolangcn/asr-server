@@ -1134,11 +1134,11 @@ if __name__ == "__main__":
                             log_detail(f"      ❌ 重新分析异常: {e}", 'error')
                         time.sleep(5)
                     else:
-                        # 音频文件不存在，删除这条不完整记录
-                        log_detail(f"      🗑️ 音频不存在，删除不完整记录: {ie_filename}", 'warning')
+                        # 音频文件不存在，软删除这条不完整记录
+                        log_detail(f"      🗑️ 音频不存在，软删除不完整记录: {ie_filename}", 'warning')
                         try:
-                            from db_manager import delete_cry_event_by_id
-                            delete_cry_event_by_id(ie['id'])
+                            from db_manager import soft_delete_event_by_id
+                            soft_delete_event_by_id(ie['id'])
                         except:
                             pass
             else:
@@ -1148,21 +1148,21 @@ if __name__ == "__main__":
         # ── 阶段二：合并事件 + Gemini 深度分析 ──
         log_detail(f"\n🧠 阶段二：{current_date} 合并事件 + 深度分析", 'info')
 
-        # 删除该日期的旧分析记录（含不完整记录）
-        log_detail(f"   🗑️  删除 {current_date} 的旧分析记录...", 'info')
+        # 软删除当前文件涉及的未完成事件（不物理删除，不影响已完成事件）
+        log_detail(f"   🗑️  清理 {current_date} 当前文件涉及的未完成事件...", 'info')
         try:
-            from db_manager import delete_cry_events_by_date, delete_incomplete_cry_events
-            # 先删不完整记录
-            incomplete_deleted = delete_incomplete_cry_events(current_date)
-            if incomplete_deleted > 0:
-                log_detail(f"   ✅ 已删除 {incomplete_deleted} 条不完整记录", 'info')
-            # 如果是 phase2_only 模式，只删不完整的，不删正常的
-            if not is_phase2_only:
-                deleted_count = delete_cry_events_by_date(current_date)
-                if deleted_count > 0:
-                    log_detail(f"   ✅ 已删除 {deleted_count} 条旧记录", 'info')
+            from db_manager import soft_delete_incomplete_events_for_files, delete_incomplete_cry_events
+            
+            # 提取当前待处理的文件名列表
+            current_filenames = [os.path.basename(f) for f in cry_file_paths]
+            
+            if current_filenames:
+                # 只软删除当前文件涉及的未完成事件
+                soft_deleted = soft_delete_incomplete_events_for_files(current_date, current_filenames)
+                if soft_deleted > 0:
+                    log_detail(f"   ✅ 已软删除 {soft_deleted} 条未完成事件（涉及 {len(current_filenames)} 个文件）", 'info')
         except Exception as e:
-            log_detail(f"   ⚠️  删除旧记录失败: {e}", 'warning')
+            log_detail(f"   ⚠️  清理未完成事件失败: {e}", 'warning')
 
         events = merge_cry_events(cry_file_paths, day_all_files_sorted)
 
