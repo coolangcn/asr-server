@@ -3190,6 +3190,14 @@ def transcribe_audio():
                                 _persist_audio_path = _new_persist_path
 
                             def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det):
+                                # 从文件名提取时间作为第一封邮件的时间范围
+                                from db_manager import parse_recording_time
+                                rec_time = parse_recording_time(fname)
+                                if rec_time:
+                                    time_range_str = rec_time.strftime('%Y-%m-%d %H:%M:%S')
+                                else:
+                                    time_range_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                
                                 # ── 第1封邮件: 即时报警 (立即发送) ──
                                 logger_a.info(f"📧 [邮件] 发送即时报警邮件...")
                                 send_cry_alert_email(
@@ -3197,7 +3205,8 @@ def transcribe_audio():
                                     reason="正在深度分析中，请稍候...",
                                     advice="系统正在收集完整上下文音频，5 分钟后将发送详细分析报告",
                                     category="analyzing",
-                                    image_data=None
+                                    image_data=None,
+                                    time_range=time_range_str
                                 )
                                 
                                 logger_b.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
@@ -3209,6 +3218,7 @@ def transcribe_audio():
                                 
                                 # 验证数据库更新是否成功
                                 analysis_ok = False
+                                event_time_range = time_range_str
                                 try:
                                     from db_manager import get_baby_cry_event_by_id
                                     record = get_baby_cry_event_by_id(p_id)
@@ -3219,6 +3229,17 @@ def transcribe_audio():
                                         # 判断分析是否真正完成（不是占位文本）
                                         if category and category != 'analyzing':
                                             analysis_ok = True
+                                        
+                                        # 获取事件的时间范围
+                                        rec_time = record.get('recording_time')
+                                        start_time = record.get('start_time', 0)
+                                        end_time = record.get('end_time', 0)
+                                        if rec_time:
+                                            from datetime import timedelta
+                                            start_dt = datetime.fromisoformat(rec_time) + timedelta(milliseconds=start_time)
+                                            end_dt = datetime.fromisoformat(rec_time) + timedelta(milliseconds=end_time)
+                                            event_time_range = f"{start_dt.strftime('%Y-%m-%d %H:%M:%S')} ~ {end_dt.strftime('%H:%M:%S')}"
+                                        
                                         logger_b.info(f"✅ [BabyCry] 数据库记录: category={category}, reason={reason[:50] if reason else 'None'}..., 分析成功={analysis_ok}")
                                     else:
                                         logger_b.error(f"❌ [BabyCry] 数据库记录未找到 (ID={p_id})")
@@ -3285,7 +3306,8 @@ def transcribe_audio():
                                 send_cry_alert_email(
                                     fname, cry_conf, cry_det,
                                     reason=reason, advice=advice, category=category,
-                                    image_data=image_data_for_email
+                                    image_data=image_data_for_email,
+                                    time_range=event_time_range
                                 )
                                 
                                 # 清理持久音频文件

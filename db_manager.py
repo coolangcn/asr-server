@@ -918,6 +918,59 @@ def get_incomplete_cry_events(date_str: str = None) -> list:
         if conn: return_connection(conn)
 
 
+def get_completed_events_for_date(date_str: str) -> list:
+    """获取指定日期已完成分析的事件列表（用于检查cry文件是否已被覆盖）
+
+    Args:
+        date_str: 日期格式 YYYY-MM-DD
+
+    Returns:
+        事件字典列表，包含 id, filename, event_files 等
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+
+        query = """
+            SELECT id, filename, recording_time, reason_category, reason, advice,
+                   event_files_json, audio_path, confidence
+            FROM baby_cry_events
+            WHERE is_deleted = FALSE
+              AND recording_time::date = %s
+              AND reason IS NOT NULL AND reason != ''
+              AND reason != '未知'
+              AND reason_category IS NOT NULL
+              AND reason_category != 'analyzing'
+              AND reason_category != '未分类'
+              AND reason_category != '未知'
+            ORDER BY recording_time
+        """
+
+        cursor.execute(query, (date_str,))
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'id': row[0],
+                'filename': row[1],
+                'recording_time': row[2].isoformat() if row[2] else None,
+                'reason_category': row[3],
+                'reason': row[4],
+                'advice': row[5],
+                'event_files': json.loads(row[6]) if row[6] else [],
+                'audio_path': row[7],
+                'confidence': float(row[8]) if row[8] else 0.0,
+            })
+        cursor.close()
+        return results
+    except Exception as e:
+        print(f"  [DB Error] 获取已完成事件列表失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+
 def soft_delete_incomplete_events_for_files(date_str: str, filenames: list) -> int:
     """软删除指定日期中，与给定文件名列表相关的未完成事件
     

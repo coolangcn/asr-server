@@ -91,14 +91,18 @@ def send_email_async(subject, content, image_data=None):
     """
     threading.Thread(target=send_email_sync, args=(subject, content, image_data), daemon=True).start()
 
-def send_cry_alert_email(filename, confidence, details=None, reason=None, advice=None, category=None, image_data=None):
+def send_cry_alert_email(filename, confidence, details=None, reason=None, advice=None, category=None, image_data=None, time_range=None):
     """
     专门发送哭声警报（增强版，支持带分析结果和图片）
     """
-    subject = "🚨 宝宝哭声警报！"
+    subject = f"🚨 宝宝哭声警报！{f'（{time_range}）' if time_range else ''}"
     details_str = "\n".join(details) if details else "无详细模型得分"
     
     content_parts = [f"检测文件: {filename}", f"置信度: {confidence:.3f}", f"模型详情:\n{details_str}"]
+    
+    if time_range:
+        content_parts.insert(0, f"时间范围: {time_range}")
+        content_parts.insert(0, "=" * 40)
     
     if category or reason or advice:
         content_parts.append("\n========== 深度分析 ==========")

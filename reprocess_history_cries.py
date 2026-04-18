@@ -9,7 +9,7 @@ import datetime
 import logging
 import functools
 from logging.handlers import TimedRotatingFileHandler
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, get_completed_events_for_date, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
 
 # 进度状态文件路径（供 API 读取）
 PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
@@ -916,6 +916,90 @@ if __name__ == "__main__":
             day_error = 0
             day_skip = 0
             day_elapsed = 0
+            
+            # ── 阶段二：只处理未完成事件涉及的文件 + 未覆盖的孤儿文件 ──
+            log_detail(f"\n🧠 阶段二（增量模式）：只处理未完成事件和孤儿cry文件", 'info')
+            
+            # 获取未完成事件涉及的所有文件
+            incomplete_events = get_incomplete_cry_events(current_date)
+            incomplete_files = set()
+            for ie in incomplete_events:
+                event_files = ie.get('event_files', [])
+                for f in event_files:
+                    incomplete_files.add(os.path.basename(f))
+                if ie.get('filename'):
+                    incomplete_files.add(os.path.basename(ie.get('filename')))
+            
+            # 获取未覆盖的孤儿 cry 文件
+            day_all_basenames = {os.path.basename(f): f for f in day_all_files_sorted}
+            uncovered_cry_files = set()
+            db_cry_filenames = get_cry_files_for_date(current_date)
+            for fn in db_cry_filenames:
+                if fn in day_all_basenames:
+                    full_path = day_all_basenames[fn]
+                    covered = False
+                    # 检查是否被任何已完成事件覆盖
+                    for evt in get_completed_events_for_date(current_date):
+                        evt_files = evt.get('event_files', [])
+                        if any(os.path.basename(p) == fn for p in evt_files):
+                            covered = True
+                            break
+                        if os.path.basename(evt.get('filename', '')) == fn:
+                            covered = True
+                            break
+                    if not covered:
+                        uncovered_cry_files.add(fn)
+            
+            # 合并：未完成事件文件 + 孤儿cry文件
+            phase2_only_files = incomplete_files | uncovered_cry_files
+            
+            if not phase2_only_files:
+                log_detail(f"   ✅ 没有未完成事件或孤儿cry文件，无需处理", 'info')
+                continue
+            
+            log_detail(f"   📊 未完成事件涉及: {len(incomplete_files)} 个文件", 'info')
+            log_detail(f"   📊 孤儿cry文件: {len(uncovered_cry_files)} 个文件", 'info')
+            log_detail(f"   📊 合计待处理: {len(phase2_only_files)} 个文件", 'info')
+            
+            # 软删除这些文件涉及的未完成事件
+            if incomplete_files:
+                try:
+                    from db_manager import soft_delete_incomplete_events_for_files
+                    soft_deleted = soft_delete_incomplete_events_for_files(
+                        current_date, 
+                        list(phase2_only_files)
+                    )
+                    if soft_deleted > 0:
+                        log_detail(f"   🗑️  已软删除 {soft_deleted} 条旧未完成事件", 'info')
+                except Exception as e:
+                    log_detail(f"   ⚠️  清理未完成事件失败: {e}", 'warning')
+            
+            # 只合并处理这些文件
+            phase2_only_paths = []
+            for fn in phase2_only_files:
+                if fn in day_all_basenames:
+                    phase2_only_paths.append(day_all_basenames[fn])
+                else:
+                    # 从 SOURCE_DIR 查找
+                    date_dir = os.path.join(SOURCE_DIR, current_date)
+                    candidate = os.path.join(date_dir, fn) if os.path.isdir(date_dir) else None
+                    if candidate and os.path.isfile(candidate):
+                        phase2_only_paths.append(candidate)
+            
+            phase2_only_paths.sort(key=parse_file_datetime)
+            day_all_files_sorted_for_phase2 = sorted(
+                [f for f in day_all_files_sorted if os.path.basename(f) in phase2_only_files] + phase2_only_paths,
+                key=parse_file_datetime
+            )
+            
+            # 设置为全局变量供后续阶段二使用
+            cry_file_paths = phase2_only_paths
+            day_all_files_sorted = day_all_files_sorted_for_phase2
+            day_success = 0
+            day_error = 0
+            day_skip = 0
+            day_elapsed = 0
+            is_phase2_incremental = True
         else:
             log_detail(f"\n📡 阶段一：逐文件检测哭声 ({len(day_files)} 个文件)", 'info')
 
@@ -1253,9 +1337,14 @@ if __name__ == "__main__":
                     # 发送邮件
                     if EMAIL_ENABLED:
                         try:
-                            cry_time = parse_file_datetime(rep_filename)
-                            cry_time_str = cry_time.strftime('%Y-%m-%d %H:%M:%S') if cry_time else '未知'
-                            subject = f"📋 历史分析 | {current_date} | 事件 {evt_idx}/{len(events)}"
+                            # 获取事件的时间范围
+                            first_time = parse_file_datetime(os.path.basename(event_files[0]))
+                            last_time = parse_file_datetime(os.path.basename(event_files[-1]))
+                            first_time_str = first_time.strftime('%H:%M:%S') if first_time else '??:??:??'
+                            last_time_str = last_time.strftime('%H:%M:%S') if last_time else '??:??:??'
+                            time_range_str = f"{first_time_str} ~ {last_time_str}"
+                            
+                            subject = f"📋 历史分析 | {current_date} | {time_range_str} | 事件{evt_idx}"
                             content = f"""
 ═══════════════════════════════════════════════════════════════
                      📋 宝宝哭声历史分析报告
