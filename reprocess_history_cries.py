@@ -432,21 +432,96 @@ if __name__ == "__main__":
     VALKEY_URI = os.environ.get('VALKEY_URI', '')
     _redis_lock = None
     _lock_acquired = False
+    _lock_pid = os.getpid()  # 记录当前进程 PID
+    
+    # ── atexit 最后一道防线：确保 Python 解释器退出时释放锁 ──
+    import atexit
+    def atexit_release_lock():
+        """Python 解释器退出时自动释放锁（包括异常退出、崩溃等场景）"""
+        if _redis_lock and _lock_acquired:
+            try:
+                _redis_lock.delete('babycry:reprocess_lock')
+                print(f"\n🔓 [atexit] Python 解释器退出，已自动释放分布式锁 (PID: {_lock_pid})")
+            except Exception:
+                pass
+    atexit.register(atexit_release_lock)
     
     if VALKEY_URI:
         try:
             import valkey
             _redis_lock = valkey.from_url(VALKEY_URI)
-            # 尝试获取锁，TTL 2 小时（A 轨可能运行很久），nx=True 保证互斥
-            _lock_acquired = _redis_lock.set('babycry:reprocess_lock', 'a_track_reprocess', nx=True, ex=7200)
+            
+            # ── 自动清理残留锁：检查锁持有者是否还活着 ──
+            existing_lock = _redis_lock.get('babycry:reprocess_lock')
+            if existing_lock:
+                holder_str = existing_lock.decode() if isinstance(existing_lock, bytes) else existing_lock
+                # 锁值格式: "pid@hostname" 或旧的 "a_track_reprocess"
+                parts = holder_str.split('@')
+                if len(parts) == 2:
+                    try:
+                        holder_pid = int(parts[0])
+                        # 检查持有者进程是否还在运行
+                        import signal
+                        os.kill(holder_pid, 0)  # 信号 0 = 检查进程是否存在
+                        log_detail(f"⚠️  检测到另一个 A 轨进程正在运行 (PID: {holder_pid})", 'warning')
+                        log_detail(f"   请等待其完成后再试", 'warning')
+                        sys.exit(1)
+                    except (ProcessLookupError, ValueError):
+                        # 进程不存在，清理残留锁
+                        log_detail(f"🧹 检测到残留锁 (PID: {holder_str})，自动清理中...", 'warning')
+                        _redis_lock.delete('babycry:reprocess_lock')
+                        time.sleep(0.5)  # 等待清理生效
+                    except PermissionError:
+                        pass  # 无权检查，继续尝试获取锁
+                else:
+                    # 旧格式锁，尝试清理
+                    log_detail(f"🧹 检测到旧格式残留锁，自动清理中...", 'warning')
+                    _redis_lock.delete('babycry:reprocess_lock')
+                    time.sleep(0.5)
+            
+            # 尝试获取锁，TTL 2 小时，使用 pid@hostname 作为值便于追踪
+            import socket
+            lock_value = f"{_lock_pid}@{socket.gethostname()}"
+            _lock_acquired = _redis_lock.set('babycry:reprocess_lock', lock_value, nx=True, ex=7200)
             if not _lock_acquired:
                 lock_holder = _redis_lock.get('babycry:reprocess_lock')
                 holder_str = lock_holder.decode() if isinstance(lock_holder, bytes) else lock_holder
                 log_detail(f"❌ 无法获取分布式锁！当前持有者: {holder_str}", 'error')
                 log_detail(f"   可能有另一个 A 轨进程正在运行", 'warning')
-                log_detail(f"   请等待其完成后再试，或手动删除锁: redis-cli DEL babycry:reprocess_lock", 'warning')
+                log_detail(f"   请等待其完成后再试", 'warning')
                 sys.exit(1)
-            log_detail(f"🔒 已获取分布式锁 (babycry:reprocess_lock)", 'info')
+            log_detail(f"🔒 已获取分布式锁 (PID: {_lock_pid})", 'info')
+            
+            # ── 注册信号处理器，确保异常退出时释放锁 ──
+            def release_lock_on_exit(signum, frame):
+                """进程终止时自动释放锁"""
+                if _redis_lock and _lock_acquired:
+                    try:
+                        _redis_lock.delete('babycry:reprocess_lock')
+                        log_detail(f"🔓 收到信号 {signum}，已自动释放分布式锁", 'info')
+                    except Exception:
+                        pass
+                sys.exit(0)
+            
+            import signal
+            signal.signal(signal.SIGTERM, release_lock_on_exit)
+            signal.signal(signal.SIGINT, release_lock_on_exit)
+            
+            # ── 启动锁续期线程（每 30 分钟刷新 TTL）──
+            def lock_refresh_thread():
+                """后台线程：定期续期分布式锁"""
+                while _lock_acquired:
+                    try:
+                        time.sleep(1800)  # 30 分钟
+                        if _lock_acquired and _redis_lock:
+                            _redis_lock.expire('babycry:reprocess_lock', 7200)
+                            log_detail(f"🔄 已续期分布式锁 TTL (剩余 2 小时)", 'info')
+                    except Exception:
+                        break  # 静默退出
+            
+            threading.Thread(target=lock_refresh_thread, daemon=True).start()
+            log_detail(f"⏰ 锁续期线程已启动（每 30 分钟自动续期）", 'info')
+            
         except Exception as e:
             log_detail(f"⚠️  Redis 连接异常，无法获取锁: {e}", 'warning')
             log_detail(f"   将继续运行（无锁模式）", 'warning')

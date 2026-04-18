@@ -324,18 +324,19 @@ def get_transcripts(offset: int = 0, limit: int = 100, db_url: str = None) -> Li
 def get_baby_cry_events(offset: int = 0, limit: int = 100, 
                         date_filter: str = None, 
                         start_time_filter: str = None, 
-                        end_time_filter: str = None) -> List[Dict]:
-    """获取记录的宝宝哭声分析事件，支持分页和时间筛选"""
+                        end_time_filter: str = None) -> tuple:
+    """获取记录的宝宝哭声分析事件，支持分页和时间筛选
+    返回: (events_list, total_count)
+    """
     conn = None
     try:
         conn = get_connection()
         if not conn:
-            return []
+            return ([], 0)
             
         cursor = conn.cursor()
         
-        # 构建动态 SQL — 列表只返回摘要字段，详情走 /api/cry_event/<id>
-        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, LEFT(reason, 80) as reason_preview, reason_category, LEFT(advice, 120) as suggestion_preview, jsonb_array_length(event_files_json::jsonb) as file_count, CASE WHEN illustration_url IS NOT NULL THEN true ELSE FALSE END as has_illustration FROM baby_cry_events"
+        # 构建 WHERE 子句
         where_clauses = []
         params = []
         
@@ -344,10 +345,8 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
             where_clauses.append("recording_time::date = %s")
             params.append(date_filter)
             
-        # 2. 时间段过滤 (HH-MM) - 注意文件名和数据库中通常是这个格式
-        # 这里我们假设过滤的是 recording_time 的时刻
+        # 2. 时间段过滤 (HH-MM)
         if start_time_filter:
-            # 将 HH-MM 转换为 HH:MM 供 SQL 比较
             sql_start = start_time_filter.replace('-', ':')
             where_clauses.append("recording_time::time >= %s")
             params.append(sql_start)
@@ -356,11 +355,17 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
             sql_end = end_time_filter.replace('-', ':')
             where_clauses.append("recording_time::time <= %s")
             params.append(sql_end)
+        
+        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
             
-        if where_clauses:
-            query += " WHERE " + " AND ".join(where_clauses)
-            
-        query += " ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s"
+        # 查询总数
+        count_query = f"SELECT COUNT(*) FROM baby_cry_events{where_sql}"
+        cursor.execute(count_query, tuple(params))
+        total_count = cursor.fetchone()[0]
+        
+        # 查询分页数据
+        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, LEFT(reason, 80) as reason_preview, reason_category, LEFT(advice, 120) as suggestion_preview, jsonb_array_length(event_files_json::jsonb) as file_count, CASE WHEN illustration_url IS NOT NULL THEN true ELSE FALSE END as has_illustration FROM baby_cry_events"
+        query += where_sql + " ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
         
         cursor.execute(query, tuple(params))
@@ -384,10 +389,10 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
                 'has_illustration': bool(row[10]) if len(row) > 10 else False,
             })
         
-        return results
+        return (results, total_count)
     except Exception as e:
         print(f"[DB Error] 查询哭声记录失败: {e}")
-        return []
+        return ([], 0)
     finally:
         if conn:
             return_connection(conn)

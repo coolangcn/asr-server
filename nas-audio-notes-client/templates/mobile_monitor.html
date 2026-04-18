@@ -708,8 +708,27 @@
             margin: 0 auto 16px;
         }
 
+        .cry-detail-index {
+            position: absolute;
+            top: 16px;
+            left: 20px;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.25), rgba(99, 102, 241, 0.25));
+            border: 1px solid rgba(244, 114, 182, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: 800;
+            color: #f472b6;
+            z-index: 5;
+        }
+
         .cry-detail-header {
             margin-bottom: 16px;
+            padding-top: 52px;
         }
         .cry-detail-header h2 {
             font-size: 1.1rem;
@@ -1655,17 +1674,14 @@
                 if (!append) cryEventsHash = newHash;
 
                 let html = '';
-                // 倒序显示哭声记录，最新的在前
-                const reversedEvents = [...events].reverse();
                 
-                // 序号计算：最新的记录序号最大
-                // 第一页第一条的序号 = 总记录数（估算）
-                // 之后每条递减
-                const isFirstPage = cryCurrentOffset === 0;
-                const estimatedTotal = isFirstPage ? (events.length >= CRY_PAGE_SIZE ? CRY_PAGE_SIZE * 3 : events.length) : 0;
-                let currentIndex = isFirstPage ? estimatedTotal : (estimatedTotal - cryCurrentOffset);
+                // API 返回的记录已经是最新的在前（按 created_at 降序）
+                // 需要获取总数来计算序号，如果没有 total 字段，使用 cryCurrentOffset + events.length 作为估算
+                // 第一页第一条的序号 = 总数
+                // 第二页第一条的序号 = 总数 - 20
+                const totalEstimated = result.total || (cryCurrentOffset + events.length);
                 
-                reversedEvents.forEach((ev, idx) => {
+                events.forEach((ev, idx) => {
                     const recTime = new Date(ev.recording_time || ev.created_at);
                     const dateStr = recTime.toLocaleDateString();
                     const timeStr = recTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
@@ -1682,11 +1698,12 @@
 
                     const reason = ev.reason_preview || '未知诱因';
                     const hasIll = ev.has_illustration ? '🎨' : '';
-                    // 递减序号，让最新记录显示最大序号
-                    const index = currentIndex - idx;
+                    // 递减序号，最新的记录序号最大（基于全局总数）
+                    // 例：总数 35，第一页第一条 = 35，第二页第一条 = 15
+                    const index = totalEstimated - cryCurrentOffset - idx;
 
                     html += `
-                        <div class="cry-event-card" onclick="showCryDetail(${ev.id})">
+                        <div class="cry-event-card" onclick="showCryDetail(${ev.id}, ${index})">
                             <div class="cry-event-index">${index}</div>
                             <div style="flex: 1; min-width: 0;">
                                 <div class="cry-card-top">
@@ -1738,7 +1755,7 @@
             loadCryEventsMobile(true);
         }
 
-        async function showCryDetail(eventId) {
+        async function showCryDetail(eventId, eventIndex = null) {
             const overlay = document.getElementById('cryDetailOverlay');
             const content = document.getElementById('cryDetailContent');
             overlay.classList.add('active');
@@ -1810,7 +1827,11 @@
                     `;
                 }
 
+                // 序号显示
+                const indexHtml = eventIndex ? `<div class="cry-detail-index">${eventIndex}</div>` : '';
+
                 content.innerHTML = `
+                    ${indexHtml}
                     <div class="cry-detail-header">
                         <h2>${data.reason || '未知诱因'}</h2>
                         <div class="cry-detail-meta">

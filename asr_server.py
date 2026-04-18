@@ -1923,14 +1923,14 @@ def api_get_cry_events():
         start_time_filter = request.args.get('start_time')
         end_time_filter = request.args.get('end_time')
         
-        events = get_baby_cry_events(
+        events, total = get_baby_cry_events(
             offset=offset, 
             limit=limit, 
             date_filter=date_filter,
             start_time_filter=start_time_filter,
             end_time_filter=end_time_filter
         )
-        return jsonify({"events": events})
+        return jsonify({"events": events, "total": total})
     except Exception as e:
         logger_a.error(f"获取宝宝哭声记录失败: {e}")
         return jsonify({"error": str(e)}), 500
