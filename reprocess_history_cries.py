@@ -1344,27 +1344,77 @@ if __name__ == "__main__":
                             last_time_str = last_time.strftime('%H:%M:%S') if last_time else '??:??:??'
                             time_range_str = f"{first_time_str} ~ {last_time_str}"
                             
-                            subject = f"📋 历史分析 | {current_date} | {time_range_str} | 事件{evt_idx}"
+                            # 计算持续时间
+                            if first_time and last_time:
+                                duration_minutes = int((last_time - first_time).total_seconds() / 60)
+                                duration_str = f"{duration_minutes} 分钟"
+                            else:
+                                duration_str = "未知"
+                            
+                            # 获取置信度
+                            confidence_val = result.get("confidence", 0)
+                            
+                            # 获取音频时长
+                            rep_filepath = os.path.join(SOURCE_DIR, "processed", current_date, rep_filename)
+                            audio_duration_str = "未知"
+                            try:
+                                import subprocess
+                                proc = subprocess.run(
+                                    ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', rep_filepath],
+                                    capture_output=True, text=True, timeout=10
+                                )
+                                if proc.returncode == 0 and proc.stdout.strip():
+                                    audio_sec = float(proc.stdout.strip())
+                                    audio_min = int(audio_sec // 60)
+                                    audio_sec_remain = int(audio_sec % 60)
+                                    audio_duration_str = f"{audio_min} 分 {audio_sec_remain} 秒"
+                            except:
+                                pass
+                            
+                            subject = f"📋 历史分析 | {current_date} | {time_range_str} | 事件{evt_idx}/{len(events)}"
+                            
+                            # 格式化建议（如果很长则分段显示）
+                            formatted_advice = advice
+                            if len(advice) > 150:
+                                formatted_advice = advice[:150] + "\n   （完整建议见下方详情）"
+                            
                             content = f"""
 ═══════════════════════════════════════════════════════════════
                      📋 宝宝哭声历史分析报告
 ═══════════════════════════════════════════════════════════════
 
 📅 处理日期: {current_date}
-⏰ 报告时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-🔔 事件 {evt_idx}/{len(events)}
+⏰ 哭声时间: {time_range_str}
+⏱️  哭声持续: {duration_str}
+🔔 事件编号: {evt_idx}/{len(events)}
 
 ───────────────────────────────────────────────────────────────
-🏷️ 分析结果:
-   • 分类: {category}
-   • 原因: {reason}
-   • 建议: {advice}
+📊 事件统计:
+   • 事件文件数: {len(event_files)} 个
+   • 哭声文件数: {len(cry_files_in_event)} 个
+   • 上下文文件: {len(event_files) - len(cry_files_in_event)} 个
+   • 哭声置信度: {confidence_val:.3f}
+   • 代表文件时长: {audio_duration_str}
 
-🎵 代表文件: {rep_filename}
-⏰ 哭声时间: {cry_time_str}
-📊 事件文件数: {len(event_files)} 个 (哭声 {len(cry_files_in_event)} 个)
+💡 上下文说明:
+   系统会收集哭声文件前后各 5 个上下文音频，以获取完整的场景信息。
+   上下文文件本身不含哭声，但包含环境音、语音等，帮助 AI 更准确分析。
+
+───────────────────────────────────────────────────────────────
+🏷️ 深度分析结果 (Gemini):
+
+   【原因分类】
+   {category}
+
+   【原因分析】
+   {reason}
+
+   【安抚建议】
+   {advice}
+
+───────────────────────────────────────────────────────────────
 📁 文件列表 (🔴=哭声文件):
-{chr(10).join(('   🔴 ' if f in cry_file_paths else '      ') + os.path.basename(f) for f in event_files)}
+{chr(10).join(('   🔴 ' + os.path.basename(f)) if f in cry_file_paths else ('      ' + os.path.basename(f)) for f in event_files)}
 ═══════════════════════════════════════════════════════════════
 """
                             send_email_async(subject, content)

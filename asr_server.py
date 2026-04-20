@@ -2431,20 +2431,17 @@ def get_live_status():
         a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
         today_cry_count = get_baby_cry_count()
         
-        # 读取 A 轨日志 — 仅在 A 轨运行时读取，避免每次轮询都读磁盘
-        if a_running:
-            log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-a.log")
-            logs_a = "尚未开始处理，或日志文件不存在..."
-            if os.path.exists(log_file):
-                try:
-                    with open(log_file, "r", encoding='utf-8', errors='replace') as f:
-                        # 使用 seek 从末尾读取最后100行，避免读取整个大文件
-                        lines = f.readlines()
-                        logs_a = ''.join(lines[-100:])  # 最后100行
-                except Exception as e:
-                    logs_a = f"读取日志失败: {str(e)}"
-        else:
-            logs_a = ""
+        # 读取 A 轨日志（无论进程是否在运行，都返回日志内容）
+        log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-a.log")
+        logs_a = ""
+        if os.path.exists(log_file):
+            try:
+                with open(log_file, "r", encoding='utf-8', errors='replace') as f:
+                    # 使用 seek 从末尾读取最后100行，避免读取整个大文件
+                    lines = f.readlines()
+                    logs_a = ''.join(lines[-100:])  # 最后100行
+            except Exception as e:
+                logs_a = f"读取日志失败: {str(e)}"
         
         # 读取 A 轨结构化进度（由 reprocess_history_cries.py 写入）
         a_progress = None
