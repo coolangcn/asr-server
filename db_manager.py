@@ -1172,7 +1172,7 @@ def get_all_cry_dates() -> list:
         if conn: return_connection(conn)
 
 
-def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc'), progress_callback=None, log_callback=None, ttl_seconds=86400) -> int:
+def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc'), progress_callback=None, log_callback=None, ttl_seconds=86400, skip_completed_dates=None) -> int:
     """扫描目录并刷新文件缓存到Redis，返回扫描到的文件数量
 
     Args:
@@ -1181,6 +1181,7 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
         progress_callback: 进度回调函数，接收 (count, current_dir) 参数
         log_callback: 日志回调函数，接收 (message) 参数
         ttl_seconds: 缓存过期时间（秒），默认 86400（24小时）。过期后下次读取会自动触发重新刷盘
+        skip_completed_dates: 需要跳过的已完成日期集合，如 {'2025-11-17', '2025-11-21'}
     """
     import os
     import re
@@ -1199,6 +1200,8 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
             progress_callback(count, current_dir)
 
     log(f"  [刷盘] 开始扫描目录: {target_dir}")
+    if skip_completed_dates:
+        log(f"  [刷盘] 跳过已完成日期: {len(skip_completed_dates)} 个")
     start_time = time.time()
 
     if not VALKEY_URI:
@@ -1223,6 +1226,7 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
         date_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
         current_container = ""
         processed_in_dir = 0
+        skipped_dates = 0
 
         for root, dirs, files in os.walk(target_dir):
             # 只扫描 processed 目录下的文件，跳过其他所有目录
@@ -1242,23 +1246,30 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
 
             # 在 processed 目录内，只保留日期格式的子目录
             if is_processed_dir:
-                dirs[:] = [d for d in dirs if date_pattern.match(d)]
+                # 过滤掉已完成的日期
+                if skip_completed_dates:
+                    dirs[:] = [d for d in dirs if date_pattern.match(d) and d not in skip_completed_dates]
+                    skipped_dates = len([d for d in dirs if date_pattern.match(d) and d in skip_completed_dates])
+                else:
+                    dirs[:] = [d for d in dirs if date_pattern.match(d)]
             elif is_date_dir:
                 # 在日期目录内，不再深入子目录
                 dirs[:] = []
                 processed_in_dir = 0
+
+            # 跳过已完成的日期目录（如果进入时被误放进来）
+            if is_date_dir and skip_completed_dates and current_container in skip_completed_dates:
+                if skipped_dates % 50 == 0:
+                    log(f"  [刷盘] 跳过已完成日期: {current_container}")
+                skipped_dates += 1
+                dirs[:] = []
+                continue
 
             # 每秒回调一次进度
             current_time = time.time()
             if progress_callback and current_time - last_callback_time >= 1:
                 log_progress(count, current_container)
                 last_callback_time = current_time
-
-            # 调试：打印目录信息
-            if is_date_dir:
-                log(f"  [刷盘调试] 进入日期目录: {root}, 文件数: {len(files)}")
-                audio_files = [f for f in files if not f.startswith('.') and f.lower().endswith(audio_exts)]
-                log(f"  [刷盘调试] 匹配音频文件: {len(audio_files)} 个")
 
             # 处理文件
             for file in files:

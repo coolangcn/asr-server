@@ -8,6 +8,10 @@ import sys
 import datetime
 import logging
 import functools
+import threading
+import signal
+import atexit
+import socket
 from logging.handlers import TimedRotatingFileHandler
 from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, get_completed_events_for_date, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
 
@@ -577,11 +581,15 @@ if __name__ == "__main__":
             if count % 1000 == 0:
                 log_detail(f"    📁 刷盘进度: {count} 个文件 @ {current_dir}", 'info')
 
+        # 获取已完成的日期列表（用于刷盘时跳过）
+        completed_dates_set = set(completed_dates) if 'completed_dates' in dir() else set()
+
         cache_count = refresh_file_cache(
             PROCESSED_DIR,
             audio_exts=AUDIO_EXTS,
             progress_callback=on_cache_progress,
-            log_callback=lambda msg: log_detail(f"    {msg}", 'info')
+            log_callback=lambda msg: log_detail(f"    {msg}", 'info'),
+            skip_completed_dates=completed_dates_set if completed_dates_set else None
         )
 
         if cache_count > 0:
@@ -1302,6 +1310,15 @@ if __name__ == "__main__":
 
             try:
                 log_detail(f"      🤖 调用 Gemini 深度分析...", 'info')
+                # 计算事件的时间范围（第一个文件到最后一个文件）
+                first_file_time = parse_file_datetime(os.path.basename(event_files[0])) if event_files else None
+                last_file_time = parse_file_datetime(os.path.basename(event_files[-1])) if event_files else None
+                if first_file_time and last_file_time:
+                    start_ms = 0
+                    end_ms = int((last_file_time - first_file_time).total_seconds() * 1000)
+                else:
+                    start_ms = 0
+                    end_ms = 60000
                 # 限额退避重试
                 max_api_retries = 3
                 for api_retry in range(max_api_retries):
@@ -1310,8 +1327,8 @@ if __name__ == "__main__":
                         json={
                             "filename": rep_filename,
                             "audio_path": rep_filepath,
-                            "start_ms": first_seg.get('start', 0),
-                            "end_ms": first_seg.get('end', 60000),
+                            "start_ms": start_ms,
+                            "end_ms": end_ms,
                             "audio_paths": event_files,
                         },
                         timeout=180
