@@ -9,11 +9,17 @@ import re
 from datetime import datetime
 from typing import List, Dict, Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 # PostgreSQL 连接配置
-# 优先使用环境变量，如果未设置则使用默认值（本地 NAS）
+# 优先使用环境变量或 .env；未设置时数据库功能会在 init_pool 中降级失败
 DATABASE_URL = os.getenv(
     'DATABASE_URL',
-    'postgresql://postgres:cncncncn@192.168.1.188:5433/postgres'
+    ''
 )
 
 # 连接池
@@ -23,6 +29,9 @@ def init_pool(db_url: str = None):
     """初始化数据库连接池"""
     global connection_pool
     target_url = db_url or DATABASE_URL
+    if not target_url:
+        print("[DB Error] DATABASE_URL 未设置")
+        return False
     try:
         connection_pool = psycopg2.pool.SimpleConnectionPool(
             2, 20,  # 最小和最大连接数

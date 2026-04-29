@@ -971,6 +971,15 @@
                     loadLastTimeRange();
                 }
             }
+
+            // 3. 根据页面切换日志视图
+            if (typeof setLogTab === 'function' && window.logTabReady) {
+                if (tabName === 'babycry') {
+                    setLogTab('b');
+                } else {
+                    setLogTab('a');
+                }
+            }
         }
 
         // 初始化导航状态
@@ -2214,6 +2223,7 @@
         loadMore();
 
         // --- 日志 Tab 逻辑 ---
+        window.logTabReady = true;
         let currentLogTab = localStorage.getItem('currentLogTab') || 'b';
 
         function setLogTab(tab) {
@@ -2269,8 +2279,8 @@
             }
         }
 
-        // 初始化 Tab 状态
-        setLogTab(currentLogTab);
+        // 初始化 Tab 状态: 页面加载时默认是在 dashboard，按规则切到 a 轨
+        setLogTab('a');
         // 定时检查新数据（10秒一次，减少服务器压力）
         let updateLoopInterval = setInterval(updateLoop, 10000);
         
@@ -3623,7 +3633,7 @@
             }
         }
 
-        function renderBabyCry(items) {
+        function renderBabyCry(items, totalCount) {
             const container = document.getElementById('babycry-content');
             if (!items || items.length === 0) {
                 container.innerHTML = `
@@ -3656,8 +3666,7 @@
             };
 
             let html = "";
-            // 计算总记录数，让最新记录显示最大序号
-            const totalCount = Object.values(groups).reduce((sum, arr) => sum + arr.length, 0);
+            // 使用 API 返回的真实 total，而不是当前页数量
             let displayIndex = 0;
             
             Object.keys(groups).sort().reverse().forEach(date => {
@@ -3753,6 +3762,7 @@
                 }
                 
                 const items = result.events || [];
+                const totalCount = result.total || items.length;
                 
                 if (items.length === 0) {
                     container.innerHTML = `
@@ -3766,7 +3776,7 @@
                 }
                 
                 // 渲染列表
-                renderBabyCry(items);
+                renderBabyCry(items, totalCount);
                 
                 // 显示时间轴
                 if (timelineContainer) timelineContainer.style.display = 'flex';

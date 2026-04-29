@@ -9,11 +9,17 @@ import re
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 # PostgreSQL 连接配置
-# 优先使用环境变量，如果未设置则使用默认值（本地 NAS）
+# 优先使用环境变量或 .env；未设置时数据库功能会在 init_pool 中降级失败
 DATABASE_URL = os.getenv(
     'DATABASE_URL',
-    'postgresql://postgres:cncncncn@192.168.1.188:5433/postgres'
+    ''
 )
 
 # 连接池
@@ -26,6 +32,9 @@ def init_pool(db_url: str = None):
     """初始化数据库连接池，带重试机制"""
     global connection_pool
     target_url = db_url or DATABASE_URL
+    if not target_url:
+        print("[DB Error] DATABASE_URL 未设置")
+        return False
     
     for attempt in range(3):
         try:
@@ -148,6 +157,8 @@ def init_db():
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS confidence REAL;")
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS details_json TEXT;")
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS illustration_url TEXT;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;")
+            cursor.execute("UPDATE baby_cry_events SET is_deleted = FALSE WHERE is_deleted IS NULL;")
         except Exception as e:
             print(f"[DB] 字段升级提示: {e}")
 
@@ -167,6 +178,18 @@ def init_db():
 
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_cry_filename ON baby_cry_events(filename);
+        ''')
+
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_cry_recording_not_deleted
+        ON baby_cry_events(recording_time DESC NULLS LAST)
+        WHERE is_deleted = FALSE;
+        ''')
+
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_cry_created_not_deleted
+        ON baby_cry_events(created_at DESC)
+        WHERE is_deleted = FALSE;
         ''')
         
         conn.commit()
@@ -633,7 +656,9 @@ def is_file_processed_a(filename: str) -> bool:
         if conn: return_connection(conn)
 
 def mark_file_processed_a(filename: str, status: str = "success") -> bool:
-    """标记文件为 A 轨已处理"""
+    """标记文件为 A 轨已处理（统一用纯文件名，避免路径不一致导致重复记录）"""
+    import os
+    filename = os.path.basename(filename)  # 统一用纯文件名
     conn = None
     try:
         conn = get_connection()

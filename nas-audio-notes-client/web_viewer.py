@@ -12,6 +12,14 @@ import datetime
 import requests
 import subprocess
 import argparse
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+    load_dotenv()
+except Exception:
+    pass
+
 from db_manager import init_pool, init_db, get_transcripts as db_get_transcripts, fix_recording_time, get_connection, return_connection, save_date_stats_to_redis, get_date_stats_from_redis, clear_date_stats_in_redis, get_file_cache_from_redis
 
 # --- 配置 ---
@@ -44,8 +52,8 @@ def debug_log(message):
     except Exception as e:
         print(f"[DEBUG LOG ERROR] {e}")
 
-DEFAULT_ASR_API_URL = "http://localhost:5008/transcribe"
-DEFAULT_WEB_PORT = 5009 
+DEFAULT_ASR_API_URL = os.getenv("ASR_API_URL", "http://localhost:5008/transcribe")
+DEFAULT_WEB_PORT = int(os.getenv("WEB_VIEWER_PORT", "5009"))
 
 # 全局配置变量
 CONFIG = {
@@ -53,7 +61,7 @@ CONFIG = {
     "ASR_API_URL": DEFAULT_ASR_API_URL,
     "LOG_FILE_PATH": DEFAULT_LOG_FILE_PATH,
     "WEB_PORT": DEFAULT_WEB_PORT,
-    "DATABASE_URL": os.getenv('DATABASE_URL', 'postgresql://postgres:cncncncn@192.168.1.188:5433/postgres')
+    "DATABASE_URL": os.getenv('DATABASE_URL', '')
 
 }
 
@@ -75,6 +83,7 @@ def parse_args():
 
 def update_config(args):
     """根据命令行参数更新配置"""
+    global ASR_SERVER_URL
     if args.source_path:
         base_path = args.source_path
         CONFIG["SOURCE_DIR"] = base_path
@@ -87,13 +96,15 @@ def update_config(args):
         CONFIG["ASR_API_URL"] = args.asr_url
         logger_web.info(f"[配置] 使用自定义ASR服务地址: {args.asr_url}")
 
+    ASR_SERVER_URL = CONFIG["ASR_API_URL"].rsplit("/", 1)[0]
+
 # -----------------
 
 app = Flask(__name__)
-app.secret_key = 'cncncncn_secret_key_2026'  # 用于session加密
+app.secret_key = os.getenv('WEB_SECRET_KEY') or os.getenv('SECRET_KEY') or os.urandom(32).hex()
 
 # 密码保护配置
-REQUIRED_PASSWORD = 'cncncncn'
+REQUIRED_PASSWORD = os.getenv('WEB_PASSWORD') or os.getenv('ASR_WEB_PASSWORD') or 'cncncncn'
 
 def check_auth():
     """检查是否已登录"""
@@ -185,7 +196,7 @@ def update_system_status():
     # 1. 检查 ASR Server
     asr_status = "offline"
     try:
-        requests.get(CONFIG["ASR_API_URL"].replace("/transcribe", "/"), timeout=2)
+        requests.get(f"{CONFIG['ASR_API_URL'].rsplit('/', 1)[0]}/", timeout=2)
         asr_status = "online"
     except:
         pass
@@ -327,7 +338,7 @@ def logout():
     return redirect(url_for('login'))
 
 # =================== 声纹管理API转发 ===================
-ASR_SERVER_URL = "http://localhost:5008"
+ASR_SERVER_URL = CONFIG["ASR_API_URL"].rsplit("/", 1)[0]
 
 @app.route('/speaker/register', methods=['POST'])
 @login_required

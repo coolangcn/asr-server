@@ -9,6 +9,14 @@ import os
 import re
 
 logger = logging.getLogger("EmailUtils")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    logger.addHandler(console_handler)
+    logger.propagate = False
 
 class EmailConfig:
     SMTP_SERVER = os.getenv("EMAIL_SMTP_SERVER", "")

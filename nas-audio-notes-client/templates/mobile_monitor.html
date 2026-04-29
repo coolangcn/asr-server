@@ -30,6 +30,13 @@
             padding: 0;
             overflow-x: hidden;
         }
+        body.cry-detail-lock {
+            position: fixed;
+            left: 0;
+            right: 0;
+            width: 100%;
+            overflow: hidden;
+        }
 
         .bg-animation {
             position: fixed;
@@ -758,6 +765,7 @@
             z-index: 2000;
             justify-content: center;
             align-items: flex-end;
+            overscroll-behavior: none;
         }
         .cry-detail-overlay.active { display: flex; }
 
@@ -767,6 +775,9 @@
             width: 100%;
             max-height: 88vh;
             overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
             padding: 20px 20px 40px;
             animation: slideUpPanel 0.3s ease;
             position: relative;
@@ -1900,6 +1911,55 @@
         const CRY_PAGE_SIZE = 20;
         const _cryDetailCache = {};
         let _currentPlayingAudio = null;  // 跟踪当前播放的音频
+        let _cryDetailScrollTop = 0;
+        let _cryDetailTouchStartY = 0;
+
+        function lockCryDetailBackground() {
+            if (document.body.classList.contains('cry-detail-lock')) return;
+            _cryDetailScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+            document.body.classList.add('cry-detail-lock');
+            document.body.style.top = `-${_cryDetailScrollTop}px`;
+        }
+
+        function unlockCryDetailBackground() {
+            if (!document.body.classList.contains('cry-detail-lock')) return;
+            document.body.classList.remove('cry-detail-lock');
+            document.body.style.top = '';
+            window.scrollTo(0, _cryDetailScrollTop);
+        }
+
+        function initCryDetailTouchLock() {
+            const overlay = document.getElementById('cryDetailOverlay');
+            const panel = overlay?.querySelector('.cry-detail-panel');
+            if (!overlay || !panel || overlay.dataset.touchLockReady === '1') return;
+
+            overlay.dataset.touchLockReady = '1';
+
+            overlay.addEventListener('touchmove', (e) => {
+                if (e.target === overlay) e.preventDefault();
+            }, { passive: false });
+
+            panel.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                _cryDetailTouchStartY = e.touches[0].clientY;
+            }, { passive: true });
+
+            panel.addEventListener('touchmove', (e) => {
+                if (e.touches.length !== 1) return;
+
+                const currentY = e.touches[0].clientY;
+                const deltaY = currentY - _cryDetailTouchStartY;
+                const { scrollTop, scrollHeight, clientHeight } = panel;
+                const atTop = scrollTop <= 0;
+                const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+                if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+        }
+
+        document.addEventListener('DOMContentLoaded', initCryDetailTouchLock);
 
         // 提取文件名中的日期部分（去除前缀）
         function extractDateFromFilename(filename) {
@@ -1943,11 +2003,10 @@
 
                 let html = '';
                 
-                // API 返回的记录已经是最新的在前（按 created_at 降序）
-                // 需要获取总数来计算序号，如果没有 total 字段，使用 cryCurrentOffset + events.length 作为估算
-                // 第一页第一条的序号 = 总数
-                // 第二页第一条的序号 = 总数 - 20
-                const totalEstimated = result.total || (cryCurrentOffset + events.length);
+                // API 返回的记录按时间降序（最新的在前）
+                // 序号：最新的 = 总数，依次递减
+                // 例：总数 35，第一页第一条 = 35，第二条 = 34
+                const total = result.total || 0;
                 
                 events.forEach((ev, idx) => {
                     const recTime = new Date(ev.recording_time || ev.created_at);
@@ -1966,9 +2025,8 @@
 
                     const reason = ev.reason_preview || '未知诱因';
                     const hasIll = ev.has_illustration ? '🎨' : '';
-                    // 递减序号，最新的记录序号最大（基于全局总数）
-                    // 例：总数 35，第一页第一条 = 35，第二页第一条 = 15
-                    const index = totalEstimated - cryCurrentOffset - idx;
+                    // 序号：最新的最大 = total，依次递减
+                    const index = total - cryCurrentOffset - idx;
 
                     html += `
                         <div class="cry-event-card" onclick="showCryDetail(${ev.id}, ${index})">
@@ -2026,7 +2084,11 @@
         async function showCryDetail(eventId, eventIndex = null) {
             const overlay = document.getElementById('cryDetailOverlay');
             const content = document.getElementById('cryDetailContent');
+            const panel = overlay.querySelector('.cry-detail-panel');
+            initCryDetailTouchLock();
+            lockCryDetailBackground();
             overlay.classList.add('active');
+            panel.scrollTop = 0;
             content.innerHTML = '<div class="cry-detail-loading">⏳ 加载详情中...</div>';
 
             try {
@@ -2165,6 +2227,7 @@
                 _currentPlayingAudio = null;
             }
             document.getElementById('cryDetailOverlay').classList.remove('active');
+            unlockCryDetailBackground();
         }
     </script>
 

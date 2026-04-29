@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse, uuid
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import numpy as np
 from scipy.spatial.distance import cosine
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,9 +29,6 @@ from datetime import datetime, timezone, timedelta
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 from email_utils import send_cry_alert_email   # 增加邮件通知支持
 import audio_processor
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # =================【 配置 】=================
 import platform
@@ -50,7 +51,7 @@ def get_modelscope_device():
 
 def get_whisper_model():
     """根据设备选择合适的 Whisper 模型大小
-    
+
     - CUDA: large-v3 (~10GB VRAM)
     - MPS/CPU: medium (~5GB RAM) 避免内存溢出
     """
@@ -63,28 +64,28 @@ class Config:
     DEVICE = get_device()
     MODELSCOPE_DEVICE = get_modelscope_device()
     WHISPER_MODEL = get_whisper_model()
-    HOST = '0.0.0.0'
-    PORT = 5008
-    SPEAKER_DB_FILE = "speaker_db_multi.json"    
+    HOST = os.getenv('ASR_SERVER_HOST', '0.0.0.0')
+    PORT = int(os.getenv('ASR_SERVER_PORT', '5008'))
+    SPEAKER_DB_FILE = "speaker_db_multi.json"
     # 长句音频保存配置
     SAVE_LONG_SENTENCES = True  # 是否保存长句音频
     MIN_TEXT_LENGTH_TO_SAVE = 15  # 最少字数
     LONG_SENTENCES_DIR = "long_sentences"  # 保存目录
     TEMP_DIR = "temp"  # 临时文件目录
-    
+
     ONLY_REGISTERED_SPEAKERS = True  # 只保留已注册说话人,丢弃Unknown
     # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
     ASR_MODEL = "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"  # 从 SenseVoiceSmall 切换到 Paraformer
     VAD_MODEL = "fsmn-vad"       # VAD模型
-    SPK_MODEL = "cam++"          # 说话人分离模型  
+    SPK_MODEL = "cam++"          # 说话人分离模型
     PUNC_MODEL = "ct-punc"       # 标点恢复模型
-    
+
     # VAD参数配置(为Paraformer优化)
     VAD_MAX_SINGLE_SEGMENT = 15000  # ms - 单段最长时间
     VAD_MAX_END_SILENCE = 300       # ms - 段尾静音阈值
     VAD_SIL_TO_SPEECH = 50          # ms - 静音到语音阈值
     VAD_SPEECH_TO_SIL = 80          # ms - 语音到静音阈值
-    
+
     SV_MODELS = {
         "eres2net_large": {
             "id": "iic/speech_eres2net_large_200k_sv_zh-cn_16k-common",
@@ -105,15 +106,15 @@ class Config:
             "gap": 0.10         # 提高置信度间隔要求以增强区分度
         }
     }
-    
+
     MIN_SPEAKER_DURATION_MS = 800
     NORMALIZE_AUDIO = True
     DENOISE_AUDIO = False  # 启用高级降噪
-    
+
     # 可选功能开关
     ENABLE_EMOTION_DETECTION = True  # 是否启用情感检测(需要SenseVoice模型)
     ENABLE_WHISPER_COMPARISON = True  # 是否启用Whisper对比(需要Whisper模型)
-    
+
     # SenseVoice配置 (情感检测)
     SENSEVOICE_MODEL = "iic/SenseVoiceSmall"
     ENABLE_SENSEVOICE = True  # 是否启用SenseVoice(情感检测+第三转录)
@@ -130,16 +131,21 @@ class LLMConfig:
     GEMINI_API_BASE_URL = os.getenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com")
     GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-3-flash-preview")
     GEMINI_FALLBACK_MODEL_NAME = os.getenv("GEMINI_FALLBACK_MODEL_NAME", "gemini-3.1-flash-lite-preview")
-    
-    # 火山引擎通用 3.0 文生图配置
-    VOLCENGINE_ACCESS_KEY = os.getenv("VOLCENGINE_ACCESS_KEY", "")
-    VOLCENGINE_SECRET_KEY = os.getenv("VOLCENGINE_SECRET_KEY", "")
-    
+
+    # ERNIE 文生图配置 (首选)
+    ERNIE_IMAGE_SPACE = os.getenv("ERNIE_IMAGE_SPACE", "baidu/ERNIE-Image-Turbo")
+    ERNIE_IMAGE_SIZE = os.getenv("ERNIE_IMAGE_SIZE", "1024x1024")
+
+    # DeepInfra 文生图配置 (备选)
+    DEEPINFRA_API_KEY = os.getenv("DEEPINFRA_API_KEY", "")
+    DEEPINFRA_IMAGE_MODEL = os.getenv("DEEPINFRA_IMAGE_MODEL", "black-forest-labs/FLUX-1-schnell")
+    DEEPINFRA_IMAGE_SIZE = os.getenv("DEEPINFRA_IMAGE_SIZE", "1024x1024")
+
     # 批量处理配置
     LLM_BATCH_MODE = True
     LLM_BATCH_SIZE = 20
     LLM_BATCH_TIMEOUT = 600  # 10分钟
-    
+
     # 过滤条件
     LLM_MIN_TEXT_LENGTH = 50
     LLM_MIN_SEGMENTS = 3
@@ -227,13 +233,13 @@ class SSEHandler(logging.Handler):
     def __init__(self):
         super().__init__()
         self.clients = set()
-    
+
     def add_client(self, client):
         self.clients.add(client)
-    
+
     def remove_client(self, client):
         self.clients.discard(client)
-    
+
     def emit(self, record):
         msg = self.format(record)
         for client in list(self.clients):
@@ -270,7 +276,7 @@ def create_sub_logger(name, filename, level=logging.INFO):
     l.addHandler(handler)
     l.addHandler(console_handler)
     l.addHandler(sse_handler)
-    l.propagate = False 
+    l.propagate = False
     return l
 
 # 定义三个物理隔离的日志记录器
@@ -279,7 +285,7 @@ logger_b = create_sub_logger("track_b", "log/asr-b.log")
 logger_sys = create_sub_logger("system", "log/asr-web.log")
 
 # 轨道 logger 初始化完成，彻底移除全局 logger 别名
-# logger = logger_sys 
+# logger = logger_sys
 
 app = Flask(__name__)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
@@ -324,17 +330,17 @@ class CryDetectionConfig:
     """哭声检测专用参数 - 与语音识别 (Config.SV_MODELS) 完全隔离"""
     ENABLED = True
     MIN_DURATION_SEC = 3            # 最短有效哭声时长 (秒)
-    
+
     # 声纹阈值 (远低于语音识别的 0.60)
     # 基于 3月20日已知哭声数据: Baby 全局得分约 0.52
     VOICEPRINT_THRESHOLD = 0.65     # 极致严格门槛 (用户倾向严格)
     VOICEPRINT_GAP = 0.15           # 严格置信度间隔 (原为0.02/0.10)
-    
+
     MIN_VOTES = 3
     MIN_AVG_CONFIDENCE = 0.82      # 拦截中等分数的 2 票误判
     STRONG_MODEL_SCORE = 0.85      # 至少要有一个模型达到强命中
     MIN_STRONG_MODELS = 1
-    
+
     # 目标声纹名 (大小写不敏感)
     TARGET_SPEAKERS = ["baby", "宝宝"]
 
@@ -352,7 +358,7 @@ _cry_cooldown_lock = threading.Lock()
 def load_models():
     global asr_pipeline, sv_pipelines, whisper_model, sensevoice_pipeline
     print("\n====== 🚀 启动 SOTA 融合服务 ======")
-    
+
     load_speaker_db()
 
     # 2. 加载 ASR (FunASR)
@@ -370,7 +376,7 @@ def load_models():
             "sil_to_speech_time_thres": Config.VAD_SIL_TO_SPEECH,
             "speech_to_sil_time_thres": Config.VAD_SPEECH_TO_SIL
         },
-        device=Config.DEVICE, 
+        device=Config.DEVICE,
         disable_update=True
     )
     print("✅ Paraformer模型加载完成，已启用VAD分段和说话人分离功能")
@@ -380,8 +386,8 @@ def load_models():
         print(f"🔍 加载 SV [{name}] : {conf['id']} ...")
         sv_pipelines[name] = pipeline(
             task=Tasks.speaker_verification,
-            model=conf['id'], 
-            model_revision=conf['rev'], 
+            model=conf['id'],
+            model_revision=conf['rev'],
             device=Config.MODELSCOPE_DEVICE
         )
     print(f"✅ 服务就绪 | ASR: SenseVoice | SV: {list(sv_pipelines.keys())}\n")
@@ -422,7 +428,7 @@ def generate_conversation_summary(segments, audio_duration):
     """生成对话智能摘要"""
     if not segments:
         return None
-    
+
     # 统计说话人
     speaker_stats = {}
     for seg in segments:
@@ -432,17 +438,17 @@ def generate_conversation_summary(segments, audio_duration):
         speaker_stats[speaker]['count'] += 1
         speaker_stats[speaker]['total_duration'] += (seg.get('end', 0) - seg.get('start', 0)) / 1000.0
         speaker_stats[speaker]['word_count'] += len(seg.get('text', ''))
-    
+
     # 提取高频词
     stop_words = {'的', '了', '是', '在', '我', '你', '他', '她', '它', '们', '这', '那', '有', '个', '就', '不', '和', '与'}
     all_text = ''.join([seg.get('text', '') for seg in segments])
     words = [all_text[i:i+2] for i in range(len(all_text)-1)]
     word_freq = Counter([w for w in words if w not in stop_words and len(w) == 2])
     top_keywords = [word for word, count in word_freq.most_common(5)]
-    
+
     # 情感统计
     emotion_stats = Counter([seg.get('emotion') for seg in segments if seg.get('emotion')])
-    
+
     return {
         'total_segments': len(segments),
         'total_duration': round(audio_duration, 2),
@@ -491,7 +497,7 @@ def _extract_gemini_response_text(result):
 
 def _post_gemini_request_with_fallback(data, timeout, logger_obj, log_prefix):
     """多 Key 轮询 + 多模型降级 + 429 自动退避
-    
+
     轮询策略：
     1. 从 Key 轮换器获取下一个可用 Key
     2. 遇到 429：标记该 Key 冷却，换下一个 Key 重试
@@ -615,7 +621,7 @@ def call_gemini_api(prompt):
     """调用 Gemini API"""
     if not LLMConfig.USE_GEMINI_LLM:
         return None
-        
+
     try:
         # 检查缓存（LRU: 命中时移到末尾）
         cache_key = hashlib.md5(prompt.encode()).hexdigest()
@@ -624,7 +630,7 @@ def call_gemini_api(prompt):
                 llm_cache.move_to_end(cache_key)  # LRU: 标记为最近使用
                 logger_sys.info(f"  [LLM] 使用缓存响应")
                 return llm_cache[cache_key]
-        
+
         data = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500}
@@ -653,18 +659,18 @@ def call_gemini_audio_api(audio_paths, prompt):
     if not LLMConfig.USE_GEMINI_LLM:
         logger_a.warning("  [BabyCry LLM] LLM 未启用，跳过")
         return None
-        
+
     try:
         logger_a.info(f"  [BabyCry LLM] 开始调用，音频文件数: {len(audio_paths) if isinstance(audio_paths, list) else 1}")
-        
+
         parts_list = [{"text": prompt}]
-        
+
         if isinstance(audio_paths, str):
             audio_paths = [audio_paths]
-            
+
         total_size = 0
         MAX_INLINE_SIZE = 15 * 1024 * 1024 # 防止超出 Gemini Inline Base64 限制 (20MB)
-        
+
         logger_a.info(f"  [BabyCry LLM] 准备上传音频文件...")
         for i, path in enumerate(audio_paths):
             if not os.path.exists(path):
@@ -674,11 +680,11 @@ def call_gemini_audio_api(audio_paths, prompt):
             if total_size + file_size > MAX_INLINE_SIZE:
                 logger_sys.warning(f"  [BabyCry LLM] 上下文音频片段过大，截断。已加载: {total_size/1024/1024:.1f}MB")
                 break
-                
+
             logger_a.info(f"  [BabyCry LLM] 加载文件 {i+1}/{len(audio_paths)}: {os.path.basename(path)} ({file_size/1024:.1f}KB)")
             with open(path, "rb") as f:
                 audio_data = base64.b64encode(f.read()).decode("utf-8")
-                
+
             ext = os.path.splitext(path)[1].lower()
             mime_type = "audio/wav" if ext == ".wav" else "audio/m4a"
             parts_list.append({
@@ -694,7 +700,7 @@ def call_gemini_audio_api(audio_paths, prompt):
         if len(parts_list) == 1:
             logger_a.error(f"  [BabyCry LLM] 没有任何有效音频")
             return None
-            
+
         data = {
             "contents": [{
                 "parts": parts_list
@@ -705,7 +711,7 @@ def call_gemini_audio_api(audio_paths, prompt):
                 "responseModalities": ["TEXT"]
             }
         }
-        
+
         logger_a.info(f"  [BabyCry LLM] 发送请求到 Gemini API...")
         logger_a.debug(f"  [BabyCry LLM] 请求数据: {data}")
 
@@ -721,259 +727,192 @@ def call_gemini_audio_api(audio_paths, prompt):
         logger_a.error(f"  [BabyCry LLM] 异常堆栈: {traceback.format_exc()}")
         return None
 
-def call_volcengine_ai(prompt):
-    """调用火山引擎通用 3.0 文生图 API"""
-    import base64
-    import hashlib
-    import hmac
-    from datetime import datetime
-    
+def call_ernie_image_api(prompt):
+    """调用百度 ERNIE-Image-Turbo 文生图 API (Gradio HuggingFace Space)"""
     try:
-        logger_a.info(f"🎨 [Volcengine] 开始调用火山引擎通用 3.0 插图生成 API")
-        logger_a.info(f"🎨 [Volcengine] Prompt: {prompt[:100]}...")
-        
-        access_key = LLMConfig.VOLCENGINE_ACCESS_KEY
-        secret_key = LLMConfig.VOLCENGINE_SECRET_KEY
-        
-        if not access_key or not secret_key:
-            logger_a.warning("🎨 [Volcengine] API 配置缺失，跳过")
+        from gradio_client import Client
+        logger_a.info(f"🎨 [ERNIE] 开始调用插图生成 API (Space: {LLMConfig.ERNIE_IMAGE_SPACE})")
+        logger_a.info(f"🎨 [ERNIE] Prompt: {prompt[:100]}...")
+
+        # 确保插图目录存在
+        _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+        os.makedirs(_illustration_dir, exist_ok=True)
+
+        # 连接 Gradio Space
+        client = Client(LLMConfig.ERNIE_IMAGE_SPACE)
+
+        # 调用生成图片 API
+        result = client.predict(
+            prompt=prompt,
+            size=LLMConfig.ERNIE_IMAGE_SIZE,
+            seed=-1,
+            use_pe=True,
+            api_name="/generate_image",
+        )
+
+        logger_a.info(f"🎨 [ERNIE] 响应类型: {type(result)}")
+
+        # Gradio 返回的可能是文件路径或文件对象
+        img_path_result = None
+        if isinstance(result, str):
+            img_path_result = result
+        elif isinstance(result, dict):
+            img_path_result = result.get("value") or result.get("path")
+        elif isinstance(result, (list, tuple)):
+            img_path_result = result[0] if result else None
+
+        if not img_path_result:
+            logger_a.error(f"🎨 [ERNIE] 无法解析返回的图片数据")
             return None
-        
-        # 直接使用配置的密钥（火山引擎 Access Key 和 Secret Key 通常不需要额外解码）
-        access_key_decoded = access_key
-        secret_key_decoded = secret_key
-        
-        logger_a.info(f"🎨 [Volcengine] Access Key: {access_key_decoded[:8]}...")
-        logger_a.info(f"🎨 [Volcengine] Secret Key: {secret_key_decoded[:8]}...")
-        
-        # 火山引擎 API 端点
-        host = "visual.volcengineapi.com"
-        service = "cv"
-        region = "cn-north-1"
-        action = "CVSync2AsyncSubmitTask"
-        version = "2022-08-31"
-        
-        # 生成时间戳
-        now = datetime.utcnow()
-        date_str = now.strftime("%Y%m%d")
-        datetime_str = now.strftime("%Y%m%dT%H%M%SZ")
-        
-        # 请求体
-        body_data = {
-            "req_key": "high_aes_general_v30l_zt2i",
-            "prompt": prompt,
-            "seed": -1,
-            "width": 1024,
-            "height": 1024
-        }
-        body = json.dumps(body_data)
-        
-        # 构建签名字符串
-        method = "POST"
-        content_type = "application/json"
-        content_sha256 = hashlib.sha256(body.encode('utf-8')).hexdigest()
-        
-        # Canonical URI
-        canonical_uri = "/"
-        
-        # Canonical Query String
-        canonical_query_string = f"Action={action}&Version={version}"
-        
-        # Canonical Headers
-        canonical_headers = f"content-type:{content_type}\nhost:{host}\nx-date:{datetime_str}"
-        signed_headers = "content-type;host;x-date"
-        
-        # Canonical Request
-        canonical_request = f"{method}\n{canonical_uri}\n{canonical_query_string}\n{canonical_headers}\n\n{signed_headers}\n{content_sha256}"
-        logger_a.info(f"🎨 [Volcengine] Canonical Request: {canonical_request[:200]}...")
-        
-        # String to Sign
-        algorithm = "HMAC-SHA256"
-        credential_scope = f"{date_str}/{region}/{service}/request"
-        string_to_sign = f"{algorithm}\n{datetime_str}\n{credential_scope}\n{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
-        
-        # 计算签名
-        def sign(key, msg):
-            return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
-        
-        # 火山引擎签名：使用 Secret Key 作为初始密钥
-        k_date = sign(secret_key_decoded.encode('utf-8'), date_str)
-        k_region = sign(k_date, region)
-        k_service = sign(k_region, service)
-        k_signing = sign(k_service, "request")
-        signature = hmac.new(k_signing, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
-        
-        # Authorization Header
-        authorization = f"{algorithm} Credential={access_key_decoded}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
-        
-        # 请求 URL
-        url = f"https://{host}?{canonical_query_string}"
-        
-        # 请求头
+
+        # 如果是本地临时文件路径，复制到插图目录
+        if os.path.exists(img_path_result):
+            img_filename = f"{uuid.uuid4().hex[:12]}.jpg"
+            img_path = os.path.join(_illustration_dir, img_filename)
+            import shutil
+            shutil.copy2(img_path_result, img_path)
+            logger_a.info(f"🎨 [ERNIE] 图片已保存到: {img_path} ({os.path.getsize(img_path)} bytes)")
+            return f"/api/illustration/{img_filename}"
+        else:
+            logger_a.error(f"🎨 [ERNIE] 返回的文件路径不存在: {img_path_result}")
+            return None
+
+    except ImportError:
+        logger_a.warning("🎨 [ERNIE] gradio_client 未安装，跳过")
+        return None
+    except Exception as e:
+        logger_a.error(f"🎨 [ERNIE] 发送请求异常：{e}")
+        import traceback
+        logger_a.error(f"🎨 [ERNIE] 异常堆栈：{traceback.format_exc()}")
+        return None
+
+def call_volcengine_ai(prompt):
+    """调用 DeepInfra (FLUX-1-schnell) 文生图 API"""
+    try:
+        logger_a.info(f"🎨 [DeepInfra] 开始调用插图生成 API")
+        logger_a.info(f"🎨 [DeepInfra] Prompt: {prompt[:100]}...")
+
+        api_key = LLMConfig.DEEPINFRA_API_KEY
+        model = LLMConfig.DEEPINFRA_IMAGE_MODEL
+        size = LLMConfig.DEEPINFRA_IMAGE_SIZE
+
+        if not api_key:
+            logger_a.warning("🎨 [DeepInfra] API Key 未配置，跳过")
+            return None
+
+        # 确保插图目录存在
+        _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+        os.makedirs(_illustration_dir, exist_ok=True)
+
+        # 调用 DeepInfra OpenAI 兼容接口
+        url = "https://api.deepinfra.com/v1/openai/images/generations"
         headers = {
-            "Content-Type": content_type,
-            "Host": host,
-            "X-Date": datetime_str,
-            "Authorization": authorization,
-            "X-Content-Sha256": content_sha256
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
         }
-        
-        logger_a.info(f"🎨 [Volcengine] 发送提交任务请求...")
-        response = requests.post(url, headers=headers, data=body, timeout=60)
-        
-        logger_a.info(f"🎨 [Volcengine] HTTP 状态码：{response.status_code}")
-        
+        payload = {
+            "prompt": prompt,
+            "size": size,
+            "model": model,
+            "n": 1
+        }
+
+        logger_a.info(f"🎨 [DeepInfra] 发送请求到 {url} (model: {model})")
+        response = requests.post(url, headers=headers, json=payload, timeout=120)
+
+        logger_a.info(f"🎨 [DeepInfra] HTTP 状态码：{response.status_code}")
+
         if response.status_code != 200:
-            logger_a.error(f"🎨 [Volcengine] 请求失败：{response.status_code}")
-            logger_a.error(f"🎨 [Volcengine] 响应：{response.text[:500]}")
+            logger_a.error(f"🎨 [DeepInfra] 请求失败：{response.status_code}")
+            logger_a.error(f"🎨 [DeepInfra] 响应：{response.text[:500]}")
             return None
-        
+
         try:
             result = response.json()
         except:
-            logger_a.error(f"🎨 [Volcengine] 返回非 JSON 数据：{response.text[:200]}")
+            logger_a.error(f"🎨 [DeepInfra] 返回非 JSON 数据：{response.text[:200]}")
             return None
-        
-        logger_a.info(f"🎨 [Volcengine] 提交响应：{json.dumps(result, ensure_ascii=False)[:200]}...")
-        
-        # 检查提交结果
-        if result.get('code') != 10000:
-            logger_a.error(f"🎨 [Volcengine] 提交失败：{result.get('message')}")
+
+        logger_a.info(f"🎨 [DeepInfra] 响应：{json.dumps(result, ensure_ascii=False)[:200]}...")
+
+        # 解析返回的图片数据（DeepInfra 返回 b64_json 而非 url）
+        data_list = result.get("data", [])
+        if not data_list:
+            logger_a.error(f"🎨 [DeepInfra] 响应中没有图片数据")
             return None
-        
-        task_id = result.get('data', {}).get('task_id')
-        if not task_id:
-            logger_a.error(f"🎨 [Volcengine] 未找到 task_id")
-            return None
-        
-        logger_a.info(f"🎨 [Volcengine] 任务 ID: {task_id}，正在查询结果...")
-        
-        # 查询任务结果
-        query_action = "CVSync2AsyncGetResult"
-        query_body = {
-            "req_key": "high_aes_general_v30l_zt2i",
-            "task_id": task_id,
-            "req_json": json.dumps({"return_url": True})
-        }
-        
-        # 重新计算查询请求的签名
-        query_datetime_str = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        query_body_json = json.dumps(query_body)
-        query_content_sha256 = hashlib.sha256(query_body_json.encode('utf-8')).hexdigest()
-        query_canonical_query_string = f"Action={query_action}&Version={version}"
-        query_canonical_headers = f"content-type:{content_type}\nhost:{host}\nx-date:{query_datetime_str}"
-        query_canonical_request = f"{method}\n{canonical_uri}\n{query_canonical_query_string}\n{query_canonical_headers}\n\n{signed_headers}\n{query_content_sha256}"
-        query_string_to_sign = f"{algorithm}\n{query_datetime_str}\n{credential_scope}\n{hashlib.sha256(query_canonical_request.encode('utf-8')).hexdigest()}"
-        query_signature = hmac.new(k_signing, query_string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
-        query_authorization = f"{algorithm} Credential={access_key_decoded}/{credential_scope}, SignedHeaders={signed_headers}, Signature={query_signature}"
-        
-        query_url = f"https://{host}?{query_canonical_query_string}"
-        query_headers = {
-            "Content-Type": content_type,
-            "Host": host,
-            "X-Date": query_datetime_str,
-            "Authorization": query_authorization,
-            "X-Content-Sha256": query_content_sha256
-        }
-        
-        # 轮询任务状态（最多 60 秒）
-        for attempt in range(12):
-            logger_a.info(f"🎨 [Volcengine] 第 {attempt + 1}/12 次查询...")
-            query_response = requests.post(query_url, headers=query_headers, json=query_body, timeout=30)
-            
-            if query_response.status_code != 200:
-                logger_a.warning(f"🎨 [Volcengine] 查询失败：{query_response.status_code}")
-                import time
-                time.sleep(5)
-                continue
-            
-            try:
-                query_result = query_response.json()
-            except:
-                logger_a.warning(f"🎨 [Volcengine] 查询返回非 JSON")
-                import time
-                time.sleep(5)
-                continue
-            
-            logger_a.info(f"🎨 [Volcengine] 查询响应：{json.dumps(query_result, ensure_ascii=False)[:300]}...")
-            
-            status = query_result.get('data', {}).get('status', '')
-            
-            if status == 'done':
-                logger_a.info(f"🎨 [Volcengine] 任务完成")
-                # 获取图片 URL 或 base64
-                image_urls = query_result.get('data', {}).get('image_urls', [])
-                binary_data = query_result.get('data', {}).get('binary_data_base64', [])
-                
-                # 确保插图目录存在
-                _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
-                os.makedirs(_illustration_dir, exist_ok=True)
-                
-                if image_urls:
-                    logger_a.info(f"🎨 [Volcengine] ✅ 图片生成成功，URL: {image_urls[0][:100]}...")
-                    # 下载图片并保存到本地文件
-                    img_response = requests.get(image_urls[0], timeout=30)
-                    if img_response.status_code == 200:
-                        img_filename = f"{uuid.uuid4().hex[:12]}.jpg"
-                        img_path = os.path.join(_illustration_dir, img_filename)
-                        with open(img_path, 'wb') as f:
-                            f.write(img_response.content)
-                        logger_a.info(f"🎨 [Volcengine] 图片已保存到本地: {img_path} ({len(img_response.content)} bytes)")
-                        return f"/api/illustration/{img_filename}"
-                    else:
-                        logger_a.error(f"🎨 [Volcengine] 下载图片失败：{img_response.status_code}")
-                        return None
-                elif binary_data:
-                    logger_a.info(f"🎨 [Volcengine] ✅ 图片生成成功，base64 长度：{len(binary_data[0])} 字符")
-                    img_data = base64.b64decode(binary_data[0])
-                    img_filename = f"{uuid.uuid4().hex[:12]}.jpg"
-                    img_path = os.path.join(_illustration_dir, img_filename)
-                    with open(img_path, 'wb') as f:
-                        f.write(img_data)
-                    logger_a.info(f"🎨 [Volcengine] 图片已保存到本地: {img_path} ({len(img_data)} bytes)")
-                    return f"/api/illustration/{img_filename}"
-                else:
-                    logger_a.error(f"🎨 [Volcengine] 响应中没有图片数据")
-                    return None
-            elif status in ['in_queue', 'generating']:
-                logger_a.info(f"🎨 [Volcengine] 任务状态：{status}，等待中...")
-                import time
-                time.sleep(5)
+
+        img_data_item = data_list[0]
+        img_url = img_data_item.get("url")
+        b64_json = img_data_item.get("b64_json")
+
+        # 确保插图目录存在
+        _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+        os.makedirs(_illustration_dir, exist_ok=True)
+
+        img_filename = f"{uuid.uuid4().hex[:12]}.jpg"
+        img_path = os.path.join(_illustration_dir, img_filename)
+
+        if b64_json:
+            # 方式 1：直接使用 base64 数据
+            import base64
+            img_bytes = base64.b64decode(b64_json)
+            with open(img_path, 'wb') as f:
+                f.write(img_bytes)
+            logger_a.info(f"🎨 [DeepInfra] 图片已保存到本地 (b64): {img_path} ({len(img_bytes)} bytes)")
+            return f"/api/illustration/{img_filename}"
+        elif img_url:
+            # 方式 2：下载 URL
+            logger_a.info(f"🎨 [DeepInfra] ✅ 图片 URL: {img_url[:100]}...")
+            img_response = requests.get(img_url, timeout=60)
+            if img_response.status_code == 200:
+                with open(img_path, 'wb') as f:
+                    f.write(img_response.content)
+                logger_a.info(f"🎨 [DeepInfra] 图片已保存到本地 (url): {img_path} ({len(img_response.content)} bytes)")
+                return f"/api/illustration/{img_filename}"
             else:
-                logger_a.error(f"🎨 [Volcengine] 未知状态：{status}")
-                import time
-                time.sleep(5)
-        
-        logger_a.error(f"🎨 [Volcengine] 任务超时")
-        return None
-        
+                logger_a.error(f"🎨 [DeepInfra] 下载图片失败：{img_response.status_code}")
+                return None
+        else:
+            logger_a.error(f"🎨 [DeepInfra] 响应中既没有 URL 也没有 b64_json")
+            return None
+
     except Exception as e:
-        logger_a.error(f"🎨 [Volcengine] 发送请求异常：{e}")
+        logger_a.error(f"🎨 [DeepInfra] 发送请求异常：{e}")
         import traceback
-        logger_a.error(f"🎨 [Volcengine] 异常堆栈：{traceback.format_exc()}")
+        logger_a.error(f"🎨 [DeepInfra] 异常堆栈：{traceback.format_exc()}")
         return None
 
 def call_gemini_image_api(prompt):
-    """调用火山引擎通用 3.0 文生图 API"""
+    """调用文生图 API (首选百度 ERNIE，备选 DeepInfra)"""
     if not LLMConfig.USE_GEMINI_LLM:
         logger_a.warning("🎨 [插图生成] LLM 未启用，跳过")
         return None
-        
+
     try:
         logger_a.info(f"🎨 [插图生成] 开始生成插图")
         logger_a.info(f"🎨 [插图生成] Prompt 长度：{len(prompt)} 字符")
-        
-        # 使用火山引擎通用 3.0
-        logger_a.info(f"🎨 [插图生成] 使用火山引擎通用 3.0 文生图...")
-        image_data = call_volcengine_ai(prompt)
-        
+
+        # 首选：百度 ERNIE-Image-Turbo
+        logger_a.info(f"🎨 [插图生成] 尝试使用百度 ERNIE-Image-Turbo...")
+        image_data = call_ernie_image_api(prompt)
+
         if image_data:
-            logger_a.info(f"🎨 [插图生成] ✅ 火山引擎成功!")
+            logger_a.info(f"🎨 [插图生成] ✅ ERNIE 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] ERNIE 失败，回退到 DeepInfra...")
+
+        # 备选：DeepInfra
+        logger_a.info(f"🎨 [插图生成] 使用 DeepInfra (FLUX-1-schnell) 文生图...")
+        image_data = call_volcengine_ai(prompt)
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ DeepInfra 成功!")
             return image_data
         else:
-            logger_a.warning(f"🎨 [插图生成] 火山引擎失败，返回 None")
+            logger_a.warning(f"🎨 [插图生成] DeepInfra 也失败了，返回 None")
             return None
-        
+
     except Exception as e:
         logger_a.error(f"🎨 [插图生成] 发送请求异常：{e}")
         import traceback
@@ -987,18 +926,18 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
     if not os.path.exists(audio_path):
         logger_a.warning(f"👶 [BabyCry] 音频文件不存在: {audio_path}")
         return None, None, None
-        
+
     logger_a.info(f"👶 [BabyCry] 开始收集上下文音频并发送分析... ({start_time}ms - {end_time}ms)")
-    
+
     # 搜集前后 5 分钟 (300秒) 的同目录相关录音
     audio_paths_to_send = []
-    
+
     from db_manager import parse_recording_time
     record_dt = parse_recording_time(filename)
-    
+
     # 主文件（哭声文件）
     audio_paths_to_send.append(audio_path)
-    
+
     if record_dt:
         date_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR, record_dt.strftime("%Y-%m-%d"))
         if os.path.exists(date_dir):
@@ -1012,25 +951,25 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
                         # 前后5分钟（300秒）
                         if -300 <= time_diff <= 300:
                             candidates.append((time_diff, f_path))
-            
+
             # 按时间排序：先前的文件 → 主文件 → 后来的文件
             candidates.sort(key=lambda x: x[0])
             for time_diff, f_path in candidates:
                 if f_path not in audio_paths_to_send and os.path.exists(f_path):
                     audio_paths_to_send.append(f_path)
-            
+
             logger_a.info(f"👶 [BabyCry] 在 {date_dir} 中找到 {len(candidates)} 个上下文文件")
 
     context_len = len(audio_paths_to_send) - 1
     logger_a.info(f"👶 [BabyCry] 收集完毕，共附带 {context_len} 个相邻时段记录作为多模态上下文 (总计 {len(audio_paths_to_send)} 个文件)")
-    
+
     prompt = "以下是多段连续的录音（时间顺序排列），其中包含了两岁半宝宝的哭泣声（位于中间的某段）。请结合完整的上下文音频（前后高达5分钟的情境），综合推理宝宝在这段时间哭泣的真正原因（如困倦Sleepy、饥饿Hungry、情绪发泄Frustration、疼痛Pain、要求未被满足等），并给出针对此时情境的安抚建议。请严格按如下JSON格式返回：{\"category\": \"核心原因简短分类(如：困倦/饥饿/疼痛/情绪等)\", \"reason\": \"结合上下文的深度分析原因\", \"advice\": \"针对此时情境的安抚建议\"}"
     response_text = call_gemini_audio_api(audio_paths_to_send, prompt)
 
     if not response_text:
         logger_a.warning(f"👶 [BabyCry] Gemini Audio API 返回空结果")
         return None, None, None
-        
+
     try:
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if json_match:
@@ -1039,19 +978,19 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
             reason = result.get("reason", "未知")
             advice = result.get("advice", "无")
             from db_manager import save_cry_analysis, update_cry_analysis
-            
+
             # 转换 absolute path 为相对于 SOURCE_DIR 的路径，以便前端使用
             rel_audio_path = audio_path
             if audio_path.startswith(FileMonitorConfig.SOURCE_DIR):
                 rel_audio_path = "/" + os.path.relpath(audio_path, FileMonitorConfig.SOURCE_DIR)
-            
+
             if placeholder_id:
                 update_cry_analysis(placeholder_id, reason, advice,
                                   reason_category=category, event_files=audio_paths_to_send,
                                   confidence=cry_conf, details=cry_det)
             else:
-                save_cry_analysis(filename, start_time/1000.0, end_time/1000.0, reason, advice, 
-                                  reason_category=category, event_files=audio_paths_to_send, 
+                save_cry_analysis(filename, start_time/1000.0, end_time/1000.0, reason, advice,
+                                  reason_category=category, event_files=audio_paths_to_send,
                                   audio_path=rel_audio_path)
             logger_a.info(f"👶 [宝宝哭声深度分析] 分类: {category}, 原因: {reason[:50]}..., 路径: {rel_audio_path}")
             return reason, advice, category
@@ -1064,7 +1003,7 @@ def extract_conversation_topics(full_text, segments):
     try:
         speakers = list(set([seg.get('spk', 'Unknown') for seg in segments]))
         speaker_text = ', '.join(speakers[:3])
-        
+
         prompt = f"""分析以下对话内容，提取关键信息：
 
 对话内容：
@@ -1079,11 +1018,11 @@ def extract_conversation_topics(full_text, segments):
   "sentiment": "positive/neutral/negative",
   "summary": "一句话总结"
 }}"""
-        
+
         response_text = call_gemini_api(prompt)
         if not response_text:
             return None
-        
+
         # 解析 JSON
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if json_match:
@@ -1096,7 +1035,7 @@ def extract_conversation_topics(full_text, segments):
 def add_to_llm_queue(filename, full_text, segments):
     """添加到 LLM 批量处理队列"""
     global llm_last_batch_time, llm_batch_queue
-    
+
     with llm_batch_lock:
         # 防止队列无限增长，超过上限时丢弃最旧的条目
         LLM_QUEUE_MAX_SIZE = LLMConfig.LLM_BATCH_SIZE * 5
@@ -1104,18 +1043,18 @@ def add_to_llm_queue(filename, full_text, segments):
             dropped_count = len(llm_batch_queue) - LLM_QUEUE_MAX_SIZE + 1
             del llm_batch_queue[:dropped_count]
             logger_b.warning(f"  [LLM队列] 队列已满({LLM_QUEUE_MAX_SIZE})，丢弃 {dropped_count} 条旧记录")
-        
+
         llm_batch_queue.append({
             'filename': filename,
             'full_text': full_text,
             'segments': segments
         })
-        
+
         queue_size = len(llm_batch_queue)
         time_since_last = time.time() - llm_last_batch_time
-        
+
         logger_b.info(f"  [LLM队列] 已添加，当前队列: {queue_size}/{LLM_QUEUE_MAX_SIZE}")
-        
+
         # 触发批量处理
         if queue_size >= LLMConfig.LLM_BATCH_SIZE or time_since_last >= LLMConfig.LLM_BATCH_TIMEOUT:
             logger_b.info(f"  [LLM队列] 触发批量处理 (队列={queue_size}, 超时={time_since_last:.0f}s)")
@@ -1124,22 +1063,22 @@ def add_to_llm_queue(filename, full_text, segments):
 def process_llm_batch():
     """批量处理 LLM 任务"""
     global llm_last_batch_time
-    
+
     if not LLMConfig.USE_GEMINI_LLM:
         with llm_batch_lock:
             llm_batch_queue.clear()
         return
-        
+
     with llm_batch_lock:
         if not llm_batch_queue:
             return
-        
+
         batch = llm_batch_queue.copy()
         llm_batch_queue.clear()
         llm_last_batch_time = time.time()
-    
+
     logger_b.info(f"  [LLM批处理] 开始处理 {len(batch)} 条记录")
-    
+
     for item in batch:
         try:
             topics = extract_conversation_topics(item['full_text'], item['segments'])
@@ -1148,7 +1087,7 @@ def process_llm_batch():
                 logger_b.info(f"  [LLM] {item['filename']}: 主题={topics.get('topics', [])}")
         except Exception as e:
             logger_b.error(f"  [LLM] 处理失败 {item['filename']}: {e}")
-    
+
     logger_b.info(f"  [LLM批处理] 完成")
 
 # =================【 未完成哭声分析自动重试 】=================
@@ -1157,22 +1096,22 @@ RETRY_INCOMPLETE_MAX_AGE = 86400  # 只重试24小时内的未完成事件（避
 
 def retry_incomplete_cry_analyses():
     """定时扫描并重试未完成的哭声深度分析
-    
+
     场景：检测到哭声后走 Gemini 分析但失败了（网络超时/API限额等），
     数据库中 category 仍为 analyzing/未分类/未知，需要自动重试。
     """
     try:
         from db_manager import get_incomplete_cry_events, update_cry_analysis
-        
+
         events = get_incomplete_cry_events()
         if not events:
             logger_a.debug("[重试] 无未完成的哭声分析")
             return
-        
+
         current_time = time.time()
         retried = 0
         skipped = 0
-        
+
         for event in events:
             event_id = event.get('id')
             filename = event.get('filename', '')
@@ -1180,9 +1119,9 @@ def retry_incomplete_cry_analyses():
             audio_path = event.get('audio_path', '')
             event_files = event.get('event_files', [])
             recording_time = event.get('recording_time', '')
-            
+
             # 不过滤时间，重试所有未完成事件
-            
+
             # 确定音频文件路径
             # 优先用 event_files（多文件上下文），其次用 audio_path（单文件）
             valid_paths = []
@@ -1192,25 +1131,25 @@ def retry_incomplete_cry_analyses():
                     abs_p = p if os.path.isabs(p) else os.path.join(FileMonitorConfig.SOURCE_DIR, p.lstrip('/'))
                     if os.path.exists(abs_p):
                         valid_paths.append(abs_p)
-            
+
             # 单文件兜底
             if not valid_paths and audio_path:
                 abs_audio = audio_path if os.path.isabs(audio_path) else os.path.join(FileMonitorConfig.SOURCE_DIR, audio_path.lstrip('/'))
                 if os.path.exists(abs_audio):
                     valid_paths = [abs_audio]
-            
+
             if not valid_paths:
                 logger_a.debug(f"[重试] ID={event_id} 音频文件均不存在，跳过")
                 skipped += 1
                 continue
-            
+
             # A轨正在运行时跳过（避免并发API调用冲突）
             if _history_reprocess_running:
                 logger_a.info("[重试] A轨任务运行中，跳过本轮重试")
                 break
-            
+
             logger_a.info(f"🔄 [重试] 重新分析 ID={event_id}, category={category}, 文件数={len(valid_paths)}")
-            
+
             try:
                 # 复用 Gemini 分析逻辑
                 if len(valid_paths) >= 1:
@@ -1222,7 +1161,7 @@ def retry_incomplete_cry_analyses():
                         "请严格按如下JSON格式返回：{\"category\": \"核心原因简短分类(如：困倦/饥饿/疼痛/情绪等)\", \"reason\": \"结合上下文的深度分析原因\", \"advice\": \"针对此时情境的安抚建议\"}"
                     )
                     response_text = call_gemini_audio_api(valid_paths, prompt)
-                    
+
                     if response_text:
                         import re as _re, json as _json
                         cleaned = response_text.strip()
@@ -1233,7 +1172,7 @@ def retry_incomplete_cry_analyses():
                         if cleaned.endswith('```'):
                             cleaned = cleaned[:-3]
                         cleaned = cleaned.strip()
-                        
+
                         parse_ok = False
                         result = {}
                         try:
@@ -1247,12 +1186,12 @@ def retry_incomplete_cry_analyses():
                                     parse_ok = True
                                 except Exception:
                                     pass
-                        
+
                         if parse_ok:
                             new_category = result.get("category", "未知")
                             new_reason = result.get("reason", "未知")
                             new_advice = result.get("advice", "无")
-                            
+
                             update_cry_analysis(
                                 event_id, new_reason, new_advice,
                                 reason_category=new_category,
@@ -1266,16 +1205,16 @@ def retry_incomplete_cry_analyses():
                             logger_a.warning(f"🔄 [重试] ID={event_id} Gemini返回解析失败")
                     else:
                         logger_a.warning(f"🔄 [重试] ID={event_id} Gemini返回空结果")
-                
+
                 # 事件间延迟，避免API限流
                 time.sleep(5)
-                
+
             except Exception as e:
                 logger_a.error(f"🔄 [重试] ID={event_id} 重试异常: {e}")
-        
+
         if retried > 0 or skipped > 0:
             logger_a.info(f"🔄 [重试] 本轮完成: 成功{retried}条, 跳过{skipped}条, 总计{len(events)}条")
-            
+
     except Exception as e:
         logger_a.error(f"🔄 [重试] 自动重试异常: {e}")
     finally:
@@ -1290,18 +1229,18 @@ def cleanup_temp_dir():
     cleanup_dirs = {
         Config.TEMP_DIR: 3600,            # temp/ - 1小时
         "temp_cry": 7200,                  # temp_cry/ - 2小时（延迟分析可能需要更久）
-        "illustrations": 86400,            # illustrations/ - 24小时
+        # illustrations/ 已从清理列表中移除 - 插图是永久文件，不应被清理
         Config.LONG_SENTENCES_DIR: 604800,  # long_sentences/ - 7天
     }
-    
+
     try:
         current_time = time.time()
         total_cleaned = 0
-        
+
         for dir_name, max_age in cleanup_dirs.items():
             if not os.path.exists(dir_name):
                 continue
-            
+
             cleaned_count = 0
             try:
                 for filename in os.listdir(dir_name):
@@ -1323,14 +1262,14 @@ def cleanup_temp_dir():
                         logger_sys.warning(f"清理文件失败 {dir_name}/{filename}: {e}")
             except Exception as e:
                 logger_sys.warning(f"扫描目录失败 {dir_name}: {e}")
-            
+
             if cleaned_count > 0:
                 logger_sys.info(f"临时文件清理完成 [{dir_name}]，删除了 {cleaned_count} 个文件")
                 total_cleaned += cleaned_count
-        
+
         if total_cleaned > 0:
             logger_sys.info(f"本轮临时文件清理总计: {total_cleaned} 个文件/目录")
-        
+
         # 每小时执行一次
         threading.Timer(3600, cleanup_temp_dir).start()
     except Exception as e:
@@ -1345,7 +1284,7 @@ def load_speaker_db():
             try:
                 with open(Config.SPEAKER_DB_FILE, 'r', encoding='utf-8') as f:
                     loaded_db = json.load(f)
-                
+
                 # 兼容旧数据结构
                 converted_db = {}
                 for name, data in loaded_db.items():
@@ -1359,7 +1298,7 @@ def load_speaker_db():
                             "samples": [],  # 旧数据结构没有样本信息
                             "avg_embeddings": data  # 旧数据结构直接是嵌入字典
                         }
-                
+
                 speaker_db = converted_db
                 logger_sys.info(f"📚 声纹库已挂载: {len(speaker_db)} 人")
             except Exception as e:
@@ -1378,7 +1317,7 @@ def preprocess_audio(input_path, output_path):
             input_path = denoised_path
         else:
             logger_b.warning("高级降噪处理失败，使用原始音频")
-    
+
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
     filters = ["loudnorm=I=-14:TP=-1.5:LRA=11"] if Config.NORMALIZE_AUDIO else []
     if filters: cmd.extend(["-af", ",".join(filters)])
@@ -1401,50 +1340,50 @@ def advanced_denoise(input_path, output_path):
     try:
         # 加载音频
         waveform, sample_rate = torchaudio.load(input_path)
-        
+
         # 如果采样率不是16kHz，先进行重采样
         if sample_rate != 16000:
             resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)
             waveform = resampler(waveform)
             sample_rate = 16000
-        
+
         # 转换为单声道
         if waveform.shape[0] > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
-        
+
         # 简化的谱减法降噪
         # 这里我们使用一个简化的实现，实际应用中可以使用更复杂的算法
         audio_np = waveform.numpy()[0]
-        
+
         # 计算短时傅里叶变换
         from scipy import signal
         frequencies, times, Zxx = signal.stft(audio_np, fs=sample_rate, nperseg=512)
-        
+
         # 估计噪声谱（假设前100ms为噪声）
         noise_seg_len = min(int(0.1 * sample_rate), len(audio_np))
         noise_segment = audio_np[:noise_seg_len]
         _, _, noise_stft = signal.stft(noise_segment, fs=sample_rate, nperseg=512)
         noise_spectrum = np.mean(np.abs(noise_stft), axis=1)
-        
+
         # 应用谱减法
         magnitude = np.abs(Zxx)
         phase = np.angle(Zxx)
-        
+
         # 减去噪声谱的估计值
         noise_factor = 1.5
         magnitude_denoised = np.maximum(magnitude - noise_factor * noise_spectrum[:, np.newaxis], 0)
-        
+
         # 重构信号
         Zxx_denoised = magnitude_denoised * np.exp(1j * phase)
         _, audio_denoised = signal.istft(Zxx_denoised, fs=sample_rate)
-        
+
         # 裁剪到原始长度
         audio_denoised = audio_denoised[:len(audio_np)]
-        
+
         # 保存降噪后的音频
         waveform_denoised = torch.tensor(audio_denoised).unsqueeze(0)
         torchaudio.save(output_path, waveform_denoised, sample_rate)
-        
+
         return True
     except Exception as e:
         logger_sys.error(f"高级降噪处理失败: {e}")
@@ -1466,16 +1405,16 @@ def extract_segment(source_path, start_ms, end_ms, output_path):
 def transcribe_with_whisper(audio_path):
     """
     使用Whisper识别音频片段（作为FunASR的对比参考）
-    
+
     Args:
         audio_path: 音频片段路径
-        
+
     Returns:
         str: Whisper识别的文本，如果失败返回None
     """
     if not Config.ENABLE_WHISPER_COMPARISON or whisper_model is None:
         return None
-    
+
     try:
         result = whisper_model.transcribe(
             audio_path,
@@ -1494,38 +1433,38 @@ def transcribe_with_whisper(audio_path):
 def transcribe_with_sensevoice(audio_path):
     """
     使用SenseVoice识别音频并检测情感
-    
+
     Returns:
         tuple: (text, emotion) - 识别文本和情感
     """
     if not Config.ENABLE_SENSEVOICE or sensevoice_pipeline is None:
         return None, None  # 未识别到情感返回None
-    
+
     try:
         result = sensevoice_pipeline.generate(
             input=audio_path,
             language="auto",
             use_itn=True
         )
-        
+
         if not result or len(result) == 0:
             return None, None  # 未识别到情感返回None
-        
+
         raw_text = result[0].get("text", "")
-        
+
         # 提取情感
         emotion = None  # 未识别到情感时为None,不使用neutral
         for tag, emo_code in EMOTION_TAGS.items():
             if tag.lower() in raw_text.lower():
                 emotion = emo_code
                 break
-        
+
         # 移除情感标签
         clean_text = re.sub(r'<\|.*?\|>', '', raw_text).strip()
-        
+
         logger_b.info(f"      [SenseVoice] {clean_text} (情感: {emotion})")
         return clean_text, emotion
-        
+
     except Exception as e:
         logger_b.warning(f"      [SenseVoice] 识别失败: {e}")
         return None, None  # 未识别到情感返回None
@@ -1534,40 +1473,40 @@ def detect_emotion_for_segment(audio_path):
     """使用SenseVoice检测音频段的情感"""
     if not Config.ENABLE_EMOTION_DETECTION or emotion_pipeline is None:
         return "neutral"
-    
+
     try:
         result = emotion_pipeline(
             audio_in=audio_path,
             language="auto",
             use_itn=True
         )
-        
+
         if not result or len(result) == 0:
             return "neutral"
-        
+
         raw_text = result[0].get("text", "")
         logger_b.info(f"      [SenseVoice情感] 原始输出: {raw_text}")
-        
+
         # 提取情感标签
         emotion = None  # 未识别到情感时为None,不使用neutral
         raw_text_lower = raw_text.lower()
-        
+
         EMOTION_MAP = {
             '<|happy|>': 'happy',
-            '<|sad|>': 'sad', 
+            '<|sad|>': 'sad',
             '<|angry|>': 'angry',
             '<|neutral|>': 'neutral',
             '<|fearful|>': 'fearful',
             '<|disgusted|>': 'disgusted',
             '<|surprised|>': 'surprised'
         }
-        
+
         for tag, emo in EMOTION_MAP.items():
             if tag in raw_text_lower:
                 emotion = emo
                 logger_b.info(f"      [SenseVoice情感] 检测到情感: {emotion}")
                 break
-        
+
         return emotion
     except Exception as e:
         logger_sys.warning(f"      [SenseVoice情感] 检测失败: {e}")
@@ -1582,7 +1521,7 @@ def extract_embedding_from_file(sv_pipe, wav_path):
         if sr != 16000:
             resample = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
             audio = resample(audio)
-        
+
         audio = audio.mean(dim=0, keepdim=True) # [C, T] -> [1, T]
 
         with torch.no_grad():
@@ -1600,7 +1539,7 @@ def extract_embedding_from_file(sv_pipe, wav_path):
 # =================== 多模型交叉验证 ===================
 def identify_speaker_fusion(segment_path):
     """【轨道B: 语音识别专用】声纹融合识别 - 标准参数，不受哭声检测影响"""
-    if not speaker_db: 
+    if not speaker_db:
         logger_sys.info("🤷‍♂️ 声纹数据库为空，无法进行识别")
         return None, 0.0, []
 
@@ -1636,9 +1575,9 @@ def identify_speaker_fusion(segment_path):
 
         for name, speaker_data in speaker_db.items():
             # 使用平均嵌入进行比较
-            if "avg_embeddings" not in speaker_data or model_name not in speaker_data["avg_embeddings"]: 
+            if "avg_embeddings" not in speaker_data or model_name not in speaker_data["avg_embeddings"]:
                 continue
-            
+
             # 【轨道B】语音识别模式：不跳过 Baby，所有说话人都参与比对
 
             emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
@@ -1655,7 +1594,7 @@ def identify_speaker_fusion(segment_path):
         top1_name, top1_score = scores[0]
         top2_name, top2_score = scores[1] if len(scores) > 1 else (None, 0.0)
         score_gap = top1_score - top2_score
-        
+
         logger_sys.debug(f"  {model_name}: {top1_name}={top1_score:.3f} (gap={score_gap:.3f})")
 
         # 【轨道B】使用标准阈值，不做任何哭声补偿
@@ -1668,7 +1607,7 @@ def identify_speaker_fusion(segment_path):
 
     # DEBUG: 投票结果
     logger_b.debug(f"  投票: {model_votes}")
-    
+
     # 2/3投票逻辑
     votes = [v for v in model_votes.values() if v not in ["Unknown", "Failed", "NoDB"]]
     if not votes:
@@ -1679,16 +1618,16 @@ def identify_speaker_fusion(segment_path):
     vote_counts = Counter(votes)
     most_common_vote = vote_counts.most_common(1)[0]
     winner, count = most_common_vote
-    
+
     # 【轨道B】标准 2/3 投票，不做任何哭声特许
     if count >= 2:
         # 计算获胜者的平均置信度
         winning_scores = [model_scores[model] for model, vote in model_votes.items() if vote == winner]
         avg_confidence = np.mean(winning_scores)
-        
+
         # 识别成功（由上层记录）
         logger_b.debug(f"  识别: {winner} (置信度={avg_confidence:.3f}, 票数={count})")
-        
+
         # 生成详细信息
         recognition_details = []
         for model_name, result in model_votes.items():
@@ -1697,7 +1636,7 @@ def identify_speaker_fusion(segment_path):
             else:
                 recognition_details.append(f"模型 {model_name}: 识别为 {result} (相似度: {model_scores.get(model_name, 0):.6f})")
         recognition_details.append(f"最终识别结果: {winner} (多数票: {count} 票, 平均置信度: {avg_confidence:.3f})")
-        
+
         return winner, avg_confidence, recognition_details
     else:
         # 生成识别失败的详细信息
@@ -1705,31 +1644,37 @@ def identify_speaker_fusion(segment_path):
         for model_name, result in model_votes.items():
             recognition_details.append(f"模型 {model_name}: {result} (相似度: {model_scores.get(model_name, 0):.6f})")
         recognition_details.append("最终识别结果: 识别失败，没有候选人获得足够票数 (多数票 ≥ 2)")
-        
+
         # 识别失败（由上层记录）
         logger_b.debug(f"  未识别: 票数不足 ({winner}={count}<2)")
         return None, 0.0, []
 
-def detect_cry_from_full_audio(audio_path):
+def detect_cry_from_full_audio(audio_path, source_filename=None):
     """
     【轨道A: 独立哭声检测】
     直接对 60s 原始音频进行声纹匹配，使用 CryDetectionConfig 参数。
     与 identify_speaker_fusion (轨道B) 完全独立，互不影响。
-    
+
     Returns:
         (is_cry: bool, confidence: float, details: list[str])
     """
     if not CryDetectionConfig.ENABLED or not speaker_db:
+        logger_b.info("🔍 [哭声检测] 跳过 (功能未启用或声纹库为空)")
         return False, 0.0, []
-    
-    logger_b.info(f"🔍 [轨道A: 哭声检测] 开始对完整音轨进行独立声纹分析...")
-    logger_b.info(
-        f"   参数: threshold={CryDetectionConfig.VOICEPRINT_THRESHOLD}, "
-        f"gap={CryDetectionConfig.VOICEPRINT_GAP}, min_votes={CryDetectionConfig.MIN_VOTES}, "
-        f"min_avg_conf={CryDetectionConfig.MIN_AVG_CONFIDENCE}, strong_score={CryDetectionConfig.STRONG_MODEL_SCORE}, "
-        f"min_strong_models={CryDetectionConfig.MIN_STRONG_MODELS}"
-    )
-    
+
+    _cry_detect_start = time.time()
+    _display_name = source_filename or os.path.basename(audio_path)
+    logger_b.info(f"🔍 [哭声检测] ═══════════════════════════════════════")
+    logger_b.info(f"🔍 [哭声检测] 开始对完整音轨进行独立声纹分析")
+    logger_b.info(f"   📄 文件: {_display_name}")
+    logger_b.info(f"   🎯 目标声纹: {CryDetectionConfig.TARGET_SPEAKERS}")
+    logger_b.info(f"   ⚙️ 参数: 阈值={CryDetectionConfig.VOICEPRINT_THRESHOLD}, "
+        f"间隔={CryDetectionConfig.VOICEPRINT_GAP}, 最少票数={CryDetectionConfig.MIN_VOTES}, "
+        f"最低均值置信度={CryDetectionConfig.MIN_AVG_CONFIDENCE}, "
+        f"强命中分={CryDetectionConfig.STRONG_MODEL_SCORE}, "
+        f"最少强命中数={CryDetectionConfig.MIN_STRONG_MODELS}")
+    logger_b.info(f"   🔧 模型数: {len(sv_pipelines)} ({', '.join(sv_pipelines.keys())})")
+
     target_speakers = CryDetectionConfig.TARGET_SPEAKERS
     cry_threshold = CryDetectionConfig.VOICEPRINT_THRESHOLD
     cry_gap = CryDetectionConfig.VOICEPRINT_GAP
@@ -1737,26 +1682,30 @@ def detect_cry_from_full_audio(audio_path):
     min_avg_conf = CryDetectionConfig.MIN_AVG_CONFIDENCE
     strong_model_score = CryDetectionConfig.STRONG_MODEL_SCORE
     min_strong_models = CryDetectionConfig.MIN_STRONG_MODELS
-    
+
     model_results = {}  # {model_name: (top_target_name, top_target_score, gap_to_others)}
     all_details = []
-    
+
     # 并行提取所有模型的 embedding（串行约4.5s → 并行约1.5s）
     embeddings = {}
-    
+
     def _extract_emb(model_name, sv_pipe):
         emb = extract_embedding_from_file(sv_pipe, audio_path)
         return model_name, emb
-    
+
     with ThreadPoolExecutor(max_workers=len(sv_pipelines)) as executor:
         futures = {executor.submit(_extract_emb, mn, sp): mn for mn, sp in sv_pipelines.items()}
         for future in as_completed(futures):
             model_name, emb_a = future.result()
             if emb_a is None:
                 all_details.append(f"  {model_name}: 特征提取失败")
+                logger_b.warning(f"   ⚠️ {model_name}: 声纹特征提取失败")
             else:
                 embeddings[model_name] = emb_a
-    
+
+    _emb_elapsed = time.time() - _cry_detect_start
+    logger_b.info(f"   🧬 声纹特征提取完成: 成功={len(embeddings)}/{len(sv_pipelines)}, 耗时={_emb_elapsed:.2f}s")
+
     # 逐模型打分（embedding 已并行提取完毕）
     for model_name, emb_a in embeddings.items():
         # 对所有已注册说话人打分（排除语音识别专用的说话人）
@@ -1770,21 +1719,21 @@ def detect_cry_from_full_audio(audio_path):
             emb_b = np.array(speaker_data["avg_embeddings"][model_name]).flatten()
             score = 1 - cosine(emb_a.flatten(), emb_b)
             all_scores.append((name, score))
-        
+
         if not all_scores:
             all_details.append(f"  {model_name}: 无可比对数据")
             continue
-        
+
         all_scores.sort(key=lambda x: x[1], reverse=True)
-        
+
         # 找出目标说话人 (Baby/宝宝) 的最高分
         target_hits = [(n, s) for n, s in all_scores if n.lower() in target_speakers]
         non_target_scores = [(n, s) for n, s in all_scores if n.lower() not in target_speakers]
-        
+
         # 日志：输出所有说话人得分供调试
         scores_str = ", ".join([f"{n}={s:.3f}" for n, s in all_scores])
         logger_b.info(f"   {model_name}: [{scores_str}]")
-        
+
         if target_hits:
             best_target_name, best_target_score = target_hits[0]
             best_other_name, best_other_score = non_target_scores[0] if non_target_scores else ("无", 0.0)
@@ -1795,18 +1744,31 @@ def detect_cry_from_full_audio(audio_path):
                 f"other={best_other_name}={best_other_score:.3f}, gap={gap:.3f}"
             )
 
-            passed = best_target_score >= cry_threshold and gap >= cry_gap
+            passed_threshold = best_target_score >= cry_threshold
+            passed_gap = gap >= cry_gap
+            passed = passed_threshold and passed_gap
             status = "✅ PASS" if passed else "❌ FAIL"
+
+            # 详细输出判定过程
+            fail_reasons = []
+            if not passed_threshold:
+                fail_reasons.append(f"分数{best_target_score:.3f}<阈值{cry_threshold}")
+            if not passed_gap:
+                fail_reasons.append(f"间隔{gap:.3f}<要求{cry_gap}")
+            fail_info = f" 原因: {', '.join(fail_reasons)}" if fail_reasons else ""
+            logger_b.info(f"   {status} {model_name}: {best_target_name}={best_target_score:.3f} vs {best_other_name}={best_other_score:.3f} (gap={gap:.3f}){fail_info}")
+
             all_details.append(
                 f"  {model_name}: {best_target_name}={best_target_score:.3f}, "
                 f"other={best_other_name}={best_other_score:.3f} (gap={gap:.3f}) {status}"
             )
-            
+
             if passed:
                 model_results[model_name] = (best_target_name, best_target_score, gap)
         else:
             all_details.append(f"  {model_name}: 未找到目标说话人")
-    
+            logger_b.info(f"   ⚪ {model_name}: 未找到目标说话人 ({', '.join(target_speakers)})")
+
     # 投票判定
     vote_count = len(model_results)
     passed_scores = [v[1] for v in model_results.values()]
@@ -1814,33 +1776,52 @@ def detect_cry_from_full_audio(audio_path):
     strong_model_count = sum(1 for score in passed_scores if score >= strong_model_score)
     winner_name = list(model_results.values())[0][0] if model_results else None
 
+    _cry_detect_elapsed = time.time() - _cry_detect_start
+
+    # 输出投票汇总
+    logger_b.info(f"   ───── 投票汇总 ─────")
+    logger_b.info(f"   📊 通过模型: {vote_count}/{len(sv_pipelines)} (需≥{min_votes})")
+    if passed_scores:
+        scores_detail = ", ".join([f"{m}={v[1]:.3f}" for m, v in model_results.items()])
+        logger_b.info(f"   📊 通过分数: [{scores_detail}]")
+        logger_b.info(f"   📊 平均置信度: {avg_conf:.3f} (需≥{min_avg_conf})")
+        logger_b.info(f"   📊 强命中模型(≥{strong_model_score}): {strong_model_count} (需≥{min_strong_models})")
+    else:
+        logger_b.info(f"   📊 无模型通过阈值检查")
+
     if vote_count < min_votes:
-        logger_sys.info(f"   ℹ️ [轨道A 结论] 未检出哭声 (命中模型数={vote_count} < 所需={min_votes})")
+        logger_b.info(f"   ❄️ [哭声检测 结论] 未检出哭声 — 票数不足 ({vote_count}<{min_votes}), 耗时={_cry_detect_elapsed:.2f}s")
+        logger_b.info(f"🔍 [哭声检测] ═══════════════════════════════════════")
         all_details.append(f"结论: 未检出哭声 (票数不足: {vote_count}<{min_votes})")
         return False, 0.0, all_details
 
     if avg_conf < min_avg_conf:
-        logger_sys.info(
-            f"   ℹ️ [轨道A 结论] 未检出哭声 (平均置信度不足: {avg_conf:.3f} < {min_avg_conf:.3f})"
+        logger_b.info(
+            f"   ❄️ [哭声检测 结论] 未检出哭声 — 平均置信度不足 ({avg_conf:.3f}<{min_avg_conf}), "
+            f"票数={vote_count}, 耗时={_cry_detect_elapsed:.2f}s"
         )
+        logger_b.info(f"🔍 [哭声检测] ═══════════════════════════════════════")
         all_details.append(
             f"结论: 未检出哭声 (平均置信度不足: {avg_conf:.3f}<{min_avg_conf:.3f}, 票数={vote_count})"
         )
         return False, 0.0, all_details
 
     if strong_model_count < min_strong_models:
-        logger_sys.info(
-            f"   ℹ️ [轨道A 结论] 未检出哭声 (强命中模型不足: {strong_model_count} < {min_strong_models})"
+        logger_b.info(
+            f"   ❄️ [哭声检测 结论] 未检出哭声 — 强命中模型不足 ({strong_model_count}<{min_strong_models}), "
+            f"平均置信度={avg_conf:.3f}, 耗时={_cry_detect_elapsed:.2f}s"
         )
+        logger_b.info(f"🔍 [哭声检测] ═══════════════════════════════════════")
         all_details.append(
             f"结论: 未检出哭声 (强命中模型不足: {strong_model_count}<{min_strong_models}, 平均置信度={avg_conf:.3f})"
         )
         return False, 0.0, all_details
 
     logger_b.info(
-        f"   🍼 [轨道A 结论] 检出哭声! 说话人={winner_name}, 票数={vote_count}/{len(sv_pipelines)}, "
-        f"平均置信度={avg_conf:.3f}, 强命中模型数={strong_model_count}"
+        f"   🍼 [哭声检测 结论] ★ 检出哭声! 说话人={winner_name}, 票数={vote_count}/{len(sv_pipelines)}, "
+        f"平均置信度={avg_conf:.3f}, 强命中模型数={strong_model_count}, 耗时={_cry_detect_elapsed:.2f}s"
     )
+    logger_b.info(f"🔍 [哭声检测] ═══════════════════════════════════════")
     all_details.append(
         f"结论: 哭声检出 ({winner_name}, {vote_count}票, conf={avg_conf:.3f}, strong={strong_model_count})"
     )
@@ -1895,6 +1876,15 @@ def api_get_cry_event(event_id):
                 f = f.lstrip('/')
             audio_urls.append(f"/api/audio/{f}")
 
+        # 检查插图文件是否存在
+        illustration_url = event.get("illustration_url")
+        if illustration_url:
+            img_filename = illustration_url.replace("/api/illustration/", "")
+            illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+            img_path = os.path.join(illustration_dir, img_filename)
+            if not os.path.exists(img_path):
+                illustration_url = None  # 文件已丢失，不返回 URL
+
         return jsonify({
             "id": event["id"],
             "filename": event.get("filename"),
@@ -1905,9 +1895,10 @@ def api_get_cry_event(event_id):
             "reason": event.get("reason"),
             "advice": event.get("advice"),
             "reason_category": event.get("reason_category"),
-            "illustration_url": event.get("illustration_url"),
+            "illustration_url": illustration_url,
             "file_count": len(event_files),
             "audio_urls": audio_urls,
+            "has_illustration": illustration_url is not None,
         })
     except Exception as e:
         logger_a.error(f"获取事件详情失败: {e}")
@@ -1922,10 +1913,10 @@ def api_get_cry_events():
         date_filter = request.args.get('date')
         start_time_filter = request.args.get('start_time')
         end_time_filter = request.args.get('end_time')
-        
+
         events, total = get_baby_cry_events(
-            offset=offset, 
-            limit=limit, 
+            offset=offset,
+            limit=limit,
             date_filter=date_filter,
             start_time_filter=start_time_filter,
             end_time_filter=end_time_filter
@@ -1957,7 +1948,7 @@ def api_analyze_cry():
         logger_a.info(f"👶 [analyze_cry API] 收到请求")
         body = request.get_json(force=True)
         logger_a.info(f"👶 [analyze_cry API] 请求体: {body}")
-        
+
         filename   = body.get("filename", "")
         audio_path = body.get("audio_path", "")
         start_ms   = int(body.get("start_ms", 0))
@@ -1965,7 +1956,7 @@ def api_analyze_cry():
         audio_paths = body.get("audio_paths")   # 可选：事件文件列表
 
         logger_a.info(f"👶 [analyze_cry API] 解析参数 - filename: {filename}, audio_path: {audio_path}")
-        
+
         if not filename or not audio_path:
             logger_a.error(f"👶 [analyze_cry API] 参数缺失: filename={filename}, audio_path={audio_path}")
             return jsonify({"error": "filename 和 audio_path 为必填项"}), 400
@@ -1984,7 +1975,7 @@ def api_analyze_cry():
             temp_dir = tempfile.mkdtemp()
             proc_temp = os.path.join(temp_dir, "processed.wav")
             if preprocess_audio(audio_path, proc_temp):
-                _, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp)
+                _, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp, source_filename=filename)
                 logger_a.info(f"👶 [analyze_cry API] 声纹检测完成 - 置信度: {cry_confidence}, 详情数: {len(cry_details)}")
         except Exception as e:
             logger_a.warning(f"👶 [analyze_cry API] 声纹检测异常: {e}")
@@ -2011,11 +2002,11 @@ def api_analyze_cry():
             logger_a.info(f"👶 [analyze_cry API] 开始调用 Gemini API...")
             response_text = call_gemini_audio_api(valid_paths, prompt)
             logger_a.info(f"👶 [analyze_cry API] Gemini 返回: {response_text[:100] if response_text else 'None'}...")
-            
+
             if response_text:
                 # 移除可能的 markdown 代码块标记
                 cleaned_text = response_text.strip()
-                
+
                 # 移除 markdown 代码块标记
                 if cleaned_text.startswith('```json'):
                     cleaned_text = cleaned_text[7:]
@@ -2024,16 +2015,16 @@ def api_analyze_cry():
                 if cleaned_text.endswith('```'):
                     cleaned_text = cleaned_text[:-3]
                 cleaned_text = cleaned_text.strip()
-                
+
                 # 移除控制字符（换行、制表符等），只保留可打印字符
                 cleaned_text = ''.join(char for char in cleaned_text if char.isprintable() or char in '\n\r\t')
-                
+
                 # 尝试解析 JSON（可能不完整）
                 category = "未知"
                 reason = "未知"
                 advice = "无"
                 parse_success = False
-                
+
                 # 方法1：直接尝试解析整个清理后的文本（允许控制字符）
                 try:
                     result = _json.loads(cleaned_text, strict=False)
@@ -2059,7 +2050,7 @@ def api_analyze_cry():
                     except Exception as e2:
                         logger_a.warning(f"👶 [analyze_cry API] JSON 解析失败: {e1}, {e2}")
                         logger_a.info(f"👶 [analyze_cry API] 原始响应前200字符: {cleaned_text[:200]}")
-                
+
                 if parse_success:
                     logger_a.info(f"👶 [analyze_cry API] 解析结果 - category: {category}, reason: {reason[:50]}...")
 
@@ -2153,7 +2144,7 @@ def trigger_reprocess():
     """触发重新处理历史音频任务"""
     global _history_reprocess_running, _history_reprocess_proc, _track_b_paused
     import subprocess
-    
+
     # 安全检查：如果标记为运行中，但子进程已死，则自动重置状态
     if _history_reprocess_running and _history_reprocess_proc is not None:
         if _history_reprocess_proc.poll() is not None:
@@ -2166,11 +2157,11 @@ def trigger_reprocess():
             except RuntimeError:
                 pass  # 锁未持有，忽略
             _track_b_paused = False
-    
+
     # 尝试加锁
     if not _history_reprocess_lock.acquire(blocking=False):
         return jsonify({"error": "另一个分析任务正在运行中，请等待其完成。"}), 409
-    
+
     if _history_reprocess_running:
         _history_reprocess_lock.release()
         return jsonify({"error": "分析任务已在执行中。"}), 409
@@ -2181,18 +2172,18 @@ def trigger_reprocess():
         start_time = request.args.get('start_time', '')
         end_time = request.args.get('end_time', '')
         force_replace = request.args.get('replace', 'false').lower() == 'true'
-        
+
         # 不提前删除记录，等分析完成后再处理（避免记录消失）
-            
+
         # 暂停 B 轨处理，直到 A 轨结束
         _track_b_paused = True
         logger_sys.warning("⚠️ 由于 A 轨历史分析启动，B 轨实时分析已自动暂停。")
-        
+
         script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reprocess_history_cries.py")
         log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
         os.makedirs(log_dir, exist_ok=True)
         asr_a_log_file = os.path.join(log_dir, "asr-a.log")
-        
+
         # 写入启动信息到 asr-a.log
         is_targeted = bool(date_param or start_time or end_time)
         display_replace = "True (Targeted)" if is_targeted else force_replace
@@ -2200,19 +2191,19 @@ def trigger_reprocess():
         # 清空并写入 asr-a.log（前端读取这个文件）
         with open(asr_a_log_file, "w", encoding="utf-8") as f:
             f.write(start_msg)
-            
+
         args = [sys.executable, "-u", script_path]
         args.append(date_param if date_param else "")
         args.append(start_time if start_time else "")
         args.append(end_time if end_time else "")
         if force_replace:
             args.append("--replace")
-            
+
         def run_and_cleanup():
             global _history_reprocess_running, _history_reprocess_proc
             try:
                 _history_reprocess_proc = subprocess.Popen(
-                    args, 
+                    args,
                     cwd=os.path.dirname(os.path.abspath(__file__))
                 )
                 _history_reprocess_proc.wait()
@@ -2228,7 +2219,7 @@ def trigger_reprocess():
                     f.write(end_msg)
 
         threading.Thread(target=run_and_cleanup, daemon=True).start()
-        
+
         logger_a.info(f"✅ 历史音频重分析线程已启动，输出至: {asr_a_log_file}")
         return jsonify({"message": "任务已在后台启动，请查看下方实时日志。"})
     except Exception as e:
@@ -2318,7 +2309,7 @@ def run_refresh_file_cache(target_dir):
     refresh_cache_task["count"] = 0
     refresh_cache_task["start_time"] = time.time()
     refresh_cache_task["message"] = "正在扫描..."
-    
+
     # 清空并初始化日志文件
     import time as time_module
     log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
@@ -2327,19 +2318,19 @@ def run_refresh_file_cache(target_dir):
     with open(log_file, "w", encoding="utf-8") as f:
         f.write(f"[{time_module.strftime('%Y-%m-%d %H:%M:%S')}] 🔄 开始刷盘任务，扫描目录: {target_dir}\n")
         f.flush()
-    
+
     try:
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nas-audio-notes-client'))
         from db_manager import refresh_file_cache as do_refresh, init_pool
-        
+
         init_pool()
         logger_a.info(f"[刷盘] 后台任务开始，扫描目录: {target_dir}")
         log_to_process(f"🔄 刷盘任务开始，目标目录: {target_dir}")
-        
+
         # 使用回调函数实时更新进度和日志
         count = do_refresh(target_dir, progress_callback=update_refresh_progress, log_callback=log_to_process)
-        
+
         if count >= 0:
             refresh_cache_task["count"] = count
             refresh_cache_task["status"] = "completed"
@@ -2364,7 +2355,7 @@ def run_refresh_file_cache(target_dir):
 def refresh_file_cache():
     """启动刷盘任务（异步后台执行）"""
     global refresh_cache_task
-    
+
     # 如果已有任务在运行，返回状态
     if refresh_cache_task["running"]:
         return jsonify({
@@ -2372,13 +2363,13 @@ def refresh_file_cache():
             "status": "running",
             "task": refresh_cache_task
         })
-    
+
     # 启动后台线程
     target_dir = FileMonitorConfig.SOURCE_DIR
     thread = threading.Thread(target=run_refresh_file_cache, args=(target_dir,))
     thread.daemon = True
     thread.start()
-    
+
     logger_a.info(f"[刷盘] 启动后台任务，扫描目录: {target_dir}")
     return jsonify({
         "message": "刷盘任务已启动",
@@ -2399,7 +2390,7 @@ def refresh_file_cache_status():
                 logs = "".join(lines[-50:])  # 最后50行
     except Exception as e:
         logger_a.error(f"读取刷盘日志失败: {e}")
-    
+
     return jsonify({
         "status": "success",
         "task": refresh_cache_task,
@@ -2430,7 +2421,7 @@ def get_live_status():
         # 检查 A 轨进程是否还在运行
         a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
         today_cry_count = get_baby_cry_count()
-        
+
         # 读取 A 轨日志（无论进程是否在运行，都返回日志内容）
         log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "asr-a.log")
         logs_a = ""
@@ -2442,7 +2433,7 @@ def get_live_status():
                     logs_a = ''.join(lines[-100:])  # 最后100行
             except Exception as e:
                 logs_a = f"读取日志失败: {str(e)}"
-        
+
         # 读取 A 轨结构化进度（由 reprocess_history_cries.py 写入）
         a_progress = None
         progress_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
@@ -2455,11 +2446,11 @@ def get_live_status():
                     a_progress["status"] = "stopped"
             except Exception:
                 a_progress = None
-        
+
         # 获取 B 轨结构化统计
         with _b_stats_lock:
             b_stats = _b_stats.copy()
-        
+
         # 计算 B 轨运行时长
         b_runtime = None
         if b_stats.get("started_at"):
@@ -2471,7 +2462,10 @@ def get_live_status():
                 b_runtime = f"{hours}小时{mins}分" if hours > 0 else f"{mins}分钟"
             except Exception:
                 b_runtime = None
-        
+
+        # 获取 Termux 上传停滞检测状态
+        stall_status = audio_processor.get_stall_status()
+
         return jsonify({
             "a_running": a_running,
             "b_running": _track_b_running,
@@ -2490,7 +2484,8 @@ def get_live_status():
                 "today_cry_count": b_stats.get("today_cry_count", 0),
                 "last_event_time": b_stats.get("last_event_time"),
                 "last_cry_time": b_stats.get("last_cry_time")
-            }
+            },
+            "upload_stall": stall_status
         })
     except Exception as e:
         return jsonify({"error": str(e), "a_running": False, "logs_a": ""}), 500
@@ -2571,15 +2566,15 @@ def quick_cry_detect():
     try:
         if 'audio_file' not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
-        
+
         file = request.files['audio_file']
         filename = file.filename
-        
+
         # 保存临时文件
         temp_path = os.path.join(Config.TEMP_DIR, f"quick_cry_{int(time.time())}_{filename}")
         os.makedirs(Config.TEMP_DIR, exist_ok=True)
         file.save(temp_path)
-        
+
         # 音频预处理（快速模式：跳过响度归一化，SV模型对响度不敏感，省约0.5-1s）
         proc_temp = os.path.join(Config.TEMP_DIR, f"quick_cry_proc_{int(time.time())}.wav")
         orig_normalize = Config.NORMALIZE_AUDIO
@@ -2593,17 +2588,17 @@ def quick_cry_detect():
                 return jsonify({"error": "Audio preprocessing failed"}), 500
         finally:
             Config.NORMALIZE_AUDIO = orig_normalize  # 恢复原始设置
-        
+
         # 快速哭声检测（仅声纹匹配，无ASR）
         start_time = time.time()
-        cry_detected, confidence, details = detect_cry_from_full_audio(proc_temp)
+        cry_detected, confidence, details = detect_cry_from_full_audio(proc_temp, source_filename=filename)
         detect_time = time.time() - start_time
-        
+
         # 清理临时文件
         for f in [temp_path, proc_temp]:
             if os.path.exists(f):
                 os.remove(f)
-        
+
         return jsonify({
             "filename": filename,
             "is_baby_cry": cry_detected,
@@ -2611,7 +2606,7 @@ def quick_cry_detect():
             "detect_time_ms": round(detect_time * 1000, 2),
             "details": details
         })
-        
+
     except Exception as e:
         logger_a.error(f"快速哭声检测失败: {e}")
         return jsonify({"error": str(e)}), 500
@@ -2644,7 +2639,7 @@ def get_speaker_samples(speaker_name):
         load_speaker_db()
         if speaker_name not in speaker_db:
             return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
-            
+
         speaker_data = speaker_db[speaker_name]
         # 返回样本信息（不包含具体的embedding数据）
         samples_info = []
@@ -2654,7 +2649,7 @@ def get_speaker_samples(speaker_name):
                 "filename": sample["filename"],
                 "timestamp": sample["timestamp"]
             })
-        
+
         return jsonify({
             "speaker_name": speaker_name,
             "sample_count": len(samples_info),
@@ -2690,11 +2685,11 @@ def delete_speaker_sample(speaker_name, sample_id):
         with db_lock:
             if speaker_name not in speaker_db:
                 return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
-                
+
             speaker_data = speaker_db[speaker_name]
             if "samples" not in speaker_data:
                 return jsonify({"error": f"No samples found for speaker '{speaker_name}'."}), 404
-                
+
             # 查找并删除指定样本
             samples = speaker_data["samples"]
             sample_to_remove = None
@@ -2704,10 +2699,10 @@ def delete_speaker_sample(speaker_name, sample_id):
                     sample_to_remove = sample
                     sample_index = i
                     break
-                    
+
             if sample_to_remove is None:
                 return jsonify({"error": f"Sample '{sample_id}' not found for speaker '{speaker_name}'."}), 404
-                
+
             # 删除样本的音频文件
             if "audio_path" in sample_to_remove and os.path.exists(sample_to_remove["audio_path"]):
                 try:
@@ -2715,10 +2710,10 @@ def delete_speaker_sample(speaker_name, sample_id):
                     logger_b.info(f"🗑️ 删除了音频文件: {sample_to_remove['audio_path']}")
                 except Exception as e:
                     logger_b.warning(f"⚠️ 删除音频文件失败: {sample_to_remove['audio_path']}, 错误: {str(e)}")
-            
+
             # 从数据库中移除样本记录
             del samples[sample_index]
-                
+
             # 如果删除样本后没有剩余样本，则删除整个说话人
             if len(samples) == 0:
                 del speaker_db[speaker_name]
@@ -2730,7 +2725,7 @@ def delete_speaker_sample(speaker_name, sample_id):
                         logger_b.info(f"🗑️ 删除了说话人目录: {speaker_dir}")
                     except Exception as e:
                         logger_b.warning(f"⚠️ 删除说话人目录失败: {speaker_dir}, 错误: {str(e)}")
-                
+
                 with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
                     json.dump(speaker_db, f, indent=2, ensure_ascii=False)
                 logger_b.info(f"🗑️ 删除了说话人 {speaker_name}（最后一个样本已删除）")
@@ -2741,20 +2736,20 @@ def delete_speaker_sample(speaker_name, sample_id):
             for sample in samples:
                 for model_name, emb in sample["embeddings"].items():
                     all_model_embeddings[model_name].append(np.array(emb))
-            
+
             # 计算新的平均嵌入
             new_avg_embeddings = {}
             for model_name, emb_list in all_model_embeddings.items():
                 if emb_list:
                     avg_emb = np.mean(emb_list, axis=0)
                     new_avg_embeddings[model_name] = avg_emb.tolist()
-            
+
             speaker_db[speaker_name]["avg_embeddings"] = new_avg_embeddings
-            
+
             # 保存更新后的数据库
             with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
                 json.dump(speaker_db, f, indent=2, ensure_ascii=False)
-                
+
             logger_b.info(f"🗑️ 删除了说话人 {speaker_name} 的样本 {sample_id}")
             return jsonify({
                 "message": f"Sample '{sample_id}' deleted from speaker '{speaker_name}'.",
@@ -2794,26 +2789,26 @@ def register_speaker_web():
         try:
             if 'speaker_name' not in request.form or not request.form['speaker_name']:
                 return jsonify({"error": "Speaker name is required"}), 400
-            
+
             speaker_name = request.form['speaker_name']
-            
+
             # Web viewer发送单个audio_file，需要转换为audio_files列表
             if 'audio_file' not in request.files:
                 return jsonify({"error": "Audio file is required"}), 400
-            
+
             audio_file = request.files['audio_file']
-            
+
             # 自动检测是否需要增强模式
             enhance_mode = speaker_name in speaker_db
 
             action = "增强" if enhance_mode else "注册"
             logger_b.info(f"📥 开始{action}新声纹: {speaker_name} | 文件: {audio_file.filename}")
-            
+
             # 创建说话人样本目录
             speaker_dir = os.path.join("speaker_samples", speaker_name)
             if not os.path.exists(speaker_dir):
                 os.makedirs(speaker_dir)
-            
+
             # 收集新样本数据
             new_samples = []
             model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
@@ -2822,7 +2817,7 @@ def register_speaker_web():
             raw_temp = os.path.join(Config.TEMP_DIR, f"reg_raw_{int(time.time())}_{audio_file.filename}")
             audio_file.save(raw_temp)
             temp_files.append(raw_temp)
-            
+
             proc_temp = os.path.join(Config.TEMP_DIR, f"reg_proc_{int(time.time())}.wav")
             temp_files.append(proc_temp)
 
@@ -2842,14 +2837,14 @@ def register_speaker_web():
             # 保存样本信息和音频文件
             if not sample_embeddings:
                 return jsonify({"error": "Failed to extract embeddings from audio file"}), 500
-            
+
             # 生成唯一的样本ID
             sample_id = f"{int(time.time())}_{hash(audio_file.filename) % 10000}"
-            
+
             # 保存处理后的音频文件
             sample_audio_path = os.path.join(speaker_dir, f"{sample_id}.wav")
             shutil.copy2(proc_temp, sample_audio_path)
-            
+
             sample_info = {
                 "id": sample_id,
                 "filename": audio_file.filename,
@@ -2878,21 +2873,21 @@ def register_speaker_web():
                     if "samples" not in speaker_db[speaker_name]:
                         speaker_db[speaker_name]["samples"] = []
                     speaker_db[speaker_name]["samples"].extend(new_samples)
-                    
+
                     # 重新计算所有样本的平均嵌入
                     all_model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
-                    
+
                     # 添加现有样本的嵌入
                     for sample in speaker_db[speaker_name]["samples"]:
                         for model_name, emb in sample["embeddings"].items():
                             all_model_embeddings[model_name].append(np.array(emb))
-                    
+
                     # 重新计算平均嵌入
                     new_avg_embeddings = {}
                     for model_name, emb_list in all_model_embeddings.items():
                         if emb_list:
                             new_avg_embeddings[model_name] = np.mean(emb_list, axis=0).tolist()
-                    
+
                     speaker_db[speaker_name]["avg_embeddings"] = new_avg_embeddings
                     total_samples = len(speaker_db[speaker_name]["samples"])
                     logger_b.info(f"✅ 成功增强说话人 [{speaker_name}]，当前共 {total_samples} 个样本")
@@ -2935,10 +2930,10 @@ def register_speaker():
         try:
             if 'speaker_name' not in request.form or not request.form['speaker_name']:
                 return jsonify({"error": "Speaker name is required"}), 400
-            
+
             speaker_name = request.form['speaker_name']
             audio_files = request.files.getlist('audio_files')
-            
+
             # 自动检测是否需要增强模式
             enhance_mode = speaker_name in speaker_db
 
@@ -2947,12 +2942,12 @@ def register_speaker():
 
             action = "增强" if enhance_mode else "注册"
             logger_b.info(f"📥 开始{action}新声纹: {speaker_name} | 文件数: {len(audio_files)}")
-            
+
             # 创建说话人样本目录
             speaker_dir = os.path.join("speaker_samples", speaker_name)
             if not os.path.exists(speaker_dir):
                 os.makedirs(speaker_dir)
-            
+
             # 收集新样本数据
             new_samples = []
             model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
@@ -2961,7 +2956,7 @@ def register_speaker():
                 raw_temp = os.path.join(Config.TEMP_DIR, f"reg_raw_{int(time.time())}_{file.filename}")
                 file.save(raw_temp)
                 temp_files.append(raw_temp)
-                
+
                 proc_temp = os.path.join(Config.TEMP_DIR, f"reg_proc_{int(time.time())}.wav")
                 temp_files.append(proc_temp)
 
@@ -2983,11 +2978,11 @@ def register_speaker():
                 if sample_embeddings:  # 只有当至少有一个模型成功提取嵌入时才保存样本
                     # 生成唯一的样本ID
                     sample_id = f"{int(time.time())}_{hash(file.filename) % 10000}"
-                    
+
                     # 保存处理后的音频文件
                     sample_audio_path = os.path.join(speaker_dir, f"{sample_id}.wav")
                     shutil.copy2(proc_temp, sample_audio_path)
-                    
+
                     sample_info = {
                         "id": sample_id,
                         "filename": file.filename,
@@ -3016,22 +3011,22 @@ def register_speaker():
                     if "samples" not in speaker_db[speaker_name]:
                         speaker_db[speaker_name]["samples"] = []
                     speaker_db[speaker_name]["samples"].extend(new_samples)
-                    
+
                     # 重新计算所有样本的平均嵌入
                     all_model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
-                    
+
                     # 添加现有样本的嵌入
                     for sample in speaker_db[speaker_name]["samples"]:
                         for model_name, emb in sample["embeddings"].items():
                             all_model_embeddings[model_name].append(np.array(emb))
-                    
+
                     # 重新计算平均嵌入
                     new_avg_embeddings = {}
                     for model_name, emb_list in all_model_embeddings.items():
                         if emb_list:
                             avg_emb = np.mean(emb_list, axis=0)
                             new_avg_embeddings[model_name] = avg_emb.tolist()
-                    
+
                     speaker_db[speaker_name]["avg_embeddings"] = new_avg_embeddings
                     logger_b.info(f"🔄 增强了说话人 {speaker_name} 的声纹，新增 {len(new_samples)} 个样本")
                 else:
@@ -3041,11 +3036,11 @@ def register_speaker():
                         "avg_embeddings": avg_embeddings
                     }
                     logger_b.info(f"🆕 创建了新说话人 {speaker_name} 的声纹，包含 {len(new_samples)} 个样本")
-                    
+
                 # 保存更新后的数据库
                 with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
                     json.dump(speaker_db, f, indent=2, ensure_ascii=False)
-            
+
             logger_b.info(f"✅ 声纹{action}成功: {speaker_name}")
             return jsonify({
                 "message": f"Speaker '{speaker_name}' {action} successfully.",
@@ -3068,6 +3063,7 @@ def register_speaker():
                     except: pass
 
 
+@app.route("/transcribe", methods=["POST"])
 @app.route("/transcribes", methods=["POST"])
 def transcribe_audio():
     # 检查 B 轨是否暂停
@@ -3087,9 +3083,9 @@ def transcribe_audio():
     with gpu_lock:
         try:
             if 'audio_file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
-            
+
             file = request.files['audio_file']
-            
+
             # 忽略包含 TEMP 的文件名 (静默跳过,不处理)
             if 'TEMP' in file.filename:
                 logger_b.info(f"⏭️ 忽略临时文件: {file.filename}")
@@ -3100,20 +3096,20 @@ def transcribe_audio():
                     "segments": [],
                     "meta": {"ignored": True}
                 }), 200
-            
+
             raw_temp = os.path.join(Config.TEMP_DIR, f"raw_{int(time.time())}_{file.filename}")
             file.save(raw_temp)
             temp_files.append(raw_temp)
             proc_temp = os.path.join(Config.TEMP_DIR, f"proc_{int(time.time())}.wav")
             temp_files.append(proc_temp)
-            
+
             logger_b.info(f"📥 收到转录任务: {file.filename}")
-            
+
             # 更新 B 轨统计
             with _b_stats_lock:
                 _b_stats["today_record_count"] += 1
                 _b_stats["last_event_time"] = datetime.now().strftime('%H:%M:%S')
-            
+
             logger_b.info("  [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...")
             if not preprocess_audio(raw_temp, proc_temp):
                 return jsonify({"error": "Audio preprocessing failed"}), 500
@@ -3127,22 +3123,23 @@ def transcribe_audio():
 
             logger_b.info("  [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...")
             res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True, use_punc=True)
-            
+
             # 【轨道A: 独立哭声检测】直接对完整 60s 原始音频做声纹匹配
             # 使用 CryDetectionConfig 独立参数，与轨道B (VAD+语音识别) 完全隔离
             cry_detected = False
             skip_cry_flag = request.form.get('skip_cry', 'false').lower() == 'true'
             try:
-                cry_detected, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp)
-                
+                cry_detected, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp, source_filename=file.filename)
+
                 if cry_detected:
-                    logger_b.info(f"  🍼 [轨道A] 哭声确认! 置信度={cry_confidence:.3f}, 启动报警流程...")
-                    
+                    logger_b.info(f"  🍼 [轨道A] 哭声确认! 文件={file.filename}, 置信度={cry_confidence:.3f}, 启动报警流程...")
+                    logger_b.info(f"      检测详情: {' | '.join(cry_details)}")
+
                     # 更新 B 轨统计
                     with _b_stats_lock:
                         _b_stats["today_cry_count"] = _b_stats.get("today_cry_count", 0) + 1
                         _b_stats["last_cry_time"] = datetime.now().strftime('%H:%M:%S')
-                    
+
                     if skip_cry_flag:
                         logger_b.info(f"      [skip_cry] 哭声已标记，历史模式不发送即时邮件")
                     else:
@@ -3153,13 +3150,13 @@ def transcribe_audio():
                             in_cooldown = (now - _last_cry_trigger_time) < CryDetectionConfig.COOLDOWN_SEC
                             if not in_cooldown:
                                 _last_cry_trigger_time = now
-                        
+
                         if in_cooldown:
                             elapsed = int(now - _last_cry_trigger_time)
                             logger_b.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
                         else:
                             # ── 正式报警：先保存占位，后续在分析和插图生成后发送邮件 ──
-                            
+
                             # 注意：proc_temp 会在请求结束后被 finally 清理，需要先复制到持久位置
                             import shutil as _shutil
                             _cry_persist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_cry")
@@ -3168,18 +3165,18 @@ def transcribe_audio():
                             _persist_audio_path = os.path.join(_cry_persist_dir, f"cry_{_persist_ts}.wav")
                             _shutil.copy2(proc_temp, _persist_audio_path)
                             logger_b.info(f"💾 [BabyCry] 已复制音频到持久路径: {_persist_audio_path}")
-                            
+
                             # [即时占位] 立即写入数据库（包含声纹投票详情）
                             from db_manager import save_cry_analysis
                             placeholder_id = save_cry_analysis(
-                                file.filename, 0, audio_duration, 
-                                "深度分析中 (5分钟观察期)...", "请稍候内容更新", 
-                                reason_category="analyzing", event_files=[], 
+                                file.filename, 0, audio_duration,
+                                "深度分析中 (5分钟观察期)...", "请稍候内容更新",
+                                reason_category="analyzing", event_files=[],
                                 audio_path=_persist_audio_path,
                                 confidence=cry_confidence,
                                 details=cry_details
                             )
-                            
+
                             # 更新持久文件名包含 placeholder_id
                             if placeholder_id:
                                 _new_persist_path = os.path.join(_cry_persist_dir, f"cry_{placeholder_id}_{_persist_ts}.wav")
@@ -3194,7 +3191,7 @@ def transcribe_audio():
                                     time_range_str = rec_time.strftime('%Y-%m-%d %H:%M:%S')
                                 else:
                                     time_range_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                
+
                                 # ── 第1封邮件: 即时报警 (立即发送) ──
                                 logger_a.info(f"📧 [邮件] 发送即时报警邮件...")
                                 send_cry_alert_email(
@@ -3205,14 +3202,14 @@ def transcribe_audio():
                                     image_data=None,
                                     time_range=time_range_str
                                 )
-                                
+
                                 logger_b.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
                                 time.sleep(300)
-                                
+
                                 # 执行分析并获取结果
                                 logger_b.info(f"🔍 [BabyCry] 开始执行深度分析...")
                                 reason, advice, category = process_baby_cry_async(fname, a_path, 0, dur * 1000, placeholder_id=p_id, cry_conf=cry_conf, cry_det=cry_det)
-                                
+
                                 # 验证数据库更新是否成功
                                 analysis_ok = False
                                 event_time_range = time_range_str
@@ -3226,7 +3223,7 @@ def transcribe_audio():
                                         # 判断分析是否真正完成（不是占位文本）
                                         if category and category != 'analyzing':
                                             analysis_ok = True
-                                        
+
                                         # 获取事件的时间范围
                                         rec_time = record.get('recording_time')
                                         start_time = record.get('start_time', 0)
@@ -3236,7 +3233,7 @@ def transcribe_audio():
                                             start_dt = datetime.fromisoformat(rec_time) + timedelta(milliseconds=start_time)
                                             end_dt = datetime.fromisoformat(rec_time) + timedelta(milliseconds=end_time)
                                             event_time_range = f"{start_dt.strftime('%Y-%m-%d %H:%M:%S')} ~ {end_dt.strftime('%H:%M:%S')}"
-                                        
+
                                         logger_b.info(f"✅ [BabyCry] 数据库记录: category={category}, reason={reason[:50] if reason else 'None'}..., 分析成功={analysis_ok}")
                                     else:
                                         logger_b.error(f"❌ [BabyCry] 数据库记录未找到 (ID={p_id})")
@@ -3299,14 +3296,14 @@ def transcribe_audio():
                                     reason = reason or "深度分析未能完成"
                                     advice = advice or "系统自动分析失败，请稍后查看页面获取最新状态"
                                     category = category or "分析失败"
-                                
+
                                 send_cry_alert_email(
                                     fname, cry_conf, cry_det,
                                     reason=reason, advice=advice, category=category,
                                     image_data=image_data_for_email,
                                     time_range=event_time_range
                                 )
-                                
+
                                 # 清理持久音频文件
                                 try:
                                     if os.path.exists(a_path):
@@ -3314,15 +3311,16 @@ def transcribe_audio():
                                         logger_b.info(f"🗑️ [BabyCry] 已清理持久音频: {a_path}")
                                 except:
                                     pass
-                            
+
                             threading.Thread(
-                                target=start_delayed_analysis, 
-                                args=(file.filename, _persist_audio_path, audio_duration, placeholder_id, cry_confidence, cry_details), 
+                                target=start_delayed_analysis,
+                                args=(file.filename, _persist_audio_path, audio_duration, placeholder_id, cry_confidence, cry_details),
                                 daemon=True
                             ).start()
             except Exception as ex:
+                logger_b.warning(f"    ⚠️ [哭声检测] 检测过程异常: {ex}")
                 logger_a.warning(f"    ⚠️ 哭声检测异常: {ex}")
-            
+
             # 【轨道B: 语音识别】VAD 分段 + 转录 + 说话人标注 (参数不变)
             full_text = ""
             segments = []
@@ -3331,7 +3329,7 @@ def transcribe_audio():
             if res and isinstance(res, list) and len(res) > 0:
                 item = res[0]
                 full_text = item.get("text", "")
-                
+
                 raw_segments = item.get("sentence_info", [])
                 logger_b.info(f"  [生命周期: 2. VAD & ASR] 完成, VAD检出 {len(raw_segments)} 个分段。")
 
@@ -3339,14 +3337,14 @@ def transcribe_audio():
                     raw_segments = [{"text": full_text, "start": 0, "end": int(audio_duration * 1000)}]
 
                 processed_segments = []
-                
+
                 if raw_segments:
                     logger_b.info("  [生命周期: 3. 逐段声纹识别] 开始...")
                     for i, seg in enumerate(raw_segments):
                         raw_text = seg.get("text", "")
                         start, end = seg.get("start", 0), seg.get("end", 0)
                         logger_b.info(f"    [3.{i+1}] 处理分段 {start}ms - {end}ms...")
-                        
+
                         if any(tag in raw_text for tag in INVALID_TAGS): continue
 
                         # Case-insensitive emotion detection
@@ -3364,10 +3362,10 @@ def transcribe_audio():
 
                         # Case-insensitive, universal tag removal
                         clean_text = re.sub(r'<\|.*?\|>', '', raw_text).replace(" ", "").strip()
-                        
+
                         # 核心优化：如果包含哭声标签，即使没有识别出文字，也不应跳过！
                         has_cry_tag = "<|cry|>" in raw_text_lower
-                        if not clean_text and not has_cry_tag: 
+                        if not clean_text and not has_cry_tag:
                             logger_b.info(f"      [3.{i+1}] 分段既无文本也无哭声标签，已跳过。")
                             continue
 
@@ -3381,27 +3379,27 @@ def transcribe_audio():
                             # 使用原始文件名（不含扩展名和_TEMP后缀）作为子目录
                             original_filename = file.filename.replace('_TEMP', '')  # 移除_TEMP后缀
                             base_filename = os.path.splitext(original_filename)[0]
-                            
+
                             # 从文件名解析日期，或使用当前日期
                             date_str = datetime.now(UTC_PLUS_8).strftime("%Y-%m-%d")
                             # 尝试从文件名提取日期 (格式: YYYY-MM-DD 或 YYYYMMDD 或 recording-YYYYMMDD)
                             date_match = re.search(r'(\d{4})-?(\d{2})-?(\d{2})', base_filename)
                             if date_match:
                                 date_str = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
-                            
+
                             # 按日期分类的目录结构: audio_segments/YYYY-MM-DD/filename/
                             segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, "audio_segments", date_str, base_filename)
                             os.makedirs(segments_dir, exist_ok=True)
-                            
+
                             # 临时文件用于处理
                             seg_wav_temp = os.path.join(Config.TEMP_DIR, f"seg_{start}_{i}_{int(time.time())}.wav")
                             # 持久化文件
                             seg_filename = f"seg_{i}.wav"
                             seg_wav_persistent = os.path.join(segments_dir, seg_filename)
-                            
+
                             if extract_segment(proc_temp, start, end, seg_wav_temp):
                                 temp_files.append(seg_wav_temp)
-                                
+
                                 # 复制到持久化目录
                                 try:
                                     shutil.copy2(seg_wav_temp, seg_wav_persistent)
@@ -3414,14 +3412,14 @@ def transcribe_audio():
 
                                 # 1. 深度状态探测 (SenseVoice)
                                 sensevoice_text, sensevoice_emotion = transcribe_with_sensevoice(seg_wav_temp)
-                                
+
                                 # 2. 【轨道B】纯语音识别声纹 (标准参数，不做哭声补偿)
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp)
-                                
+
                                 # 3. 补全其他信息 (Whisper/Emotion)
                                 whisper_text = None
                                 emotion = sensevoice_emotion
-                                
+
                                 if identity is not None:
                                     if emotion is None:
                                         emotion = detect_emotion_for_segment(seg_wav_temp)
@@ -3430,7 +3428,7 @@ def transcribe_audio():
                                 else:
                                     logger_b.info(f"      [性能] 未识别说话人，跳过后续处理")
                                     whisper_text = None
-                                
+
                                 # 保存超过15个字的语句音频
                                 # 检测是否为噪音(重复字符过多)
                 # 检测是否为噪音(重复字符过多或填充词)
@@ -3445,7 +3443,7 @@ def transcribe_audio():
                                     # 如果某个字符占比超过40%,认为是噪音
                                     if repeat_ratio > 0.4:
                                         return True
-                                    
+
                                     # 检测填充词(嗯、啊、呃等)
                                     filler_words = ['嗯', '啊', '呃', '额', '哦', '唔']
                                     # 移除标点后检查
@@ -3468,7 +3466,7 @@ def transcribe_audio():
                                         saved_filename = f"{timestamp}_{speaker_name}_{len(clean_text)}chars.wav"
                                         saved_path = os.path.join(Config.LONG_SENTENCES_DIR, saved_filename)
                                         shutil.copy2(seg_wav_temp, saved_path)
-                                        
+
                                         # 同时保存文本信息
                                         txt_path = saved_path.replace('.wav', '.txt')
                                         with open(txt_path, 'w', encoding='utf-8') as f:
@@ -3482,7 +3480,7 @@ def transcribe_audio():
                                                 f.write(f"\n=== Whisper 识别结果 ===\n{whisper_text}\n")
                                             if sensevoice_text:
                                                 f.write(f"\n=== SenseVoice 识别结果 ===\n{sensevoice_text}\n")
-                                        
+
                                         logger_b.info(f"      [长句保存] 已保存 {len(clean_text)} 字音频: {saved_filename}")
                                     except Exception as e:
                                         logger_b.warning(f"      [长句保存] 保存失败: {e}")
@@ -3496,51 +3494,51 @@ def transcribe_audio():
                         # 核心优化：如果 SenseVoice 已经判定为 <|CRY|>，则豁免 ONLY_REGISTERED_SPEAKERS 检查
                         # 这通过防止由于声纹稍有偏差而抛弃真实的哭闹事件
                         has_confirmed_cry = (emotion == "sad" or "<|cry|>" in (original_emotion_tag or "").lower())
-                        
+
                         if Config.ONLY_REGISTERED_SPEAKERS and identity is None and not has_confirmed_cry:
                             continue
-                        
+
                         # 计算语速指标
                         duration_seconds = (end - start) / 1000.0
                         word_count = len(clean_text)  # 中文按字符数计算
                         speech_rate = word_count / duration_seconds if duration_seconds > 0 else 0
-                        
+
                         # 计算文本质量
                         from collections import Counter
                         char_counts = Counter(clean_text)
                         most_common_char, most_common_count = char_counts.most_common(1)[0] if clean_text else ('', 0)
                         repeat_ratio = most_common_count / len(clean_text) if clean_text else 0
-                        
+
                         filler_words = ['嗯', '啊', '呃', '额', '哦', '唔']
                         text_no_punct = re.sub(r'[，。、！？,.!?]', '', clean_text)
                         filler_count = sum(text_no_punct.count(w) for w in filler_words) if text_no_punct else 0
                         filler_ratio = filler_count / len(text_no_punct) if text_no_punct else 0
                         noise_score = (repeat_ratio * 0.6 + filler_ratio * 0.4)
                         is_noise_flag = repeat_ratio > 0.4 or filler_ratio > 0.6
-                        
+
                         text_quality = {
                             "is_noise": is_noise_flag,
                             "noise_score": round(noise_score, 3),
                             "repeat_ratio": round(repeat_ratio, 3),
                             "filler_ratio": round(filler_ratio, 3)
                         }
-                        
+
                         # 确定情感来源
                         emotion_source = "funasr"  # 默认
                         original_emotion_tag = None
-                        
+
                         # 检查是否有原始情感标签
                         for tag, emo_code in EMOTION_TAGS.items():
                             if tag.lower() in raw_text.lower():
                                 original_emotion_tag = tag
                                 break
-                        
+
                         # 如果有 sensevoice_text，说明使用了 SenseVoice
                         if sensevoice_text and emotion:
                             emotion_source = "sensevoice"
                             if not original_emotion_tag:
                                 original_emotion_tag = f"<|{emotion}|>"
-                        
+
                         segment_info = {
                             "text": clean_text, "start": start, "end": end,
                             "spk": identity or "Unknown", "emotion": emotion,
@@ -3549,17 +3547,17 @@ def transcribe_audio():
                             "confidence": float(f"{confidence:.3f}"),
                             "recognition_details": recognition_details,
                             "segment_audio_path": segment_audio_path,
-                            
+
                             # 语速指标
                             "speech_metrics": {
                                 "duration_seconds": round(duration_seconds, 2),
                                 "word_count": word_count,
                                 "speech_rate": round(speech_rate, 2)
                             },
-                            
+
                             # 文本质量评估
                             "text_quality": text_quality,
-                            
+
                             # 情感详细信息
                             "emotion_info": {
                                 "emotion": emotion,
@@ -3568,7 +3566,7 @@ def transcribe_audio():
                                 "detected_by_sensevoice": emotion_source == "sensevoice"
                             }
                         }
-                        
+
                         # 【轨道A】如果全局哭声检测已确认，补充标记到每个分段
                         if cry_detected:
                             segment_info["is_baby_cry"] = True
@@ -3579,7 +3577,7 @@ def transcribe_audio():
                         processed_segments.append(segment_info)
 
                 segments = processed_segments
-                
+
                 # 【强力补充】如果轨道A检出哭声但轨道B(VAD)没有任何分段，则手动补入一个全局哭声片段
                 # 这样可以确保重分析脚本(reprocess_history_cries.py)能正确感知并进入详情分析阶段
                 if cry_detected and not segments:
@@ -3599,7 +3597,7 @@ def transcribe_audio():
                         }
                     }]
 
-                full_text = "".join([s.get("text", "") for s in segments]) 
+                full_text = "".join([s.get("text", "") for s in segments])
 
             process_time = time.time() - request_start
             rtf = process_time / audio_duration if audio_duration > 0 else 0
@@ -3618,29 +3616,36 @@ def transcribe_audio():
                 }
             }
             logger_b.info(f"📤  [生命周期: 4. 组装响应] 完成, 返回 /transcribe 结果: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
-            
+
             # =================【 数据库保存和 LLM 处理 】=================
             if processed_segments:
                 try:
                     # 生成智能摘要
                     summary = generate_conversation_summary(processed_segments, audio_duration)
-                    
+
                     # 解析录音时间
                     recording_time = parse_recording_time(file.filename)
-                    
+
                     # 保存到数据库
                     success = save_to_db(file.filename, full_text, processed_segments, recording_time, summary)
-                    
+
                     if success:
                         logger_b.info(f"✅ 数据库保存成功 (recording_time: {recording_time})")
                         if summary:
                             logger_b.info(f"  智能摘要: {summary['speaker_count']}位说话人, {summary['total_segments']}个分段")
-                        
+
+                        # 记录到 processed_files_a 表（避免历史重跑时重复处理）
+                        try:
+                            from db_manager import mark_file_processed_a
+                            mark_file_processed_a(file.filename, status="transcribed")
+                        except Exception as pf_err:
+                            logger_b.warning(f"⚠️ 记录 processed_files_a 失败: {pf_err}")
+
                         # 添加到 LLM 批量处理队列
                         if LLMConfig.USE_GEMINI_LLM:
                             has_identified_speakers = any(seg.get('spk') != 'Unknown' for seg in processed_segments)
-                            if (len(full_text) >= LLMConfig.LLM_MIN_TEXT_LENGTH and 
-                                len(processed_segments) >= LLMConfig.LLM_MIN_SEGMENTS and 
+                            if (len(full_text) >= LLMConfig.LLM_MIN_TEXT_LENGTH and
+                                len(processed_segments) >= LLMConfig.LLM_MIN_SEGMENTS and
                                 has_identified_speakers):
                                 add_to_llm_queue(file.filename, full_text, processed_segments)
                     else:
@@ -3670,11 +3675,11 @@ def get_sample_audio(speaker_name, sample_id):
         load_speaker_db()
         if speaker_name not in speaker_db:
             return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
-            
+
         speaker_data = speaker_db[speaker_name]
         if "samples" not in speaker_data:
             return jsonify({"error": f"No samples found for speaker '{speaker_name}'."}), 404
-            
+
         # 查找指定样本
         for sample in speaker_data["samples"]:
             if sample["id"] == sample_id:
@@ -3682,7 +3687,7 @@ def get_sample_audio(speaker_name, sample_id):
                     return send_file(sample["audio_path"], as_attachment=True, download_name=sample["filename"])
                 else:
                     return jsonify({"error": f"Audio file for sample '{sample_id}' not found."}), 404
-        
+
         return jsonify({"error": f"Sample '{sample_id}' not found for speaker '{speaker_name}'."}), 404
     except Exception as e:
         logger_sys.error(f"获取样本音频文件失败: {str(e)}")
@@ -3759,9 +3764,9 @@ def stream_logs():
                 if self._closed:
                     raise ConnectionError("Client disconnected")
                 return msg
-        
+
         client = SSEClient()
-        
+
         # 添加客户端到SSE处理器
         sse_handler.add_client(client)
         try:
@@ -3774,7 +3779,7 @@ def stream_logs():
         finally:
             client._closed = True
             sse_handler.remove_client(client)
-    
+
     return Response(generate_logs(), mimetype='text/event-stream')
 
 # =================== 启动 ===================
@@ -3786,12 +3791,12 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    
+
     # Update config from args
     if args.source_path:
         FileMonitorConfig.SOURCE_DIR = args.source_path
         print(f"配置更新: 源目录 -> {args.source_path}")
-        
+
     if args.port:
         Config.PORT = args.port
         print(f"配置更新: 端口 -> {args.port}")
@@ -3812,24 +3817,24 @@ if __name__ == "__main__":
             logger_sys.warning("⚠️ 数据库表结构初始化失败，但服务将继续运行")
 
     load_models()
-    
+
     # 打印 Gemini Key 轮换配置
     print(f"Gemini API Key 轮询: {len(LLMConfig.GEMINI_API_KEYS)} 个 Key 已加载")
     for i, k in enumerate(LLMConfig.GEMINI_API_KEYS):
         print(f"  Key {i+1}: ...{k[-6:]}")
-    
+
     # 启动临时文件清理定时任务
     cleanup_temp_dir()
     logger_sys.info("临时文件清理定时任务已启动")
-    
+
     # 启动未完成哭声分析自动重试
     threading.Timer(120, retry_incomplete_cry_analyses).start()  # 启动2分钟后首次执行，给系统初始化时间
     logger_sys.info(f"未完成哭声分析自动重试已启动 (间隔{RETRY_INCOMPLETE_INTERVAL}秒)")
-    
+
     # 启动文件监控模块 (已解耦)
     _track_b_running = True
     audio_processor.start_monitor()
-    
+
     print("🎉 服务启动成功！")
     print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")
     print("📌 语音转录API: http://127.0.0.1:5008/transcribes (本地监控专用)")
