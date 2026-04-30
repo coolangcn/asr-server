@@ -13,7 +13,7 @@ import signal
 import atexit
 import socket
 from logging.handlers import TimedRotatingFileHandler
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, get_completed_events_for_date, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, get_completed_events_for_date, get_completed_cry_covered_files_for_date, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
 
 # 进度状态文件路径（供 API 读取）
 PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
@@ -910,11 +910,18 @@ if __name__ == "__main__":
         day_all_files = date_all_files.get(current_date, day_files)
         day_all_files_sorted = sorted(day_all_files, key=os.path.basename)
         is_phase2_only = current_date in phase2_only_dates
+        completed_covered_files = set()
+        completed_primary_files = set()
+        if not force_replace:
+            completed_covered_files = get_completed_cry_covered_files_for_date(current_date)
+            completed_primary_files = get_completed_cry_covered_files_for_date(current_date, include_event_files=False)
 
         log_detail(f"\n{'='*60}", 'info')
         mode_str = "仅阶段二(历史cry补分析)" if is_phase2_only else f"{len(day_files)} 个文件"
         log_detail(f"📅 [{date_idx}/{len(all_dates)}] 处理日期: {current_date} ({mode_str})", 'info')
         log_detail(f"{'='*60}", 'info')
+        if completed_covered_files:
+            log_detail(f"   ✅ 已有完成哭声事件覆盖 {len(completed_covered_files)} 个文件，其中 {len(completed_primary_files)} 个主文件会跳过重复检测", 'info')
 
         # ── 阶段一：逐文件检测 ──
         if is_phase2_only or len(day_files) == 0:
@@ -943,6 +950,8 @@ if __name__ == "__main__":
             uncovered_cry_files = set()
             db_cry_filenames = get_cry_files_for_date(current_date)
             for fn in db_cry_filenames:
+                if fn in completed_covered_files:
+                    continue
                 if fn in day_all_basenames:
                     full_path = day_all_basenames[fn]
                     covered = False
@@ -1033,6 +1042,13 @@ if __name__ == "__main__":
 
             for file_idx, filepath in enumerate(day_files, 1):
                 filename = os.path.basename(filepath)
+
+                if filename in completed_primary_files:
+                    log_detail(f"\n  [{file_idx}/{len(day_files)}] {filename} — ⏭️ 已有 B 轨/历史完成哭声分析，跳过重复检测", 'info')
+                    if not is_targeted:
+                        mark_file_processed_a(filename, status="cry")
+                    day_skip += 1
+                    continue
 
                 # 检查文件是否实际存在（Redis 缓存可能过时）
                 if not os.path.exists(filepath):
@@ -1150,7 +1166,11 @@ if __name__ == "__main__":
             day_all_basenames = {os.path.basename(f): f for f in day_all_files_sorted}
             db_cry_paths = []
             db_unresolved = []
+            db_already_completed = 0
             for fn in db_cry_filenames:
+                if fn in completed_covered_files:
+                    db_already_completed += 1
+                    continue
                 if fn in day_all_basenames:
                     full_path = day_all_basenames[fn]
                     if full_path not in cry_file_paths:
@@ -1171,6 +1191,8 @@ if __name__ == "__main__":
                         db_unresolved.append(fn)
             if db_cry_paths:
                 log_detail(f"   📎 从数据库恢复 {len(db_cry_paths)} 个历史cry文件", 'info')
+            if db_already_completed:
+                log_detail(f"   ✅ 跳过 {db_already_completed} 个已完成分析覆盖的历史cry文件", 'info')
             if db_unresolved:
                 log_detail(f"   ⚠️  {len(db_unresolved)} 个cry文件在磁盘上未找到: {db_unresolved[:3]}{'...' if len(db_unresolved) > 3 else ''}", 'warning')
 

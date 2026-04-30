@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse, uuid
+import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse, uuid, glob
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1092,7 +1092,6 @@ def process_llm_batch():
 
 # =================【 未完成哭声分析自动重试 】=================
 RETRY_INCOMPLETE_INTERVAL = 3600  # 每1小时检查一次未完成的分析
-RETRY_INCOMPLETE_MAX_AGE = 86400  # 只重试24小时内的未完成事件（避免对很旧的记录反复重试）
 
 def retry_incomplete_cry_analyses():
     """定时扫描并重试未完成的哭声深度分析
@@ -1137,6 +1136,22 @@ def retry_incomplete_cry_analyses():
                 abs_audio = audio_path if os.path.isabs(audio_path) else os.path.join(FileMonitorConfig.SOURCE_DIR, audio_path.lstrip('/'))
                 if os.path.exists(abs_audio):
                     valid_paths = [abs_audio]
+
+            # 兼容旧的 B 轨占位记录：保存后文件会重命名为 cry_<event_id>_*.wav，
+            # 但旧记录的 audio_path 可能还指向重命名前的路径。
+            if not valid_paths and event_id:
+                cry_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_cry")
+                candidates = sorted(glob.glob(os.path.join(cry_dir, f"cry_{event_id}_*.wav")))
+                for candidate in candidates:
+                    if os.path.exists(candidate):
+                        valid_paths = [candidate]
+                        logger_a.info(f"[重试] ID={event_id} 通过事件ID找到持久音频: {candidate}")
+                        try:
+                            from db_manager import update_cry_event_audio_path
+                            update_cry_event_audio_path(event_id, candidate)
+                        except Exception as path_update_err:
+                            logger_a.warning(f"[重试] ID={event_id} 更新持久音频路径失败: {path_update_err}")
+                        break
 
             if not valid_paths:
                 logger_a.debug(f"[重试] ID={event_id} 音频文件均不存在，跳过")
@@ -1228,7 +1243,7 @@ def cleanup_temp_dir():
     # 需要清理的目录列表及其最大保留时间（秒）
     cleanup_dirs = {
         Config.TEMP_DIR: 3600,            # temp/ - 1小时
-        "temp_cry": 7200,                  # temp_cry/ - 2小时（延迟分析可能需要更久）
+        "temp_cry": 86400,                 # temp_cry/ - 24小时（保留给未完成哭声事件重试）
         # illustrations/ 已从清理列表中移除 - 插图是永久文件，不应被清理
         Config.LONG_SENTENCES_DIR: 604800,  # long_sentences/ - 7天
     }
@@ -1236,6 +1251,19 @@ def cleanup_temp_dir():
     try:
         current_time = time.time()
         total_cleaned = 0
+
+        protected_temp_cry_files = set()
+        try:
+            from db_manager import get_incomplete_cry_events
+            for event in get_incomplete_cry_events():
+                audio_path = event.get('audio_path')
+                if audio_path:
+                    protected_temp_cry_files.add(os.path.abspath(audio_path))
+                for event_file in event.get('event_files', []) or []:
+                    if event_file:
+                        protected_temp_cry_files.add(os.path.abspath(event_file))
+        except Exception as e:
+            logger_sys.warning(f"读取未完成哭声事件保护列表失败: {e}")
 
         for dir_name, max_age in cleanup_dirs.items():
             if not os.path.exists(dir_name):
@@ -1248,6 +1276,11 @@ def cleanup_temp_dir():
                     try:
                         if os.path.isfile(filepath):
                             file_age = current_time - os.path.getmtime(filepath)
+                            if (
+                                dir_name == "temp_cry"
+                                and os.path.abspath(filepath) in protected_temp_cry_files
+                            ):
+                                continue
                             if file_age > max_age:
                                 os.remove(filepath)
                                 cleaned_count += 1
@@ -3127,9 +3160,11 @@ def transcribe_audio():
             # 【轨道A: 独立哭声检测】直接对完整 60s 原始音频做声纹匹配
             # 使用 CryDetectionConfig 独立参数，与轨道B (VAD+语音识别) 完全隔离
             cry_detected = False
+            cry_detection_completed = False
             skip_cry_flag = request.form.get('skip_cry', 'false').lower() == 'true'
             try:
                 cry_detected, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp, source_filename=file.filename)
+                cry_detection_completed = True
 
                 if cry_detected:
                     logger_b.info(f"  🍼 [轨道A] 哭声确认! 文件={file.filename}, 置信度={cry_confidence:.3f}, 启动报警流程...")
@@ -3182,6 +3217,11 @@ def transcribe_audio():
                                 _new_persist_path = os.path.join(_cry_persist_dir, f"cry_{placeholder_id}_{_persist_ts}.wav")
                                 os.rename(_persist_audio_path, _new_persist_path)
                                 _persist_audio_path = _new_persist_path
+                                try:
+                                    from db_manager import update_cry_event_audio_path
+                                    update_cry_event_audio_path(placeholder_id, _persist_audio_path)
+                                except Exception as path_update_err:
+                                    logger_b.warning(f"⚠️ [BabyCry] 更新持久音频路径失败: {path_update_err}")
 
                             def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det):
                                 # 从文件名提取时间作为第一封邮件的时间范围
@@ -3304,13 +3344,16 @@ def transcribe_audio():
                                     time_range=event_time_range
                                 )
 
-                                # 清理持久音频文件
-                                try:
-                                    if os.path.exists(a_path):
-                                        os.remove(a_path)
-                                        logger_b.info(f"🗑️ [BabyCry] 已清理持久音频: {a_path}")
-                                except:
-                                    pass
+                                # 分析失败时保留音频，供未完成事件自动重试使用。
+                                if analysis_ok:
+                                    try:
+                                        if os.path.exists(a_path):
+                                            os.remove(a_path)
+                                            logger_b.info(f"🗑️ [BabyCry] 已清理持久音频: {a_path}")
+                                    except:
+                                        pass
+                                else:
+                                    logger_b.info(f"💾 [BabyCry] 分析未完成，保留持久音频等待自动重试: {a_path}")
 
                             threading.Thread(
                                 target=start_delayed_analysis,
@@ -3633,13 +3676,6 @@ def transcribe_audio():
                         logger_b.info(f"✅ 数据库保存成功 (recording_time: {recording_time})")
                         if summary:
                             logger_b.info(f"  智能摘要: {summary['speaker_count']}位说话人, {summary['total_segments']}个分段")
-
-                        # 记录到 processed_files_a 表（避免历史重跑时重复处理）
-                        try:
-                            from db_manager import mark_file_processed_a
-                            mark_file_processed_a(file.filename, status="transcribed")
-                        except Exception as pf_err:
-                            logger_b.warning(f"⚠️ 记录 processed_files_a 失败: {pf_err}")
 
                         # 添加到 LLM 批量处理队列
                         if LLMConfig.USE_GEMINI_LLM:

@@ -39,11 +39,11 @@ def init_pool(db_url: str = None):
     for attempt in range(3):
         try:
             connection_pool = psycopg2.pool.SimpleConnectionPool(
-                1, 10,  # 最小和最大连接数
+                3, 30,  # 最小3个，最大30个连接（B轨Catch-up需要更多并发连接）
                 target_url
             )
             if connection_pool:
-                print(f"[DB] PostgreSQL连接池创建成功 (尝试 {attempt + 1}/3)")
+                print(f"[DB] PostgreSQL连接池创建成功 (尝试 {attempt + 1}/3, 最大30连接)")
                 return True
         except Exception as e:
             print(f"[DB Error] 创建连接池失败 (尝试 {attempt + 1}/3): {e}")
@@ -57,10 +57,22 @@ def init_pool(db_url: str = None):
                 return False
     return False
 
-def get_connection():
-    """从连接池获取连接"""
+def get_connection(max_retries=3, retry_delay=0.5):
+    """从连接池获取连接，带重试机制"""
     if connection_pool:
-        return connection_pool.getconn()
+        for attempt in range(max_retries):
+            try:
+                return connection_pool.getconn()
+            except psycopg2.pool.PoolError as e:
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                print(f"[DB Error] 连接池耗尽，无法获取连接 (重试{max_retries}次后)")
+                return None
+            except Exception as e:
+                print(f"[DB Error] 获取连接异常: {e}")
+                return None
     return None
 
 def return_connection(conn):
@@ -565,6 +577,34 @@ def update_cry_analysis(event_id: int, reason: str, advice: str,
         if conn:
             return_connection(conn)
 
+def update_cry_event_audio_path(event_id: int, audio_path: str) -> bool:
+    """更新宝宝哭声事件的持久音频路径"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE baby_cry_events SET audio_path = %s WHERE id = %s",
+            (audio_path, event_id)
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        cursor.close()
+        if updated:
+            print(f"  [DB] 已更新哭声事件音频路径: ID={event_id}")
+        return updated
+    except Exception as e:
+        print(f"  [DB Error] 更新哭声事件音频路径失败(ID={event_id}): {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            return_connection(conn)
+
 def update_cry_event_image(filename: str, illustration_url: str) -> bool:
     """更新宝宝哭声事件的插图 URL（按 filename 匹配）"""
     conn = None
@@ -992,6 +1032,60 @@ def get_completed_events_for_date(date_str: str) -> list:
     except Exception as e:
         print(f"  [DB Error] 获取已完成事件列表失败: {e}")
         return []
+    finally:
+        if conn: return_connection(conn)
+
+
+def get_completed_cry_covered_files_for_date(date_str: str, include_event_files: bool = True) -> set:
+    """获取指定日期已完成哭声事件覆盖的文件名集合。
+
+    用于历史扫描跳过 B 轨实时分析已经完成的哭声事件，避免重复检测和重复
+    Gemini 深度分析。include_event_files=False 时只返回事件主文件，避免把上下文
+    音频误当成已检测哭声。
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return set()
+        cursor = conn.cursor()
+
+        date_no_dash = date_str.replace('-', '')
+        cursor.execute("""
+            SELECT filename, event_files_json
+            FROM baby_cry_events
+            WHERE is_deleted = FALSE
+              AND (
+                  recording_time::date = %s
+                  OR filename LIKE %s
+                  OR filename LIKE %s
+                  OR event_files_json LIKE %s
+                  OR event_files_json LIKE %s
+              )
+              AND reason IS NOT NULL AND reason != ''
+              AND reason != '未知'
+              AND reason_category IS NOT NULL
+              AND reason_category != 'analyzing'
+              AND reason_category != '未分类'
+              AND reason_category != '未知'
+        """, (date_str, f'%{date_str}%', f'%{date_no_dash}%', f'%{date_str}%', f'%{date_no_dash}%'))
+
+        covered_files = set()
+        for filename, event_files_json in cursor.fetchall():
+            if filename:
+                covered_files.add(os.path.basename(filename))
+            if include_event_files and event_files_json:
+                try:
+                    for path in json.loads(event_files_json):
+                        if path:
+                            covered_files.add(os.path.basename(path))
+                except Exception:
+                    pass
+
+        cursor.close()
+        return covered_files
+    except Exception as e:
+        print(f"  [DB Error] 获取已完成哭声覆盖文件失败: {e}")
+        return set()
     finally:
         if conn: return_connection(conn)
 

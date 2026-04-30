@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import time
 import logging
 import threading
@@ -9,7 +10,7 @@ import shutil
 import requests
 import traceback
 from datetime import datetime, timedelta
-from db_manager import parse_recording_time
+from db_manager import parse_recording_time, is_file_processed_a, mark_file_processed_a
 
 try:
     from dotenv import load_dotenv
@@ -110,7 +111,7 @@ def _stall_watchdog():
     后台看门狗线程：定期检查 SOURCE_DIR 是否长时间没有新音频文件到达。
     若超过阈值且处于活跃时段，发送邮件告警。
     """
-    global _last_stall_alert_time
+    global _last_new_file_time, _last_stall_alert_time
 
     logger.info("🐕 Termux 上传停滞看门狗已启动")
     logger.info(f"   停滞阈值: {FileMonitorConfig.STALL_TIMEOUT_SECONDS}秒, "
@@ -247,8 +248,15 @@ def _init_last_file_time():
     except Exception as e:
         logger.warning(f"⚠️ 初始化看门狗基准时间失败: {e}")
 
+def _extract_date_from_filename(filename):
+    """从文件名或路径中提取日期 (YYYY-MM-DD)"""
+    m = re.search(r'(\d{4})-(\d{2})-(\d{2})', filename)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    return None
+
 def _monitor_loop():
-    logger.info("📂 文件监控线程已启动")
+    logger.info("📂 B轨文件监控已启动")
     logger.info(f"   监控目录: {FileMonitorConfig.SOURCE_DIR}")
     
     # 确保必要的目录存在
@@ -257,7 +265,106 @@ def _monitor_loop():
     failed_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.FAILED_DIR)
     os.makedirs(failed_dir, exist_ok=True)
     
-    processed_files = set()
+    # ==================== 阶段一：Catch-up 全量历史追赶 ====================
+    logger.info("🚀 【阶段一：Catch-up】开始全量扫描历史文件...")
+    date_files = {}  # {date_str: [(filename, filepath), ...]}
+    total_scanned = 0
+    total_skipped = 0
+    
+    if os.path.exists(FileMonitorConfig.SOURCE_DIR):
+        try:
+            for item in sorted(os.listdir(FileMonitorConfig.SOURCE_DIR)):
+                item_path = os.path.join(FileMonitorConfig.SOURCE_DIR, item)
+                
+                if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR, 
+                            "audio_segments", "logs"] or item.startswith('.'):
+                    continue
+                
+                # 只处理日期格式的子目录 (YYYY-MM-DD)
+                date_str = _extract_date_from_filename(item)
+                if not date_str or not os.path.isdir(item_path):
+                    continue
+                
+                date_files.setdefault(date_str, [])
+                
+                for subitem in os.listdir(item_path):
+                    if subitem.startswith('.'):
+                        continue
+                    filepath = os.path.join(item_path, subitem)
+                    if not os.path.isfile(filepath):
+                        continue
+                    
+                    ext = os.path.splitext(subitem)[1].lower()
+                    if ext not in FileMonitorConfig.SUPPORTED_FORMATS or 'TEMP' in subitem:
+                        continue
+                    
+                    total_scanned += 1
+                    
+                    # 跳过 A 轨已处理的文件
+                    if is_file_processed_a(subitem):
+                        total_skipped += 1
+                        continue
+                    
+                    date_files[date_str].append((subitem, filepath))
+        except Exception as e:
+            logger.error(f"❌ Catch-up 扫描异常: {e}")
+            logger.error(traceback.format_exc())
+    
+    # 按日期排序（从老到新）
+    sorted_dates = sorted(date_files.keys())
+    total_catchup = sum(len(files) for files in date_files.values())
+    
+    logger.info(f"📊 【Catch-up 扫描完成】共 {total_scanned} 个历史文件，"
+                f"跳过 A 轨已处理 {total_skipped} 个，"
+                f"待处理 {total_catchup} 个，跨越 {len(sorted_dates)} 天")
+    
+    # 逐日期处理
+    catchup_processed = 0
+    catchup_failed = 0
+    for date_idx, date_str in enumerate(sorted_dates, 1):
+        files = date_files[date_str]
+        if not files:
+            continue
+        
+        logger.info(f"📅 [{date_idx}/{len(sorted_dates)}] 处理日期 {date_str}，共 {len(files)} 个文件")
+        
+        # 按文件名排序
+        files.sort(key=lambda x: x[0])
+        
+        for file_idx, (filename, filepath) in enumerate(files, 1):
+            try:
+                # 双重检查：处理前再次确认未被 A 轨处理
+                if is_file_processed_a(filename):
+                    logger.info(f"  ⏭️ [{file_idx}/{len(files)}] {filename} — A轨已处理，跳过")
+                    continue
+                
+                recording_time = parse_recording_time(filename)
+                if recording_time:
+                    hour = recording_time.hour
+                    if 1 <= hour < 6:
+                        logger.info(f"  ⏭️ [{file_idx}/{len(files)}] {filename} — 凌晨录音，跳过")
+                        _move_file(filepath, filename, processed_dir, recording_time)
+                        mark_file_processed_a(filename, status="skipped_night")
+                        catchup_processed += 1
+                        continue
+                
+                logger.info(f"  📤 [{file_idx}/{len(files)}] {filename} — 开始处理")
+                success = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
+                if success:
+                    mark_file_processed_a(filename, status="b_catchup_success")
+                catchup_processed += 1
+            except Exception as e:
+                logger.error(f"  ❌ [{file_idx}/{len(files)}] {filename} — 处理失败: {e}")
+                catchup_failed += 1
+        
+        logger.info(f"  ✅ {date_str} 完成，成功 {catchup_processed}，失败 {catchup_failed}")
+    
+    logger.info(f"🎉 【阶段一：Catch-up】全量历史追赶完成！"
+                f"共处理 {catchup_processed} 个文件，失败 {catchup_failed} 个")
+    logger.info("🔄 【阶段二：Real-time】切换到实时监听模式，等待新文件到达...")
+    
+    # ==================== 阶段二：Real-time 实时监听 ====================
+    processed_files = set()  # 内存缓存，避免重复处理
     
     while True:
         try:
@@ -270,7 +377,8 @@ def _monitor_loop():
             for item in os.listdir(FileMonitorConfig.SOURCE_DIR):
                 item_path = os.path.join(FileMonitorConfig.SOURCE_DIR, item)
                 
-                if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR, "audio_segments", "logs"] or item.startswith('.'):
+                if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR, 
+                            "audio_segments", "logs"] or item.startswith('.'):
                     continue
                 
                 items_to_check = []
@@ -289,29 +397,39 @@ def _monitor_loop():
                 for filepath in items_to_check:
                     filename = os.path.basename(filepath)
                     ext = os.path.splitext(filename)[1].lower()
-                    if ext in FileMonitorConfig.SUPPORTED_FORMATS and 'TEMP' not in filename and filename not in processed_files:
-                        files_to_process.append((filename, filepath))
+                    if (ext in FileMonitorConfig.SUPPORTED_FORMATS and 
+                        'TEMP' not in filename and 
+                        filename not in processed_files):
+                        # 实时模式下也检查 A 轨进度
+                        if not is_file_processed_a(filename):
+                            files_to_process.append((filename, filepath))
+                        else:
+                            processed_files.add(filename)  # 加入内存缓存，避免重复检查
             
             # 按文件名排序
             files_to_process.sort(key=lambda x: x[0])
             
             if files_to_process:
                 update_last_file_time()  # 刷新看门狗时间戳
-                logger.info(f"🔍 发现 {len(files_to_process)} 个待处理文件")
+                logger.info(f"🔍 [Real-time] 发现 {len(files_to_process)} 个新文件")
                 for filename, filepath in files_to_process:
                     try:
-                        _process_one_file(filename, filepath, processed_dir, failed_dir)
+                        recording_time = parse_recording_time(filename)
+                        success = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
+                        if success:
+                            mark_file_processed_a(filename, status="b_realtime_success")
                         processed_files.add(filename)
                     except Exception as e:
                         logger.error(f"处理文件 {filename} 失败: {e}")
             
         except Exception as e:
             logger.error(f"监控循环异常: {e}")
+            logger.error(traceback.format_exc())
             
         time.sleep(FileMonitorConfig.SCAN_INTERVAL)
 
-def _process_one_file(filename, filepath, processed_dir, failed_dir):
-    """处理单个音频文件"""
+def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
+    """处理单个音频文件（B轨），返回是否成功"""
     # 1. 检查录音时间，跳过凌晨 1-6 点
     recording_time = parse_recording_time(filename)
     if recording_time:
@@ -319,7 +437,7 @@ def _process_one_file(filename, filepath, processed_dir, failed_dir):
         if 1 <= hour < 6:
             logger.info(f"⏭️ 跳过凌晨录音: {filename}")
             _move_file(filepath, filename, processed_dir, recording_time)
-            return
+            return True
 
     logger.info(f"📤 开始处理: {filename}")
     
@@ -333,16 +451,19 @@ def _process_one_file(filename, filepath, processed_dir, failed_dir):
             result = response.json()
             logger.info(f"✅ 转录完成: {filename} ({len(result.get('full_text', ''))} 字)")
             _move_file(filepath, filename, processed_dir, recording_time)
+            return True
         elif response.status_code == 503:
             logger.info(f"⏳ B 轨分析当前由于 A 轨任务而暂停，文件保留在原处等待重试: {filename}")
-            return # 不移动文件，等待下一轮扫描
+            return False  # 不移动文件，等待下一轮扫描
         else:
             logger.error(f"❌ 转录失败: {filename} (HTTP {response.status_code})")
             _move_file(filepath, filename, failed_dir, recording_time)
+            return False
             
     except Exception as e:
         logger.error(f"❌ 处理文件 {filename} 时发生异常: {e}")
         _move_file(filepath, filename, failed_dir, recording_time)
+        return False
 
 def _move_file(src_path, filename, base_dest_dir, recording_time=None):
     """根据日期子目录移动文件"""
