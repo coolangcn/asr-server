@@ -14,7 +14,9 @@ echo ""
 # 加载环境变量
 if [ -f .env ]; then
     echo "📄 正在加载环境配置 (.env)..."
-    export $(grep -v '^#' .env | xargs)
+    set -a
+    source .env
+    set +a
     echo "✅ 环境配置加载完成"
 else
     echo "⚠️  未找到 .env 文件，使用默认配置"

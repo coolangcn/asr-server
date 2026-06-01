@@ -882,8 +882,116 @@ def call_volcengine_ai(prompt):
         logger_a.error(f"🎨 [DeepInfra] 异常堆栈：{traceback.format_exc()}")
         return None
 
+def call_z_image_turbo_api(prompt, space_name="mrfakename/Z-Image-Turbo"):
+    """调用 Z-Image-Turbo API (HuggingFace Spaces)"""
+    try:
+        logger_a.info(f"🎨 [Z-Image-Turbo:{space_name}] 开始生成插图")
+        logger_a.info(f"🎨 [Z-Image-Turbo:{space_name}] Prompt 长度：{len(prompt)} 字符")
+
+        from gradio_client import Client
+        
+        # 连接到 Z-Image-Turbo
+        logger_a.info(f"🎨 [Z-Image-Turbo:{space_name}] 正在连接 API...")
+        client = Client(space_name)
+        
+        logger_a.info(f"🎨 [Z-Image-Turbo:{space_name}] 连接成功，开始生成...")
+        result = client.predict(
+            prompt=prompt,
+            height=1024,
+            width=1024,
+            num_inference_steps=9,
+            seed=None,  # 使用随机种子
+            randomize_seed=True,
+            api_name="/generate_image"
+        )
+        
+        if not result or not isinstance(result, tuple) or len(result) == 0:
+            logger_a.warning(f"🎨 [Z-Image-Turbo:{space_name}] API 返回空结果")
+            return None
+        
+        image_path = result[0]
+        seed_used = result[1] if len(result) > 1 else "unknown"
+        
+        logger_a.info(f"🎨 [Z-Image-Turbo:{space_name}] ✅ 生成成功！Seed={seed_used}")
+        logger_a.info(f"🎨 [Z-Image-Turbo:{space_name}] 临时路径：{image_path}")
+        
+        # 确保插图目录存在
+        _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+        os.makedirs(_illustration_dir, exist_ok=True)
+        
+        # 复制文件到插图目录
+        img_filename = f"z_image_{space_name.replace('/', '_')}_{uuid.uuid4().hex[:12]}.png"
+        img_path = os.path.join(_illustration_dir, img_filename)
+        
+        shutil.copy2(image_path, img_path)
+        logger_a.info(f"🎨 [Z-Image-Turbo:{space_name}] 图片已保存到：{img_path}")
+        
+        return f"/api/illustration/{img_filename}"
+        
+    except Exception as e:
+        logger_a.error(f"🎨 [Z-Image-Turbo:{space_name}] 发送请求异常：{e}")
+        import traceback
+        logger_a.error(f"🎨 [Z-Image-Turbo:{space_name}] 异常堆栈：{traceback.format_exc()}")
+        return None
+
+def call_flux2_klein_api(prompt):
+    """调用 FLUX.2-klein-9B API (HuggingFace Spaces)"""
+    try:
+        logger_a.info(f"🎨 [FLUX.2-klein-9B] 开始生成插图")
+        logger_a.info(f"🎨 [FLUX.2-klein-9B] Prompt 长度：{len(prompt)} 字符")
+
+        from gradio_client import Client, handle_file
+        
+        # 连接到 FLUX.2-klein-9B
+        logger_a.info(f"🎨 [FLUX.2-klein-9B] 正在连接 API...")
+        client = Client("black-forest-labs/FLUX.2-klein-9B")
+        
+        logger_a.info(f"🎨 [FLUX.2-klein-9B] 连接成功，开始生成...")
+        result = client.predict(
+            prompt=prompt,
+            input_images=[],
+            mode_choice="Distilled (4 steps)",
+            seed=0,
+            randomize_seed=True,
+            width=1024,
+            height=1024,
+            num_inference_steps=4,
+            guidance_scale=1,
+            prompt_upsampling=False,
+            api_name="/generate"
+        )
+        
+        if not result or not isinstance(result, tuple) or len(result) == 0:
+            logger_a.warning(f"🎨 [FLUX.2-klein-9B] API 返回空结果")
+            return None
+        
+        image_path = result[0]
+        seed_used = result[1] if len(result) > 1 else "unknown"
+        
+        logger_a.info(f"🎨 [FLUX.2-klein-9B] ✅ 生成成功！Seed={seed_used}")
+        logger_a.info(f"🎨 [FLUX.2-klein-9B] 临时路径：{image_path}")
+        
+        # 确保插图目录存在
+        _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+        os.makedirs(_illustration_dir, exist_ok=True)
+        
+        # 复制文件到插图目录
+        img_filename = f"flux2_klein_{uuid.uuid4().hex[:12]}.webp"
+        img_path = os.path.join(_illustration_dir, img_filename)
+        
+        shutil.copy2(image_path, img_path)
+        logger_a.info(f"🎨 [FLUX.2-klein-9B] 图片已保存到：{img_path}")
+        
+        return f"/api/illustration/{img_filename}"
+        
+    except Exception as e:
+        logger_a.error(f"🎨 [FLUX.2-klein-9B] 发送请求异常：{e}")
+        import traceback
+        logger_a.error(f"🎨 [FLUX.2-klein-9B] 异常堆栈：{traceback.format_exc()}")
+        return None
+
 def call_gemini_image_api(prompt):
-    """调用文生图 API (首选百度 ERNIE，备选 DeepInfra)"""
+    """调用文生图 API (首选 mrfakename/Z-Image-Turbo，备选 laruss5/Z-Image-Turbo，备选 black-forest-labs/FLUX.2-klein-9B，备选百度 ERNIE，备选 DeepInfra)"""
     if not LLMConfig.USE_GEMINI_LLM:
         logger_a.warning("🎨 [插图生成] LLM 未启用，跳过")
         return None
@@ -892,7 +1000,37 @@ def call_gemini_image_api(prompt):
         logger_a.info(f"🎨 [插图生成] 开始生成插图")
         logger_a.info(f"🎨 [插图生成] Prompt 长度：{len(prompt)} 字符")
 
-        # 首选：百度 ERNIE-Image-Turbo
+        # 首选：mrfakename/Z-Image-Turbo (HuggingFace Spaces)
+        logger_a.info(f"🎨 [插图生成] 尝试使用 mrfakename/Z-Image-Turbo...")
+        image_data = call_z_image_turbo_api(prompt, "mrfakename/Z-Image-Turbo")
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ mrfakename/Z-Image-Turbo 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] mrfakename/Z-Image-Turbo 失败，回退到 laruss5/Z-Image-Turbo...")
+
+        # 备选：laruss5/Z-Image-Turbo
+        logger_a.info(f"🎨 [插图生成] 尝试使用 laruss5/Z-Image-Turbo...")
+        image_data = call_z_image_turbo_api(prompt, "laruss5/Z-Image-Turbo")
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ laruss5/Z-Image-Turbo 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] laruss5/Z-Image-Turbo 失败，回退到 FLUX.2-klein-9B...")
+
+        # 备选：black-forest-labs/FLUX.2-klein-9B
+        logger_a.info(f"🎨 [插图生成] 尝试使用 black-forest-labs/FLUX.2-klein-9B...")
+        image_data = call_flux2_klein_api(prompt)
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ FLUX.2-klein-9B 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] FLUX.2-klein-9B 失败，回退到百度 ERNIE...")
+
+        # 备选：百度 ERNIE-Image-Turbo
         logger_a.info(f"🎨 [插图生成] 尝试使用百度 ERNIE-Image-Turbo...")
         image_data = call_ernie_image_api(prompt)
 

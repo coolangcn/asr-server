@@ -470,6 +470,16 @@
                 <i class="fa-solid fa-gauge-high text-lg group-hover:text-primary-400 transition-colors w-6 text-center"></i>
                 <span class="font-medium">数据概览</span>
             </button>
+            <button onclick="window.location.href='/daily'" id="nav-daily"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-newspaper text-lg group-hover:text-emerald-400 transition-colors w-6 text-center"></i>
+                <span class="font-medium">每日小报</span>
+            </button>
+            <button onclick="window.location.href='/growth'" id="nav-growth"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-book-open-reader text-lg group-hover:text-amber-400 transition-colors w-6 text-center"></i>
+                <span class="font-medium">成长词典</span>
+            </button>
             <button onclick="switchTab('chat')" id="nav-chat"
                 class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <i class="fa-solid fa-clock-rotate-left text-lg group-hover:text-accent-400 transition-colors w-6 text-center"></i>
@@ -956,6 +966,7 @@
                 setTimeout(() => {
                     if (window.emotionChartInst) window.emotionChartInst.resize();
                     if (window.heatmapChartInst) window.heatmapChartInst.resize();
+                    if (window.relationshipChartInst) window.relationshipChartInst.resize();
                 }, 50);
             } else if (tabName === 'speaker') {
                 if (typeof loadSpeakers === "function") loadSpeakers();
@@ -1735,6 +1746,16 @@
                     </h3>
                     <div id="heatmap-chart" style="width: 100%; height: 300px;"></div>
                 </div>
+                <div class="glass-card rounded-2xl p-6 lg:col-span-2">
+                    <div class="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-diagram-project text-emerald-400"></i>
+                            家庭声音关系图谱
+                        </h3>
+                        <div id="relationship-summary" class="text-xs text-gray-500"></div>
+                    </div>
+                    <div id="relationship-chart" style="width: 100%; height: 420px;"></div>
+                </div>
             </div>
             `;
 
@@ -1803,12 +1824,14 @@
             requestAnimationFrame(() => {
                 initEmotionChart(items);
                 initHeatmapChart(items);
+                initRelationshipChart(items);
             });
         }
 
         // ECharts 实例变量 (挂载到 window 以便全局 resize)
         window.emotionChartInst = null;
         window.heatmapChartInst = null;
+        window.relationshipChartInst = null;
 
         // ECharts 初始化函数
         function initEmotionChart(items) {
@@ -1921,6 +1944,179 @@
             };
             myChart.setOption(option);
             window.addEventListener('resize', () => myChart.resize());
+        }
+
+        function buildRelationshipGraph(items) {
+            const speakerStats = {};
+            const linkCounts = {};
+            const hourLinks = {};
+
+            items.forEach(item => {
+                const timeStr = item.parsed_time || item.recording_time || item.created_at;
+                const date = timeStr ? new Date(timeStr) : null;
+                const hour = date && !Number.isNaN(date.getTime()) ? date.getHours() : null;
+                const segments = (item.segments || [])
+                    .filter(seg => seg.spk && seg.spk !== 'Unknown')
+                    .sort((a, b) => (a.start || 0) - (b.start || 0));
+
+                segments.forEach(seg => {
+                    const spk = seg.spk;
+                    if (!speakerStats[spk]) {
+                        speakerStats[spk] = { segments: 0, chars: 0, duration: 0 };
+                    }
+                    speakerStats[spk].segments += 1;
+                    speakerStats[spk].chars += (seg.text || '').length;
+                    speakerStats[spk].duration += Math.max(((seg.end || 0) - (seg.start || 0)) / 1000, 0);
+                });
+
+                for (let i = 1; i < segments.length; i++) {
+                    const prev = segments[i - 1].spk;
+                    const curr = segments[i].spk;
+                    if (!prev || !curr || prev === curr) continue;
+
+                    const pair = [prev, curr].sort();
+                    const key = `${pair[0]}|||${pair[1]}`;
+                    linkCounts[key] = (linkCounts[key] || 0) + 1;
+                    if (hour !== null) {
+                        if (!hourLinks[key]) hourLinks[key] = {};
+                        hourLinks[key][hour] = (hourLinks[key][hour] || 0) + 1;
+                    }
+                }
+            });
+
+            const maxSegments = Math.max(1, ...Object.values(speakerStats).map(data => data.segments));
+            const nodes = Object.entries(speakerStats)
+                .map(([name, data]) => ({
+                    id: name,
+                    name,
+                    value: data.segments,
+                    symbolSize: 30 + (data.segments / maxSegments) * 42,
+                    chars: data.chars,
+                    duration: Math.round(data.duration)
+                }))
+                .sort((a, b) => b.value - a.value);
+
+            const links = Object.entries(linkCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 80)
+                .map(([key, count]) => {
+                    const [source, target] = key.split('|||');
+                    const hours = hourLinks[key] || {};
+                    const peakHour = Object.entries(hours).sort((a, b) => b[1] - a[1])[0]?.[0];
+                    return {
+                        source,
+                        target,
+                        value: count,
+                        peakHour: peakHour !== undefined ? `${String(peakHour).padStart(2, '0')}:00` : '暂无',
+                        lineStyle: { width: Math.min(8, 1 + count * 0.55) }
+                    };
+                });
+
+            return { nodes, links };
+        }
+
+        function initRelationshipChart(items) {
+            const chartDom = document.getElementById('relationship-chart');
+            if (!chartDom) return;
+            if (relationshipChartInst) {
+                relationshipChartInst.dispose();
+            }
+            window.relationshipChartInst = echarts.init(chartDom, 'dark');
+            const myChart = window.relationshipChartInst;
+
+            renderRelationshipGraph(myChart, buildRelationshipGraph(items));
+
+            let apiUrl = '/api/relationship_graph';
+            if (currentStartDate && currentEndDate) {
+                apiUrl += `?start_date=${encodeURIComponent(currentStartDate)}&end_date=${encodeURIComponent(currentEndDate)}`;
+            }
+            fetch(apiUrl)
+                .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
+                .then(graph => renderRelationshipGraph(myChart, graph))
+                .catch(err => console.warn('加载后端关系图谱失败，使用本地分页数据:', err));
+
+            window.addEventListener('resize', () => myChart.resize());
+        }
+
+        function renderRelationshipGraph(myChart, graph) {
+            const summary = document.getElementById('relationship-summary');
+            const strongest = graph.links && graph.links[0];
+            if (summary) {
+                summary.textContent = strongest
+                    ? `${graph.nodes.length} 人 · ${graph.links.reduce((sum, link) => sum + link.value, 0)} 次相邻互动 · 最强 ${strongest.source} ↔ ${strongest.target}`
+                    : `${graph.nodes.length} 人 · 暂无互动边`;
+            }
+
+            if (graph.nodes.length === 0) {
+                myChart.setOption({
+                    backgroundColor: 'transparent',
+                    title: {
+                        text: '暂无可用的说话人互动数据',
+                        left: 'center',
+                        top: 'center',
+                        textStyle: { color: '#9ca3af', fontSize: 16 }
+                    }
+                });
+                return;
+            }
+
+            const option = {
+                backgroundColor: 'transparent',
+                color: ['#22c55e', '#38bdf8', '#a78bfa', '#fb7185', '#f59e0b', '#14b8a6'],
+                tooltip: {
+                    trigger: 'item',
+                    backgroundColor: 'rgba(17, 24, 39, 0.96)',
+                    borderColor: 'rgba(148, 163, 184, 0.2)',
+                    textStyle: { color: '#fff' },
+                    formatter: params => {
+                        if (params.dataType === 'edge') {
+                            const peakHour = params.data.peakHour || params.data.peak_hour || '暂无';
+                            return `<div style="padding:6px 8px">
+                                <div style="font-weight:700;margin-bottom:4px">${params.data.source} ↔ ${params.data.target}</div>
+                                <div style="color:#cbd5e1">相邻互动：${params.data.value} 次</div>
+                                <div style="color:#94a3b8">高峰时段：${peakHour}</div>
+                            </div>`;
+                        }
+                        const duration = params.data.duration ?? params.data.duration_seconds ?? 0;
+                        return `<div style="padding:6px 8px">
+                            <div style="font-weight:700;margin-bottom:4px">${params.data.name}</div>
+                            <div style="color:#cbd5e1">发言片段：${params.data.value}</div>
+                            <div style="color:#94a3b8">字数：${params.data.chars}</div>
+                            <div style="color:#94a3b8">时长：${duration}s</div>
+                        </div>`;
+                    }
+                },
+                series: [{
+                    type: 'graph',
+                    layout: 'force',
+                    roam: true,
+                    draggable: true,
+                    data: graph.nodes,
+                    links: graph.links,
+                    edgeSymbol: ['none', 'none'],
+                    force: {
+                        repulsion: 280,
+                        edgeLength: [90, 210],
+                        gravity: 0.08
+                    },
+                    label: {
+                        show: true,
+                        color: '#f8fafc',
+                        fontSize: 12,
+                        fontWeight: 600
+                    },
+                    lineStyle: {
+                        color: 'source',
+                        curveness: 0.16,
+                        opacity: 0.62
+                    },
+                    emphasis: {
+                        focus: 'adjacency',
+                        lineStyle: { opacity: 1 }
+                    }
+                }]
+            };
+            myChart.setOption(option);
         }
 
         function getEmotionIcon(emo) {

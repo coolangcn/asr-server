@@ -9,6 +9,7 @@ import threading
 import time
 from flask import Flask, render_template, jsonify, request, Response, send_file, session, redirect, url_for
 import datetime
+from collections import Counter, defaultdict
 import requests
 import subprocess
 import argparse
@@ -317,6 +318,416 @@ def get_transcripts(offset=0, limit=20):
     except Exception as e:
         logger_web.error(f"[Error] 获取转录记录失败: {e}")
         return []
+
+def _parse_iso_datetime(value):
+    """Parse DB ISO strings without letting timezone quirks break filtering."""
+    if not value:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(str(value).replace('Z', '+00:00')).replace(tzinfo=None)
+    except Exception:
+        return None
+
+def _item_datetime(item):
+    return _parse_iso_datetime(item.get('recording_time')) or _parse_iso_datetime(item.get('created_at'))
+
+def _daily_keywords(text, limit=8):
+    stop_words = {'的', '了', '是', '在', '我', '你', '他', '她', '它', '们', '这', '那', '有', '个', '就', '不', '和', '与', '啊', '呀', '吗', '呢', '吧'}
+    cleaned = re.sub(r'\s+', '', text or '')
+    words = [cleaned[i:i + 2] for i in range(max(len(cleaned) - 1, 0))]
+    counter = Counter(w for w in words if len(w) == 2 and w not in stop_words)
+    return [{'text': word, 'count': count} for word, count in counter.most_common(limit)]
+
+def _get_cry_events_for_date(date_str):
+    """Query cry events locally so the daily report does not depend on ASR API availability."""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return []
+
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, filename, created_at, recording_time, start_time, end_time,
+                   reason, advice, reason_category, confidence, illustration_url
+            FROM baby_cry_events
+            WHERE COALESCE(recording_time, created_at)::date = %s
+              AND COALESCE(is_deleted, FALSE) = FALSE
+            ORDER BY COALESCE(recording_time, created_at) ASC
+            """,
+            (date_str,)
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+
+        events = []
+        for row in rows:
+            events.append({
+                'id': row[0],
+                'filename': row[1],
+                'created_at': row[2].isoformat() if row[2] else None,
+                'recording_time': row[3].isoformat() if row[3] else None,
+                'start_time': float(row[4]) if row[4] else 0,
+                'end_time': float(row[5]) if row[5] else 0,
+                'reason': row[6] or '',
+                'advice': row[7] or '',
+                'reason_category': row[8] or '未分类',
+                'confidence': float(row[9]) if row[9] is not None else 0,
+                'illustration_url': row[10] or ''
+            })
+        return events
+    except Exception as e:
+        logger_web.warning(f"[DailyReport] 查询哭声事件失败: {e}")
+        return []
+    finally:
+        if conn:
+            return_connection(conn)
+
+def build_daily_report(date_str):
+    all_items = get_transcripts(offset=0, limit=10000)
+    day_items = []
+    for item in all_items:
+        dt = _item_datetime(item)
+        if dt and dt.strftime('%Y-%m-%d') == date_str:
+            day_items.append(item)
+
+    day_items.sort(key=lambda item: _item_datetime(item) or datetime.datetime.min)
+
+    speaker_stats = defaultdict(lambda: {'segments': 0, 'duration_seconds': 0, 'chars': 0})
+    emotion_counts = Counter()
+    hour_activity = [0] * 24
+    full_text_parts = []
+    quotes = []
+    timeline = []
+    total_segments = 0
+    total_speech_seconds = 0
+
+    for item in day_items:
+        item_dt = _item_datetime(item)
+        if item.get('full_text'):
+            full_text_parts.append(item.get('full_text'))
+
+        segments = item.get('segments') or []
+        hour = item_dt.hour if item_dt else 0
+        hour_activity[hour] += len(segments) or 1
+
+        for seg in segments:
+            text = (seg.get('text') or '').strip()
+            speaker = seg.get('spk') or 'Unknown'
+            duration = max((seg.get('end', 0) - seg.get('start', 0)) / 1000.0, 0)
+            emotion = seg.get('emotion')
+
+            total_segments += 1
+            total_speech_seconds += duration
+            speaker_stats[speaker]['segments'] += 1
+            speaker_stats[speaker]['duration_seconds'] += duration
+            speaker_stats[speaker]['chars'] += len(text)
+            if emotion:
+                emotion_counts[emotion] += 1
+            if 8 <= len(text) <= 90:
+                quotes.append({
+                    'time': item_dt.isoformat() if item_dt else None,
+                    'speaker': speaker,
+                    'text': text,
+                    'emotion': emotion or ''
+                })
+
+        if item_dt:
+            timeline.append({
+                'type': 'recording',
+                'time': item_dt.isoformat(),
+                'label': f"{len(segments)} 段对话" if segments else "录音",
+                'text': (item.get('full_text') or '')[:80]
+            })
+
+    cry_events = _get_cry_events_for_date(date_str)
+    cry_categories = Counter(event.get('reason_category') or '未分类' for event in cry_events)
+    for event in cry_events:
+        event_dt = _parse_iso_datetime(event.get('recording_time')) or _parse_iso_datetime(event.get('created_at'))
+        if event_dt:
+            timeline.append({
+                'type': 'cry',
+                'time': event_dt.isoformat(),
+                'label': event.get('reason_category') or '哭声事件',
+                'text': event.get('reason', '')[:80]
+            })
+
+    timeline.sort(key=lambda item: item.get('time') or '')
+    speakers = [
+        {
+            'name': name,
+            'segments': data['segments'],
+            'duration_seconds': round(data['duration_seconds'], 1),
+            'chars': data['chars']
+        }
+        for name, data in speaker_stats.items()
+    ]
+    speakers.sort(key=lambda item: (item['duration_seconds'], item['segments']), reverse=True)
+
+    busiest_hour = max(range(24), key=lambda h: hour_activity[h]) if any(hour_activity) else None
+    top_emotion = emotion_counts.most_common(1)[0][0] if emotion_counts else '暂无'
+    top_speaker = speakers[0]['name'] if speakers else '暂无'
+    selected_quotes = sorted(quotes, key=lambda item: len(item['text']), reverse=True)[:5]
+
+    return {
+        'date': date_str,
+        'stats': {
+            'recordings': len(day_items),
+            'segments': total_segments,
+            'speech_minutes': round(total_speech_seconds / 60.0, 1),
+            'cry_events': len(cry_events),
+            'top_speaker': top_speaker,
+            'top_emotion': top_emotion,
+            'busiest_hour': f"{busiest_hour:02d}:00" if busiest_hour is not None else '暂无'
+        },
+        'speakers': speakers[:8],
+        'emotions': dict(emotion_counts),
+        'keywords': _daily_keywords(''.join(full_text_parts)),
+        'quotes': selected_quotes,
+        'cry_events': cry_events,
+        'cry_categories': dict(cry_categories),
+        'hour_activity': [{'hour': f"{hour:02d}:00", 'count': count} for hour, count in enumerate(hour_activity)],
+        'timeline': timeline[:80]
+    }
+
+def build_relationship_graph(items):
+    """Build a speaker interaction graph from adjacent conversation turns."""
+    speaker_stats = defaultdict(lambda: {'segments': 0, 'chars': 0, 'duration_seconds': 0})
+    link_counts = Counter()
+    hour_links = defaultdict(Counter)
+
+    for item in items:
+        dt = _item_datetime(item)
+        hour = dt.hour if dt else None
+        segments = item.get('segments') or []
+        cleaned_segments = []
+
+        for seg in segments:
+            speaker = seg.get('spk') or 'Unknown'
+            text = (seg.get('text') or '').strip()
+            if not speaker or speaker == 'Unknown':
+                continue
+
+            duration = max((seg.get('end', 0) - seg.get('start', 0)) / 1000.0, 0)
+            speaker_stats[speaker]['segments'] += 1
+            speaker_stats[speaker]['chars'] += len(text)
+            speaker_stats[speaker]['duration_seconds'] += duration
+            cleaned_segments.append({
+                'speaker': speaker,
+                'start': seg.get('start', 0),
+                'end': seg.get('end', 0)
+            })
+
+        cleaned_segments.sort(key=lambda seg: seg.get('start', 0))
+        for prev, curr in zip(cleaned_segments, cleaned_segments[1:]):
+            if prev['speaker'] == curr['speaker']:
+                continue
+            pair = tuple(sorted([prev['speaker'], curr['speaker']]))
+            link_counts[pair] += 1
+            if hour is not None:
+                hour_links[pair][hour] += 1
+
+    max_segments = max((data['segments'] for data in speaker_stats.values()), default=0)
+    nodes = []
+    for speaker, data in speaker_stats.items():
+        weight = data['segments'] / max_segments if max_segments else 0
+        nodes.append({
+            'id': speaker,
+            'name': speaker,
+            'value': data['segments'],
+            'symbolSize': round(28 + weight * 36, 1),
+            'chars': data['chars'],
+            'duration_seconds': round(data['duration_seconds'], 1)
+        })
+
+    nodes.sort(key=lambda node: node['value'], reverse=True)
+    links = []
+    for (source, target), count in link_counts.most_common(80):
+        peak_hour = None
+        if hour_links[(source, target)]:
+            peak_hour = hour_links[(source, target)].most_common(1)[0][0]
+        links.append({
+            'source': source,
+            'target': target,
+            'value': count,
+            'lineStyle': {'width': min(8, 1 + count * 0.55)},
+            'peak_hour': f"{peak_hour:02d}:00" if peak_hour is not None else None
+        })
+
+    return {
+        'nodes': nodes,
+        'links': links,
+        'summary': {
+            'speaker_count': len(nodes),
+            'interaction_count': sum(link_counts.values()),
+            'strongest_pair': {
+                'speakers': list(link_counts.most_common(1)[0][0]),
+                'count': link_counts.most_common(1)[0][1]
+            } if link_counts else None
+        }
+    }
+
+GROWTH_STOP_TERMS = {
+    '这个', '那个', '就是', '然后', '我们', '你们', '他们', '没有', '不是', '什么', '可以', '一下',
+    '知道', '现在', '这里', '那里', '这样', '一样', '因为', '所以', '还是', '已经', '不要', '不用',
+    '今天', '明天', '昨天', '时候', '东西', '一个', '两个', '一点', '怎么', '这么', '那么', '真的',
+    '是不', '的是', '了吗', '了吧', '去吧', '对不', '不能'
+}
+
+def _growth_text_terms(text):
+    """Extract lightweight Chinese terms without adding a tokenizer dependency."""
+    text = re.sub(r'\s+', '', text or '')
+    terms = []
+
+    for block in re.findall(r'[\u4e00-\u9fff]{2,}', text):
+        max_n = min(3, len(block))
+        for n in range(2, max_n + 1):
+            for i in range(len(block) - n + 1):
+                term = block[i:i + n]
+                if term not in GROWTH_STOP_TERMS:
+                    terms.append(term)
+
+    for token in re.findall(r'[A-Za-z0-9]{2,}', text):
+        terms.append(token.lower())
+
+    return terms
+
+def _quote_score(text, speaker, emotion, target_speaker):
+    score = 0
+    text = text.strip()
+    if target_speaker and speaker == target_speaker:
+        score += 4
+    if 8 <= len(text) <= 45:
+        score += 3
+    elif 46 <= len(text) <= 90:
+        score += 1
+    if emotion in {'happy', 'laughter', 'surprised'}:
+        score += 3
+    if any(mark in text for mark in ['哈', '笑', '不要', '喜欢', '妈妈', '爸爸', '宝宝']):
+        score += 2
+    if re.search(r'[？！!?]', text):
+        score += 1
+    return score
+
+def build_growth_dictionary(items, speaker_filter=None):
+    """Build a lightweight growth dictionary and quote board from transcripts."""
+    speaker_counts = Counter()
+    term_counts = Counter()
+    term_first_seen = {}
+    term_examples = {}
+    speaker_phrase_counts = defaultdict(Counter)
+    quotes = []
+    daily_stats = defaultdict(lambda: {'terms': set(), 'quotes': 0})
+
+    filtered_segments = 0
+    for item in items:
+        item_dt = _item_datetime(item)
+        date_key = item_dt.strftime('%Y-%m-%d') if item_dt else '未知日期'
+        for seg in item.get('segments') or []:
+            speaker = seg.get('spk') or 'Unknown'
+            text = (seg.get('text') or '').strip()
+            emotion = seg.get('emotion') or ''
+            if not text:
+                continue
+
+            speaker_counts[speaker] += 1
+            if speaker_filter and speaker != speaker_filter:
+                continue
+
+            filtered_segments += 1
+            terms = _growth_text_terms(text)
+            unique_terms = set(terms)
+            term_counts.update(unique_terms)
+            speaker_phrase_counts[speaker].update(unique_terms)
+            daily_stats[date_key]['terms'].update(unique_terms)
+
+            for term in unique_terms:
+                if term not in term_first_seen or (item_dt and item_dt < term_first_seen[term]):
+                    term_first_seen[term] = item_dt or datetime.datetime.max
+                    term_examples[term] = {
+                        'term': term,
+                        'speaker': speaker,
+                        'time': item_dt.isoformat() if item_dt else None,
+                        'text': text
+                    }
+
+            score = _quote_score(text, speaker, emotion, speaker_filter)
+            if score >= 4 and 4 <= len(text) <= 90:
+                quotes.append({
+                    'text': text,
+                    'speaker': speaker,
+                    'emotion': emotion,
+                    'time': item_dt.isoformat() if item_dt else None,
+                    'score': score,
+                    'filename': item.get('filename', '')
+                })
+                daily_stats[date_key]['quotes'] += 1
+
+    recurring_terms = {term: count for term, count in term_counts.items() if count >= 2}
+    top_terms = [
+        {'term': term, 'count': count}
+        for term, count in Counter(recurring_terms).most_common(80)
+    ]
+
+    new_terms = []
+    for term, example in term_examples.items():
+        count = term_counts.get(term, 0)
+        if count < 2:
+            continue
+        new_terms.append({
+            **example,
+            'count': count
+        })
+    new_terms.sort(key=lambda item: item.get('time') or '', reverse=True)
+
+    catchphrases = []
+    for speaker, counter in speaker_phrase_counts.items():
+        for term, count in counter.most_common(8):
+            if count >= 2:
+                catchphrases.append({
+                    'speaker': speaker,
+                    'term': term,
+                    'count': count
+                })
+    catchphrases.sort(key=lambda item: item['count'], reverse=True)
+
+    deduped_quotes = []
+    seen_quote_text = set()
+    for quote in sorted(quotes, key=lambda item: (item['score'], item.get('time') or ''), reverse=True):
+        key = quote['text']
+        if key in seen_quote_text:
+            continue
+        seen_quote_text.add(key)
+        deduped_quotes.append(quote)
+        if len(deduped_quotes) >= 40:
+            break
+
+    timeline = [
+        {
+            'date': date,
+            'new_term_count': len(data['terms']),
+            'quote_count': data['quotes']
+        }
+        for date, data in sorted(daily_stats.items())
+        if date != '未知日期'
+    ]
+
+    return {
+        'speakers': [{'name': speaker, 'segments': count} for speaker, count in speaker_counts.most_common()],
+        'selected_speaker': speaker_filter or '',
+        'stats': {
+            'segments': filtered_segments,
+            'unique_terms': len(recurring_terms),
+            'quotes': len(deduped_quotes),
+            'catchphrases': len(catchphrases)
+        },
+        'top_terms': top_terms[:40],
+        'new_terms': new_terms[:40],
+        'quotes': deduped_quotes,
+        'catchphrases': catchphrases[:30],
+        'timeline': timeline[-60:]
+    }
 
 # --- HTML 模板 ---
 
@@ -918,6 +1329,31 @@ def api_data_range():
             "message": str(e)
         }), 500
 
+@app.route('/api/daily_report')
+@login_required
+def api_daily_report():
+    """每日声音小报：按日期聚合转录、声纹、情绪与哭声事件。"""
+    try:
+        date_str = request.args.get('date')
+        if not date_str:
+            date_str = datetime.datetime.now().strftime('%Y-%m-%d')
+
+        try:
+            datetime.datetime.strptime(date_str, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({
+                'error': 'Invalid date format',
+                'message': 'date must be YYYY-MM-DD'
+            }), 400
+
+        return jsonify(build_daily_report(date_str))
+    except Exception as e:
+        logger_web.error(f"[DailyReport] 生成失败: {e}")
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e)
+        }), 500
+
 @app.route('/api/emotion-timeline')
 @login_required
 def api_emotion_timeline():
@@ -1056,6 +1492,72 @@ def api_heatmap():
         })
         
     except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/relationship_graph')
+@login_required
+def api_relationship_graph():
+    """获取家庭声音关系图谱数据。"""
+    try:
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        all_items = db_get_transcripts(offset=0, limit=10000)
+
+        if start_date_str and end_date_str:
+            try:
+                start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d')
+                end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                all_items = [
+                    item for item in all_items
+                    if (dt := _item_datetime(item)) and start_date <= dt <= end_date
+                ]
+            except ValueError:
+                return jsonify({
+                    'error': 'Invalid date format',
+                    'message': 'start_date and end_date must be YYYY-MM-DD'
+                }), 400
+
+        return jsonify(build_relationship_graph(all_items))
+    except Exception as e:
+        logger_web.error(f"[RelationshipGraph] 生成失败: {e}")
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/growth_dictionary')
+@login_required
+def api_growth_dictionary():
+    """成长词典 / 金句收藏候选：支持日期范围与说话人筛选。"""
+    try:
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        speaker = (request.args.get('speaker') or '').strip()
+        if speaker in {'all', '全部'}:
+            speaker = ''
+
+        all_items = db_get_transcripts(offset=0, limit=10000)
+
+        if start_date_str and end_date_str:
+            try:
+                start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d')
+                end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                all_items = [
+                    item for item in all_items
+                    if (dt := _item_datetime(item)) and start_date <= dt <= end_date
+                ]
+            except ValueError:
+                return jsonify({
+                    'error': 'Invalid date format',
+                    'message': 'start_date and end_date must be YYYY-MM-DD'
+                }), 400
+
+        return jsonify(build_growth_dictionary(all_items, speaker_filter=speaker or None))
+    except Exception as e:
+        logger_web.error(f"[GrowthDictionary] 生成失败: {e}")
         return jsonify({
             'error': 'Internal server error',
             'message': str(e)
@@ -1205,6 +1707,18 @@ def mobile_monitor():
     if not check_auth():
         return redirect(url_for('login'))
     return send_file('templates/mobile_monitor.html')
+
+@app.route('/daily')
+def daily_report_page():
+    if not check_auth():
+        return redirect(url_for('login'))
+    return render_template('daily_report.html')
+
+@app.route('/growth')
+def growth_dictionary_page():
+    if not check_auth():
+        return redirect(url_for('login'))
+    return render_template('growth_dictionary.html')
 
 @app.route('/')
 def index():

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成长词典 | Audio Notes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        base: '#07111f',
+                        panel: '#101827',
+                        soft: '#162033',
+                        amber: '#f59e0b',
+                        mint: '#22c55e',
+                        sky: '#38bdf8',
+                        rose: '#fb7185'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background:
+                radial-gradient(circle at 10% 8%, rgba(245, 158, 11, 0.13), transparent 26%),
+                radial-gradient(circle at 86% 12%, rgba(56, 189, 248, 0.12), transparent 28%),
+                #07111f;
+            color: #f8fafc;
+        }
+
+        .panel {
+            background: rgba(16, 24, 39, 0.82);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            backdrop-filter: blur(14px);
+        }
+
+        .soft-card {
+            background: rgba(15, 23, 42, 0.82);
+            border: 1px solid rgba(148, 163, 184, 0.13);
+        }
+
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen font-sans">
+    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <header class="mb-6 flex flex-col gap-5 border-b border-white/10 pb-5 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+                <a href="/" class="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    返回 Audio Notes
+                </a>
+                <h1 class="text-3xl font-extrabold tracking-normal text-white sm:text-4xl">成长词典</h1>
+                <p class="mt-2 text-sm text-slate-400">自动整理新词、口头禅和适合收藏的家庭金句。</p>
+            </div>
+
+            <div class="panel grid gap-3 rounded-lg p-3 sm:grid-cols-[1fr_1fr_auto] xl:min-w-[720px]">
+                <div>
+                    <label class="mb-1 block text-xs text-slate-500">开始日期</label>
+                    <input id="startDate" type="date" class="w-full rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs text-slate-500">结束日期</label>
+                    <input id="endDate" type="date" class="w-full rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs text-slate-500">说话人</label>
+                    <select id="speakerSelect" class="w-full min-w-[130px] rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber">
+                        <option value="">全部</option>
+                    </select>
+                </div>
+                <div class="flex flex-wrap gap-2 sm:col-span-3">
+                    <button onclick="setRange(30)" class="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10">近 30 天</button>
+                    <button onclick="setRange(90)" class="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10">近 90 天</button>
+                    <button onclick="clearRange()" class="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10">全部时间</button>
+                    <button onclick="loadGrowth()" class="ml-auto rounded-md bg-amber px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-yellow-400">
+                        <i class="fa-solid fa-rotate-right mr-2"></i>刷新
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <section id="loading" class="panel rounded-lg p-10 text-center text-slate-300">
+            <i class="fa-solid fa-circle-notch fa-spin mr-2 text-amber"></i>
+            正在翻阅声音里的小词条...
+        </section>
+
+        <section id="content" class="hidden space-y-6">
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div class="soft-card rounded-lg p-5">
+                    <div class="mb-3 flex items-center justify-between text-slate-400">
+                        <span class="text-sm">片段</span>
+                        <i class="fa-solid fa-wave-square text-sky"></i>
+                    </div>
+                    <div id="statSegments" class="text-3xl font-bold">0</div>
+                    <div class="mt-1 text-xs text-slate-500">当前筛选范围</div>
+                </div>
+                <div class="soft-card rounded-lg p-5">
+                    <div class="mb-3 flex items-center justify-between text-slate-400">
+                        <span class="text-sm">词条</span>
+                        <i class="fa-solid fa-book text-amber"></i>
+                    </div>
+                    <div id="statTerms" class="text-3xl font-bold">0</div>
+                    <div class="mt-1 text-xs text-slate-500">去重后</div>
+                </div>
+                <div class="soft-card rounded-lg p-5">
+                    <div class="mb-3 flex items-center justify-between text-slate-400">
+                        <span class="text-sm">金句</span>
+                        <i class="fa-solid fa-quote-right text-rose"></i>
+                    </div>
+                    <div id="statQuotes" class="text-3xl font-bold">0</div>
+                    <div class="mt-1 text-xs text-slate-500">候选收藏</div>
+                </div>
+                <div class="soft-card rounded-lg p-5">
+                    <div class="mb-3 flex items-center justify-between text-slate-400">
+                        <span class="text-sm">口头禅</span>
+                        <i class="fa-solid fa-repeat text-mint"></i>
+                    </div>
+                    <div id="statCatchphrases" class="text-3xl font-bold">0</div>
+                    <div class="mt-1 text-xs text-slate-500">重复出现</div>
+                </div>
+            </div>
+
+            <div class="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+                <section class="panel rounded-lg p-5">
+                    <div class="mb-4 flex items-center justify-between">
+                        <h2 class="text-lg font-bold">词语热度</h2>
+                        <span class="text-xs text-slate-500">按出现片段数</span>
+                    </div>
+                    <div id="topTerms" class="flex flex-wrap gap-2"></div>
+                </section>
+
+                <section class="panel rounded-lg p-5">
+                    <div class="mb-4 flex items-center justify-between">
+                        <h2 class="text-lg font-bold">成长曲线</h2>
+                        <span class="text-xs text-slate-500">每日词条和金句</span>
+                    </div>
+                    <div class="h-72">
+                        <canvas id="growthChart"></canvas>
+                    </div>
+                </section>
+            </div>
+
+            <div class="grid gap-6 xl:grid-cols-2">
+                <section class="panel rounded-lg p-5">
+                    <h2 class="mb-4 text-lg font-bold">近期新词</h2>
+                    <div id="newTerms" class="grid gap-3 sm:grid-cols-2"></div>
+                </section>
+
+                <section class="panel rounded-lg p-5">
+                    <h2 class="mb-4 text-lg font-bold">口头禅排行</h2>
+                    <div id="catchphrases" class="space-y-3"></div>
+                </section>
+            </div>
+
+            <section class="panel rounded-lg p-5">
+                <h2 class="mb-4 text-lg font-bold">候选金句</h2>
+                <div id="quotes" class="grid gap-4 lg:grid-cols-2"></div>
+            </section>
+        </section>
+    </main>
+
+    <script>
+        let growthChart = null;
+        let currentSpeakers = [];
+
+        function padDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function formatDateTime(value) {
+            if (!value) return '未知时间';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return '未知时间';
+            return date.toLocaleString('zh-CN', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+        }
+
+        function emptyState(text) {
+            return `<div class="rounded-md border border-dashed border-white/10 p-4 text-sm text-slate-500">${text}</div>`;
+        }
+
+        function setRange(days) {
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - days + 1);
+            document.getElementById('startDate').value = padDate(start);
+            document.getElementById('endDate').value = padDate(end);
+            loadGrowth();
+        }
+
+        function clearRange() {
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            loadGrowth();
+        }
+
+        function updateSpeakerOptions(speakers, selectedSpeaker) {
+            const select = document.getElementById('speakerSelect');
+            const previous = selectedSpeaker || select.value;
+            currentSpeakers = speakers || [];
+            select.innerHTML = '<option value="">全部</option>' + currentSpeakers.map(speaker => (
+                `<option value="${escapeHtml(speaker.name)}">${escapeHtml(speaker.name)} (${speaker.segments})</option>`
+            )).join('');
+            select.value = currentSpeakers.some(speaker => speaker.name === previous) ? previous : '';
+        }
+
+        function renderChart(timeline) {
+            const ctx = document.getElementById('growthChart');
+            if (growthChart) growthChart.destroy();
+            growthChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: (timeline || []).map(item => item.date),
+                    datasets: [
+                        {
+                            label: '词条',
+                            data: (timeline || []).map(item => item.new_term_count),
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.16)',
+                            tension: 0.35,
+                            fill: true
+                        },
+                        {
+                            label: '金句',
+                            data: (timeline || []).map(item => item.quote_count),
+                            borderColor: '#fb7185',
+                            backgroundColor: 'rgba(251, 113, 133, 0.12)',
+                            tension: 0.35,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#cbd5e1' } }
+                    },
+                    scales: {
+                        x: { grid: { color: 'rgba(148, 163, 184, 0.08)' }, ticks: { color: '#94a3b8', maxTicksLimit: 8 } },
+                        y: { beginAtZero: true, grid: { color: 'rgba(148, 163, 184, 0.10)' }, ticks: { color: '#94a3b8', precision: 0 } }
+                    }
+                }
+            });
+        }
+
+        function renderGrowth(data) {
+            document.getElementById('statSegments').textContent = data.stats.segments;
+            document.getElementById('statTerms').textContent = data.stats.unique_terms;
+            document.getElementById('statQuotes').textContent = data.stats.quotes;
+            document.getElementById('statCatchphrases').textContent = data.stats.catchphrases;
+
+            updateSpeakerOptions(data.speakers, data.selected_speaker);
+            renderChart(data.timeline);
+
+            const topTerms = document.getElementById('topTerms');
+            topTerms.innerHTML = (data.top_terms || []).length
+                ? data.top_terms.map((item, index) => {
+                    const size = index < 4 ? 'text-lg px-4 py-2' : 'text-sm px-3 py-1.5';
+                    return `<span class="rounded-full border border-amber/20 bg-amber/10 ${size} text-amber-100">${escapeHtml(item.term)} <span class="text-amber/70">${item.count}</span></span>`;
+                }).join('')
+                : emptyState('暂无可展示词条');
+
+            const newTerms = document.getElementById('newTerms');
+            newTerms.innerHTML = (data.new_terms || []).length
+                ? data.new_terms.map(item => `
+                    <article class="soft-card rounded-md p-3">
+                        <div class="mb-2 flex items-center justify-between gap-3">
+                            <span class="text-xl font-bold text-white">${escapeHtml(item.term)}</span>
+                            <span class="rounded-full bg-sky/10 px-2 py-1 text-xs text-sky">${item.count} 次</span>
+                        </div>
+                        <p class="line-clamp-2 text-sm leading-6 text-slate-300">${escapeHtml(item.text)}</p>
+                        <footer class="mt-2 text-xs text-slate-500">${escapeHtml(item.speaker)} · ${formatDateTime(item.time)}</footer>
+                    </article>
+                `).join('')
+                : emptyState('这个范围里还没有新词候选');
+
+            const catchphrases = document.getElementById('catchphrases');
+            catchphrases.innerHTML = (data.catchphrases || []).length
+                ? data.catchphrases.map((item, index) => `
+                    <div class="soft-card rounded-md p-3">
+                        <div class="mb-2 flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <span class="flex h-7 w-7 items-center justify-center rounded-full bg-mint/10 text-xs font-bold text-mint">${index + 1}</span>
+                                <span class="font-semibold text-white">${escapeHtml(item.term)}</span>
+                            </div>
+                            <span class="font-mono text-sm text-slate-500">${item.count}</span>
+                        </div>
+                        <div class="text-xs text-slate-500">${escapeHtml(item.speaker)}</div>
+                    </div>
+                `).join('')
+                : emptyState('还没形成明显口头禅');
+
+            const quotes = document.getElementById('quotes');
+            quotes.innerHTML = (data.quotes || []).length
+                ? data.quotes.map(item => `
+                    <blockquote class="soft-card rounded-md border-l-2 border-rose p-4">
+                        <p class="text-base leading-7 text-slate-100">${escapeHtml(item.text)}</p>
+                        <footer class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span>${escapeHtml(item.speaker)}</span>
+                            <span>·</span>
+                            <span>${formatDateTime(item.time)}</span>
+                            ${item.emotion ? `<span class="rounded-full bg-white/5 px-2 py-1">${escapeHtml(item.emotion)}</span>` : ''}
+                        </footer>
+                    </blockquote>
+                `).join('')
+                : emptyState('还没有抓到适合收藏的句子');
+        }
+
+        async function loadGrowth() {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+            const speaker = document.getElementById('speakerSelect').value;
+            const params = new URLSearchParams();
+            if (start && end) {
+                params.set('start_date', start);
+                params.set('end_date', end);
+            }
+            if (speaker) params.set('speaker', speaker);
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('content').classList.add('hidden');
+            try {
+                const res = await fetch(`/api/growth_dictionary?${params.toString()}`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || '加载失败');
+                renderGrowth(data);
+                document.getElementById('content').classList.remove('hidden');
+            } catch (error) {
+                document.getElementById('loading').innerHTML = `<div class="text-rose"><i class="fa-solid fa-triangle-exclamation mr-2"></i>${escapeHtml(error.message)}</div>`;
+                return;
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('speakerSelect').addEventListener('change', loadGrowth);
+            setRange(90);
+        });
+    </script>
+</body>
+
+</html>

@@ -7,6 +7,7 @@ import time
 import logging
 import threading
 import shutil
+import subprocess
 import requests
 import traceback
 from datetime import datetime, timedelta
@@ -14,7 +15,7 @@ from db_manager import parse_recording_time, is_file_processed_a, mark_file_proc
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 except Exception:
     pass
 
@@ -39,10 +40,26 @@ class FileMonitorConfig:
     STALL_ACTIVE_HOUR_START = 6
     STALL_ACTIVE_HOUR_END = 23
 
+    # ---- Termux 停滞自动恢复配置 ----
+    STALL_AUTO_RECOVERY_ENABLED = os.getenv("STALL_AUTO_RECOVERY_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+    TERMUX_SSH_HOST = os.getenv("TERMUX_SSH_HOST", "192.168.1.193")
+    TERMUX_SSH_PORT = int(os.getenv("TERMUX_SSH_PORT", "8022"))
+    TERMUX_SSH_USER = os.getenv("TERMUX_SSH_USER", "root")
+    TERMUX_SSH_PASSWORD = os.getenv("TERMUX_SSH_PASSWORD", "")
+    TERMUX_RECOVERY_COMMAND = os.getenv(
+        "TERMUX_RECOVERY_COMMAND",
+        "/data/data/com.termux/files/home/all_in_one.sh start"
+    )
+    # 自动恢复最小间隔（默认 30 分钟），避免停滞期间每分钟重复重启
+    STALL_RECOVERY_COOLDOWN = int(os.getenv("STALL_RECOVERY_COOLDOWN", "1800"))
+    STALL_RECOVERY_TIMEOUT = int(os.getenv("STALL_RECOVERY_TIMEOUT", "90"))
+
 
 # ---- 上传活跃度全局状态 ----
 _last_new_file_time = time.time()          # 最后一次发现新文件的时间戳
 _last_stall_alert_time = 0.0               # 上次发送停滞告警的时间戳
+_last_stall_recovery_time = 0.0            # 上次自动恢复的时间戳
+_stall_active_since = 0.0                  # 当前停滞事件开始时间；0 表示未处于停滞事件
 _stall_status_lock = threading.Lock()
 
 
@@ -106,16 +123,158 @@ def get_stall_status():
         }
 
 
+def _truncate_text(text, limit=3000):
+    if not text:
+        return ""
+    if isinstance(text, bytes):
+        text = text.decode(errors="replace")
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[-limit:]
+
+
+def _join_process_output(*parts):
+    lines = []
+    for part in parts:
+        if not part:
+            continue
+        lines.append(_truncate_text(part, limit=100000))
+    return _truncate_text("\n".join(lines))
+
+
+def _attempt_termux_recovery(elapsed_min, last_time_str):
+    """通过 SSH 执行 Termux 录音上传恢复命令。"""
+    if not FileMonitorConfig.STALL_AUTO_RECOVERY_ENABLED:
+        return {
+            "attempted": False,
+            "ok": False,
+            "message": "自动恢复未启用",
+            "output": "",
+        }
+
+    ssh_bin = shutil.which("ssh")
+    if not ssh_bin:
+        return {
+            "attempted": False,
+            "ok": False,
+            "message": "本机缺少 ssh 命令",
+            "output": "",
+        }
+
+    cmd = [
+        ssh_bin,
+        "-o", "PubkeyAuthentication=no",
+        "-o", "PreferredAuthentications=password,keyboard-interactive",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/tmp/asr_termux_recovery_known_hosts",
+        "-o", "ConnectTimeout=10",
+        "-p", str(FileMonitorConfig.TERMUX_SSH_PORT),
+        f"{FileMonitorConfig.TERMUX_SSH_USER}@{FileMonitorConfig.TERMUX_SSH_HOST}",
+        FileMonitorConfig.TERMUX_RECOVERY_COMMAND,
+    ]
+
+    sshpass_bin = shutil.which("sshpass")
+    env = None
+    if FileMonitorConfig.TERMUX_SSH_PASSWORD:
+        if not sshpass_bin:
+            return {
+                "attempted": False,
+                "ok": False,
+                "message": "已配置 SSH 密码，但本机缺少 sshpass",
+                "output": "",
+            }
+        env = os.environ.copy()
+        env["SSHPASS"] = FileMonitorConfig.TERMUX_SSH_PASSWORD
+        cmd = [sshpass_bin, "-e"] + cmd
+
+    target = f"{FileMonitorConfig.TERMUX_SSH_USER}@{FileMonitorConfig.TERMUX_SSH_HOST}:{FileMonitorConfig.TERMUX_SSH_PORT}"
+    logger.warning(
+        f"🛠️ 尝试自动恢复 Termux 上传: target={target}, "
+        f"停滞={elapsed_min}分钟, 上次文件={last_time_str}"
+    )
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=FileMonitorConfig.STALL_RECOVERY_TIMEOUT,
+            env=env,
+        )
+        output = _join_process_output(result.stdout, result.stderr)
+        ok = result.returncode == 0
+        if ok:
+            logger.info(f"✅ Termux 自动恢复命令执行成功\n{output}")
+            message = "自动恢复命令执行成功"
+        else:
+            logger.error(f"❌ Termux 自动恢复命令执行失败，返回码={result.returncode}\n{output}")
+            message = f"自动恢复命令执行失败，返回码={result.returncode}"
+        return {
+            "attempted": True,
+            "ok": ok,
+            "message": message,
+            "output": output,
+        }
+    except subprocess.TimeoutExpired as e:
+        output = _join_process_output(e.stdout, e.stderr)
+        logger.error(f"❌ Termux 自动恢复命令超时 ({FileMonitorConfig.STALL_RECOVERY_TIMEOUT}s)\n{output}")
+        return {
+            "attempted": True,
+            "ok": False,
+            "message": f"自动恢复命令超时 ({FileMonitorConfig.STALL_RECOVERY_TIMEOUT}s)",
+            "output": output,
+        }
+    except Exception as e:
+        logger.error(f"❌ Termux 自动恢复异常: {e}")
+        return {
+            "attempted": True,
+            "ok": False,
+            "message": f"自动恢复异常: {e}",
+            "output": "",
+        }
+
+
+def _send_stall_recovered_email(stall_active_since, last_file_time):
+    """停滞事件结束后发送恢复通知。"""
+    try:
+        from email_utils import send_email_sync
+
+        now = datetime.now()
+        stalled_minutes = max(0, int((last_file_time - stall_active_since) // 60))
+        stall_start_str = datetime.fromtimestamp(stall_active_since).strftime("%Y-%m-%d %H:%M:%S")
+        last_file_str = datetime.fromtimestamp(last_file_time).strftime("%Y-%m-%d %H:%M:%S")
+
+        subject = "✅ Termux 录音上传已恢复"
+        content = (
+            f"✅ Termux 录音上传已恢复\n"
+            f"{'=' * 40}\n\n"
+            f"恢复确认时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"停滞开始时间: {stall_start_str}\n"
+            f"最新收到文件时间: {last_file_str}\n"
+            f"本次停滞约: {stalled_minutes} 分钟\n"
+            f"监控目录: {FileMonitorConfig.SOURCE_DIR}\n\n"
+            f"系统已经重新检测到新音频文件到达，Termux 上传链路恢复正常。\n"
+            f"{'=' * 40}"
+        )
+        send_email_sync(subject, content)
+        logger.info("📧 Termux 上传恢复邮件已发送")
+    except Exception as e:
+        logger.error(f"❌ 发送 Termux 上传恢复邮件失败: {e}")
+
+
 def _stall_watchdog():
     """
     后台看门狗线程：定期检查 SOURCE_DIR 是否长时间没有新音频文件到达。
     若超过阈值且处于活跃时段，发送邮件告警。
     """
-    global _last_new_file_time, _last_stall_alert_time
+    global _last_new_file_time, _last_stall_alert_time, _last_stall_recovery_time, _stall_active_since
 
     logger.info("🐕 Termux 上传停滞看门狗已启动")
     logger.info(f"   停滞阈值: {FileMonitorConfig.STALL_TIMEOUT_SECONDS}秒, "
                 f"告警冷却: {FileMonitorConfig.STALL_ALERT_COOLDOWN}秒, "
+                f"自动恢复: {FileMonitorConfig.STALL_AUTO_RECOVERY_ENABLED}, "
+                f"恢复冷却: {FileMonitorConfig.STALL_RECOVERY_COOLDOWN}秒, "
                 f"活跃时段: {FileMonitorConfig.STALL_ACTIVE_HOUR_START}:00 ~ "
                 f"{FileMonitorConfig.STALL_ACTIVE_HOUR_END}:00")
 
@@ -142,24 +301,55 @@ def _stall_watchdog():
 
             with _stall_status_lock:
                 elapsed = time.time() - _last_new_file_time
+                last_file_time = _last_new_file_time
 
             if elapsed <= FileMonitorConfig.STALL_TIMEOUT_SECONDS:
+                stall_to_notify = 0.0
+                with _stall_status_lock:
+                    if _stall_active_since > 0:
+                        stall_to_notify = _stall_active_since
+                        _stall_active_since = 0.0
+
+                if stall_to_notify > 0:
+                    _send_stall_recovered_email(stall_to_notify, last_file_time)
+
                 continue  # 正常，还在阈值内
 
-            # 检查冷却期
-            if (time.time() - _last_stall_alert_time) < FileMonitorConfig.STALL_ALERT_COOLDOWN:
-                continue  # 冷却中，不重复发送
-
-            # ---- 触发告警 ----
+            # ---- 触发停滞处理 ----
             elapsed_min = int(elapsed // 60)
-            last_time_str = datetime.fromtimestamp(_last_new_file_time).strftime("%Y-%m-%d %H:%M:%S")
+            last_time_str = datetime.fromtimestamp(last_file_time).strftime("%Y-%m-%d %H:%M:%S")
+
+            with _stall_status_lock:
+                if _stall_active_since <= 0:
+                    _stall_active_since = last_file_time
 
             logger.warning(f"🚨 Termux 上传停滞告警！已 {elapsed_min} 分钟没有新文件到达 "
                            f"(上次文件: {last_time_str})")
 
+            recovery_result = {
+                "attempted": False,
+                "ok": False,
+                "message": "自动恢复冷却中，未重复执行",
+                "output": "",
+            }
+            if (time.time() - _last_stall_recovery_time) >= FileMonitorConfig.STALL_RECOVERY_COOLDOWN:
+                recovery_result = _attempt_termux_recovery(elapsed_min, last_time_str)
+                _last_stall_recovery_time = time.time()
+
+            # 检查邮件告警冷却期。自动恢复和邮件告警分开冷却：
+            # 恢复可以按较短间隔重试，邮件仍避免重复轰炸。
+            if (time.time() - _last_stall_alert_time) < FileMonitorConfig.STALL_ALERT_COOLDOWN:
+                continue
+
             try:
                 from email_utils import send_email_sync
-                subject = f"⚠️ Termux 录音上传停滞告警 - 已停止 {elapsed_min} 分钟"
+                recovery_state = "已尝试自动恢复" if recovery_result["attempted"] else "未执行自动恢复"
+                if recovery_result["attempted"] and recovery_result["ok"]:
+                    recovery_state = "自动恢复命令成功"
+                elif recovery_result["attempted"]:
+                    recovery_state = "自动恢复命令失败"
+
+                subject = f"⚠️ Termux 录音上传停滞告警 - 已停止 {elapsed_min} 分钟（{recovery_state}）"
                 content = (
                     f"⚠️  Termux 录音上传停滞告警\n"
                     f"{'=' * 40}\n\n"
@@ -168,11 +358,19 @@ def _stall_watchdog():
                     f"已停滞时长: {elapsed_min} 分钟\n"
                     f"监控目录: {FileMonitorConfig.SOURCE_DIR}\n\n"
                     f"{'=' * 40}\n"
+                    f"自动恢复:\n"
+                    f"  状态: {recovery_result['message']}\n"
+                    f"  目标: {FileMonitorConfig.TERMUX_SSH_USER}@{FileMonitorConfig.TERMUX_SSH_HOST}:{FileMonitorConfig.TERMUX_SSH_PORT}\n"
+                    f"  命令: {FileMonitorConfig.TERMUX_RECOVERY_COMMAND}\n"
+                    f"  恢复冷却期: {FileMonitorConfig.STALL_RECOVERY_COOLDOWN // 60} 分钟\n\n"
+                    f"恢复命令输出:\n"
+                    f"{recovery_result['output'] or '(无输出)'}\n\n"
+                    f"{'=' * 40}\n"
                     f"可能原因:\n"
                     f"  1. Termux 应用崩溃或被系统杀死\n"
                     f"  2. 手机录音服务停止\n"
                     f"  3. 网络/NAS 挂载异常\n\n"
-                    f"请检查手机 Termux 状态并恢复录音上传。\n"
+                    f"系统已按配置尝试自动恢复；若后续仍无新文件，请检查手机 Termux 状态。\n"
                     f"{'=' * 40}\n"
                     f"此告警冷却期: {FileMonitorConfig.STALL_ALERT_COOLDOWN // 60} 分钟\n"
                     f"（同一问题不会在冷却期内重复发送）"
