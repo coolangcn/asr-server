@@ -29,6 +29,7 @@ from datetime import datetime, timezone, timedelta
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 from email_utils import send_cry_alert_email   # 增加邮件通知支持
 import audio_processor
+import recovery_monitor
 
 # =================【 配置 】=================
 import platform
@@ -2637,6 +2638,9 @@ def get_live_status():
         # 获取 Termux 上传停滞检测状态
         stall_status = audio_processor.get_stall_status()
 
+        # 获取多设备恢复上传监控状态
+        recovery_stall_status = recovery_monitor.get_all_stall_status()
+
         return jsonify({
             "a_running": a_running,
             "b_running": _track_b_running,
@@ -2656,7 +2660,8 @@ def get_live_status():
                 "last_event_time": b_stats.get("last_event_time"),
                 "last_cry_time": b_stats.get("last_cry_time")
             },
-            "upload_stall": stall_status
+            "upload_stall": stall_status,
+            "recovery_devices_stall": recovery_stall_status
         })
     except Exception as e:
         return jsonify({"error": str(e), "a_running": False, "logs_a": ""}), 500
@@ -2679,6 +2684,29 @@ def get_live_logs():
             return jsonify({"logs": logs, "b_running": _track_b_running})
     except Exception as e:
         return jsonify({"error": str(e), "b_running": False}), 500
+
+@app.route("/api/recovery_devices/status", methods=["GET"])
+def get_recovery_devices_status():
+    """获取所有恢复监控设备的停滞状态"""
+    try:
+        status = recovery_monitor.get_all_stall_status()
+        return jsonify({"devices": status})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/recovery_devices/trigger", methods=["POST"])
+def trigger_device_recovery():
+    """手动触发指定设备的恢复命令"""
+    try:
+        data = request.get_json(silent=True) or {}
+        device_name = data.get("device_name") or request.args.get("device_name")
+        if not device_name:
+            return jsonify({"error": "缺少 device_name 参数"}), 400
+        result = recovery_monitor.trigger_recovery(device_name)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"手动触发恢复失败: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/start_live", methods=["POST"])
 def start_live():
@@ -4008,6 +4036,9 @@ if __name__ == "__main__":
     # 启动文件监控模块 (已解耦)
     _track_b_running = True
     audio_processor.start_monitor()
+
+    # 启动多设备恢复上传监控（仅监控停滞和自动恢复，不参与识别）
+    recovery_monitor.start_recovery_monitors()
 
     print("🎉 服务启动成功！")
     print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")
