@@ -92,7 +92,7 @@ def _get_latest_file_mtime():
                 items_to_check.append(item_path)
             elif os.path.isdir(item_path) and item in recent_folders:
                 try:
-                    for subitem in os.listdir(item_path):
+                    for subitem in _safe_listdir(item_path):
                         if not subitem.startswith('.'):
                             subp = os.path.join(item_path, subitem)
                             if os.path.isfile(subp):
@@ -109,6 +109,27 @@ def _get_latest_file_mtime():
     except Exception as e:
         logger.error(f"获取最新文件时间失败: {e}")
     return latest_mtime
+
+
+def _safe_get_latest_file_mtime(timeout=20.0):
+    """带超时地扫描最新文件时间。网络目录扫描可能挂起，
+    在子线程中执行，超时后返回 0 并跳过本次，避免看门狗线程被永久阻塞。"""
+    result = {"mtime": 0}
+
+    def _scan():
+        try:
+            result["mtime"] = _get_latest_file_mtime()
+        except Exception as e:
+            logger.error(f"安全扫描最新文件时间异常: {e}")
+
+    t = threading.Thread(target=_scan, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        logger.warning(f"⚠️ 扫描最新文件时间超时({timeout}s)，本次跳过")
+        return 0
+    return result["mtime"]
+
 
 def get_stall_status():
     """返回当前停滞检测状态（供 API 层调用）"""
@@ -293,7 +314,7 @@ def _stall_watchdog():
                 continue
 
             # 独立扫描获取真实最新的文件时间，避免受处理线程阻塞的影响
-            actual_latest = _get_latest_file_mtime()
+            actual_latest = _safe_get_latest_file_mtime()
             if actual_latest > 0:
                 with _stall_status_lock:
                     if actual_latest > _last_new_file_time:
@@ -392,7 +413,12 @@ def start_monitor():
         return
 
     # 初始化看门狗基准时间：取 SOURCE_DIR 中最新文件的修改时间
-    _init_last_file_time()
+    # 网络目录（SMB/NFS）扫描可能挂起，用线程+超时保护，避免阻塞启动
+    _scan_thread = threading.Thread(target=_init_last_file_time, daemon=True)
+    _scan_thread.start()
+    _scan_thread.join(10)
+    if _scan_thread.is_alive():
+        logger.warning("⚠️ 看门狗基准时间扫描超时(10s)，已跳过，改用当前时间作为基准")
 
     # 启动上传停滞看门狗
     if FileMonitorConfig.STALL_DETECT_ENABLED:
@@ -404,13 +430,40 @@ def start_monitor():
     return thread
 
 
+_HANGING_DIRS = set()  # 已确认会挂起的网络目录，避免反复探测
+
+
+def _safe_listdir(path, timeout=3.0):
+    """安全列出目录。网络目录（SMB/NFS）的 readdir 可能永久挂起，
+    用子线程 + 超时保护，避免阻塞主流程；挂起的目录会被记录并跳过。"""
+    normalized = os.path.normpath(path)
+    if normalized in _HANGING_DIRS:
+        return []
+    result = []
+
+    def _do():
+        try:
+            result.extend(os.listdir(path))
+        except Exception as e:
+            logger.warning(f"⚠️ 读取目录异常 {path}: {e}")
+
+    t = threading.Thread(target=_do, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        logger.warning(f"⚠️ 读取目录超时({timeout}s)，疑似挂起，本次跳过: {path}")
+        _HANGING_DIRS.add(normalized)
+        return []
+    return result
+
+
 def _init_last_file_time():
     """扫描 SOURCE_DIR 获取最新文件的修改时间，作为看门狗基准"""
     global _last_new_file_time
     try:
         source_dir = FileMonitorConfig.SOURCE_DIR
         latest_mtime = 0
-        for item in os.listdir(source_dir):
+        for item in _safe_listdir(source_dir):
             if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR,
                         "audio_segments", "logs"] or item.startswith('.'):
                 continue
@@ -421,7 +474,7 @@ def _init_last_file_time():
                 items_to_check.append(item_path)
             elif os.path.isdir(item_path):
                 try:
-                    for subitem in os.listdir(item_path):
+                    for subitem in _safe_listdir(item_path):
                         if not subitem.startswith('.'):
                             subp = os.path.join(item_path, subitem)
                             if os.path.isfile(subp):
@@ -471,7 +524,7 @@ def _monitor_loop():
     
     if os.path.exists(FileMonitorConfig.SOURCE_DIR):
         try:
-            for item in sorted(os.listdir(FileMonitorConfig.SOURCE_DIR)):
+            for item in sorted(_safe_listdir(FileMonitorConfig.SOURCE_DIR)):
                 item_path = os.path.join(FileMonitorConfig.SOURCE_DIR, item)
                 
                 if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR, 
@@ -485,7 +538,7 @@ def _monitor_loop():
                 
                 date_files.setdefault(date_str, [])
                 
-                for subitem in os.listdir(item_path):
+                for subitem in _safe_listdir(item_path):
                     if subitem.startswith('.'):
                         continue
                     filepath = os.path.join(item_path, subitem)
@@ -572,7 +625,7 @@ def _monitor_loop():
                 continue
             
             files_to_process = []
-            for item in os.listdir(FileMonitorConfig.SOURCE_DIR):
+            for item in _safe_listdir(FileMonitorConfig.SOURCE_DIR):
                 item_path = os.path.join(FileMonitorConfig.SOURCE_DIR, item)
                 
                 if item in [FileMonitorConfig.PROCESSED_DIR, FileMonitorConfig.FAILED_DIR, 
@@ -584,7 +637,7 @@ def _monitor_loop():
                     items_to_check.append(item_path)
                 elif os.path.isdir(item_path):
                     try:
-                        for subitem in os.listdir(item_path):
+                        for subitem in _safe_listdir(item_path):
                             if not subitem.startswith('.'):
                                 subp = os.path.join(item_path, subitem)
                                 if os.path.isfile(subp):

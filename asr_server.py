@@ -4038,7 +4038,12 @@ if __name__ == "__main__":
     audio_processor.start_monitor()
 
     # 启动多设备恢复上传监控（仅监控停滞和自动恢复，不参与识别）
-    recovery_monitor.start_recovery_monitors()
+    # 内部会扫描 NAS 目录，可能挂起，用线程+超时保护，避免阻塞启动
+    _rec_thread = threading.Thread(target=recovery_monitor.start_recovery_monitors, daemon=True)
+    _rec_thread.start()
+    _rec_thread.join(10)
+    if _rec_thread.is_alive():
+        logger_sys.warning("⚠️ 恢复监控初始化扫描超时(10s)，将在后台继续，不阻塞服务启动")
 
     print("🎉 服务启动成功！")
     print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")
