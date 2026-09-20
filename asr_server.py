@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import functools
 import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse, uuid, glob
 from dotenv import load_dotenv
 
@@ -19,7 +20,7 @@ import shutil
 import re
 from collections import Counter, OrderedDict
 from db_manager import save_to_db, update_topics, parse_recording_time, init_pool, init_db
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 import whisper
 import requests
 import hashlib
@@ -269,9 +270,9 @@ def create_sub_logger(name, filename, level=logging.INFO):
     l = logging.getLogger(name)
     l.setLevel(level)
     l.handlers = [] # 清除可能存在的旧处理器
-    # 改为每天轮转一次，保留 30 天的日志
-    handler = TimedRotatingFileHandler(
-        filename, when='midnight', interval=1, backupCount=30, encoding='utf-8'
+    # 按大小轮转：单文件 50MB，保留 5 个历史文件
+    handler = RotatingFileHandler(
+        filename, maxBytes=50*1024*1024, backupCount=5, encoding='utf-8'
     )
     handler.setFormatter(log_formatter)
     l.addHandler(handler)
@@ -290,6 +291,22 @@ logger_sys = create_sub_logger("system", "log/asr-web.log")
 
 app = Flask(__name__)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+# =================== 管理接口可选鉴权 ===================
+def admin_required(f):
+    """可选管理鉴权：.env 配置 ADMIN_TOKEN 后启用，请求需带 X-Admin-Token 头；
+    未配置则不拦截（向后兼容）。web_viewer 代理与本地调用方会自动注入该头。
+
+    注意：本装饰器必须定义在所有 @app.route 之前——装饰器在模块加载时即被求值。
+    """
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        admin_token = (os.getenv("ADMIN_TOKEN") or "").strip()
+        if admin_token and request.headers.get("X-Admin-Token", "") != admin_token:
+            logger_sys.warning(f"🚫 管理接口鉴权失败: {request.path} (来自 {request.remote_addr})")
+            return jsonify({"error": "Unauthorized: 需要有效的 X-Admin-Token 请求头"}), 401
+        return f(*args, **kwargs)
+    return wrapper
 
 asr_pipeline = None
 sv_pipelines = {}
@@ -333,14 +350,21 @@ class CryDetectionConfig:
     MIN_DURATION_SEC = 3            # 最短有效哭声时长 (秒)
 
     # 声纹阈值 (远低于语音识别的 0.60)
-    # 基于 3月20日已知哭声数据: Baby 全局得分约 0.52
-    VOICEPRINT_THRESHOLD = 0.65     # 极致严格门槛 (用户倾向严格)
-    VOICEPRINT_GAP = 0.15           # 严格置信度间隔 (原为0.02/0.10)
+    # 2026-09-18 基于 381 条已知哭声 + 129 条干扰音回放校准 (calibrate_rules.py)
+    VOICEPRINT_THRESHOLD = 0.65     # 模型专用阈值未覆盖时的兜底门槛
+    VOICEPRINT_GAP = 0.15           # 置信度间隔 (校准结果 gap=0.15 最优)
 
-    MIN_VOTES = 3
-    MIN_AVG_CONFIDENCE = 0.82      # 拦截中等分数的 2 票误判
-    STRONG_MODEL_SCORE = 0.85      # 至少要有一个模型达到强命中
-    MIN_STRONG_MODELS = 1
+    # 分模型阈值 (校准最优: 2/3票制 TPR=98.4%, FPR=2/129)
+    MODEL_THRESHOLDS = {
+        "eres2net_large": 0.83,
+        "rdino_ecapa": 0.81,
+        "camplusplus": 0.72,
+    }
+
+    MIN_VOTES = 2
+    MIN_AVG_CONFIDENCE = 0.0       # 已停用 (2票制下由分模型阈值把关)
+    STRONG_MODEL_SCORE = 0.85      # 仅用于日志统计
+    MIN_STRONG_MODELS = 0
 
     # 目标声纹名 (大小写不敏感)
     TARGET_SPEAKERS = ["baby", "宝宝"]
@@ -991,8 +1015,135 @@ def call_flux2_klein_api(prompt):
         logger_a.error(f"🎨 [FLUX.2-klein-9B] 异常堆栈：{traceback.format_exc()}")
         return None
 
+def _save_illustration_bytes(raw_bytes, prefix):
+    """把图片字节保存到插图目录，返回 API 相对路径；按文件头自动判定扩展名"""
+    _illustration_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+    os.makedirs(_illustration_dir, exist_ok=True)
+    ext = ".png"
+    if raw_bytes[:3] == b"\xff\xd8\xff":
+        ext = ".jpg"
+    img_filename = f"{prefix}_{uuid.uuid4().hex[:12]}{ext}"
+    img_path = os.path.join(_illustration_dir, img_filename)
+    with open(img_path, "wb") as f:
+        f.write(raw_bytes)
+    logger_a.info(f"🎨 [{prefix}] 图片已保存：{img_path}")
+    return f"/api/illustration/{img_filename}"
+
+
+def call_newapi_image_api(prompt, model=None, prefix="agnes"):
+    """NAS new-api 网关（OpenAI 兼容图片接口）；model 缺省取 IMAGE_NEWAPI_MODEL"""
+    base_url = os.getenv("IMAGE_NEWAPI_BASE_URL", "http://192.168.1.188:3008/v1").rstrip("/")
+    api_key = os.getenv("IMAGE_NEWAPI_API_KEY", "")
+    if model is None:
+        model = os.getenv("IMAGE_NEWAPI_MODEL", "agnes-image-2.5-flash")
+    if not api_key:
+        logger_a.warning("🎨 [new-api] 未配置 IMAGE_NEWAPI_API_KEY，跳过")
+        return None
+    try:
+        logger_a.info(f"🎨 [new-api:{model}] 开始生成插图")
+        resp = requests.post(
+            f"{base_url}/images/generations",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model, "prompt": prompt, "n": 1, "size": "1024x1024"},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        arr = (resp.json() or {}).get("data") or []
+        if not arr:
+            logger_a.warning(f"🎨 [new-api:{model}] 返回无数据")
+            return None
+        item = arr[0]
+        if item.get("b64_json"):
+            import base64 as _b64
+            return _save_illustration_bytes(_b64.b64decode(item["b64_json"]), prefix)
+        if item.get("url"):
+            img_resp = requests.get(item["url"], timeout=60)
+            img_resp.raise_for_status()
+            return _save_illustration_bytes(img_resp.content, prefix)
+        logger_a.warning(f"🎨 [new-api:{model}] 数据项缺少 b64_json/url")
+        return None
+    except Exception as e:
+        logger_a.error(f"🎨 [new-api:{model}] 生成失败：{e}")
+        return None
+
+
+def call_cpa_gemini_image_api(prompt):
+    """备选：NAS CPA (CLIProxyAPI) 的 gemini-3.1-flash-image，走 chat 接口返回 base64 图片"""
+    base_url = os.getenv("IMAGE_CPA_BASE_URL", "http://192.168.1.188:8317/v1").rstrip("/")
+    api_key = os.getenv("IMAGE_CPA_API_KEY", "")
+    model = os.getenv("IMAGE_CPA_MODEL", "gemini-3.1-flash-image")
+    if not api_key:
+        logger_a.warning("🎨 [CPA] 未配置 IMAGE_CPA_API_KEY，跳过")
+        return None
+    try:
+        logger_a.info(f"🎨 [CPA:{model}] 开始生成插图")
+        resp = requests.post(
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        message = ((resp.json() or {}).get("choices") or [{}])[0].get("message", {})
+        images = message.get("images") or []
+        if not images:
+            logger_a.warning(f"🎨 [CPA:{model}] 响应中无图片")
+            return None
+        url = images[0].get("image_url", {}).get("url", "")
+        if not url.startswith("data:"):
+            logger_a.warning(f"🎨 [CPA:{model}] 图片格式非 data URI")
+            return None
+        import base64 as _b64
+        b64_data = url.split(",", 1)[1]
+        return _save_illustration_bytes(_b64.b64decode(b64_data), "cpa_gemini")
+    except Exception as e:
+        logger_a.error(f"🎨 [CPA:{model}] 生成失败：{e}")
+        return None
+
+
+def call_grok2api_image_api(prompt):
+    """备选：NAS grok2api 的 grok-imagine-image-2.0（OpenAI 图片接口，返回的容器内 url 需重写为外部地址）"""
+    base_url = os.getenv("IMAGE_GROK2API_BASE_URL", "http://192.168.1.188:12323/v1").rstrip("/")
+    api_key = os.getenv("IMAGE_GROK2API_API_KEY", "")
+    model = os.getenv("IMAGE_GROK2API_MODEL", "grok-imagine-image-2.0")
+    if not api_key:
+        logger_a.warning("🎨 [grok2api] 未配置 IMAGE_GROK2API_API_KEY，跳过")
+        return None
+    try:
+        logger_a.info(f"🎨 [grok2api:{model}] 开始生成插图")
+        resp = requests.post(
+            f"{base_url}/images/generations",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model, "prompt": prompt, "n": 1},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        arr = (resp.json() or {}).get("data") or []
+        if not arr:
+            logger_a.warning(f"🎨 [grok2api:{model}] 返回无数据")
+            return None
+        item = arr[0]
+        import base64 as _b64
+        if item.get("b64_json"):
+            return _save_illustration_bytes(_b64.b64decode(item["b64_json"]), "grok")
+        url = item.get("url", "")
+        if not url:
+            logger_a.warning(f"🎨 [grok2api:{model}] 数据项缺少 b64_json/url")
+            return None
+        # 容器内返回的 url 指向 127.0.0.1:8000，重写为 NAS 外部地址
+        from urllib.parse import urlparse
+        parsed = urlparse(base_url)
+        fixed_url = url.replace("http://127.0.0.1:8000", f"{parsed.scheme}://{parsed.netloc}")
+        img_resp = requests.get(fixed_url, headers={"Authorization": f"Bearer {api_key}"}, timeout=60)
+        img_resp.raise_for_status()
+        return _save_illustration_bytes(img_resp.content, "grok")
+    except Exception as e:
+        logger_a.error(f"🎨 [grok2api:{model}] 生成失败：{e}")
+        return None
+
+
 def call_gemini_image_api(prompt):
-    """调用文生图 API (首选 mrfakename/Z-Image-Turbo，备选 laruss5/Z-Image-Turbo，备选 black-forest-labs/FLUX.2-klein-9B，备选百度 ERNIE，备选 DeepInfra)"""
+    """调用文生图 API (首选 NAS new-api agnes-image-2.5-flash，备选 CPA gemini-3.1-flash-image → grok2api grok-imagine-image-2.0，再回退 HF Space 链: mrfakename/Z-Image-Turbo → laruss5 → FLUX.2-klein-9B → 百度 ERNIE → DeepInfra)"""
     if not LLMConfig.USE_GEMINI_LLM:
         logger_a.warning("🎨 [插图生成] LLM 未启用，跳过")
         return None
@@ -1000,6 +1151,34 @@ def call_gemini_image_api(prompt):
     try:
         logger_a.info(f"🎨 [插图生成] 开始生成插图")
         logger_a.info(f"🎨 [插图生成] Prompt 长度：{len(prompt)} 字符")
+
+        # 首选：NAS new-api 网关（agnes-image-2.1-flash，OpenAI 兼容接口）
+        logger_a.info(f"🎨 [插图生成] 尝试使用 new-api ({os.getenv('IMAGE_NEWAPI_MODEL', 'agnes-image-2.1-flash')})...")
+        image_data = call_newapi_image_api(prompt)
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ new-api 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] new-api 失败，回退到 CPA Gemini...")
+
+        # 备选：NAS CPA (CLIProxyAPI) 的 gemini-3.1-flash-image
+        image_data = call_cpa_gemini_image_api(prompt)
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ CPA Gemini 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] CPA Gemini 失败，回退到 Grok...")
+
+        # 备选：NAS grok2api 的 grok-imagine-image-2.0
+        image_data = call_grok2api_image_api(prompt)
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ Grok 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] Grok 失败，回退到 mrfakename/Z-Image-Turbo...")
 
         # 首选：mrfakename/Z-Image-Turbo (HuggingFace Spaces)
         logger_a.info(f"🎨 [插图生成] 尝试使用 mrfakename/Z-Image-Turbo...")
@@ -1480,8 +1659,24 @@ def load_speaker_db():
             logger_sys.warning(f"⚠️ 未找到 {Config.SPEAKER_DB_FILE}，将创建新的数据库。")
             speaker_db = {}
 
+_speaker_db_file_mtime = 0.0  # 声纹库文件上次加载时的 mtime
+
+def load_speaker_db_if_changed():
+    """读接口专用：仅当声纹库文件 mtime 变化时才重新读盘。
+    写路径（注册/删除/确认样本）会直接更新内存 speaker_db，不走此函数。"""
+    global _speaker_db_file_mtime
+    try:
+        mtime = os.path.getmtime(Config.SPEAKER_DB_FILE)
+    except OSError:
+        return  # 文件不存在时不动作，保留内存中的现有数据
+    if mtime != _speaker_db_file_mtime:
+        load_speaker_db()  # 内部持有 db_lock，与写路径互斥
+        _speaker_db_file_mtime = mtime
+
 # =================== 音频预处理 ===================
-def preprocess_audio(input_path, output_path):
+def preprocess_audio(input_path, output_path, normalize=None):
+    # normalize=None 时跟随全局配置；显式传 False 可在并发下安全跳过归一化
+    use_normalize = Config.NORMALIZE_AUDIO if normalize is None else normalize
     # 如果启用了高级降噪，先进行降噪处理
     if Config.DENOISE_AUDIO:
         denoised_path = input_path + ".denoised.wav"
@@ -1491,7 +1686,7 @@ def preprocess_audio(input_path, output_path):
             logger_b.warning("高级降噪处理失败，使用原始音频")
 
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
-    filters = ["loudnorm=I=-14:TP=-1.5:LRA=11"] if Config.NORMALIZE_AUDIO else []
+    filters = ["loudnorm=I=-14:TP=-1.5:LRA=11"] if use_normalize else []
     if filters: cmd.extend(["-af", ",".join(filters)])
     cmd.extend(["-ac", "1", "-ar", "16000", output_path])
     try:
@@ -1840,7 +2035,8 @@ def detect_cry_from_full_audio(audio_path, source_filename=None):
     logger_b.info(f"🔍 [哭声检测] 开始对完整音轨进行独立声纹分析")
     logger_b.info(f"   📄 文件: {_display_name}")
     logger_b.info(f"   🎯 目标声纹: {CryDetectionConfig.TARGET_SPEAKERS}")
-    logger_b.info(f"   ⚙️ 参数: 阈值={CryDetectionConfig.VOICEPRINT_THRESHOLD}, "
+    logger_b.info(f"   ⚙️ 参数: 分模型阈值={CryDetectionConfig.MODEL_THRESHOLDS} "
+        f"(兜底={CryDetectionConfig.VOICEPRINT_THRESHOLD}), "
         f"间隔={CryDetectionConfig.VOICEPRINT_GAP}, 最少票数={CryDetectionConfig.MIN_VOTES}, "
         f"最低均值置信度={CryDetectionConfig.MIN_AVG_CONFIDENCE}, "
         f"强命中分={CryDetectionConfig.STRONG_MODEL_SCORE}, "
@@ -1916,7 +2112,8 @@ def detect_cry_from_full_audio(audio_path, source_filename=None):
                 f"other={best_other_name}={best_other_score:.3f}, gap={gap:.3f}"
             )
 
-            passed_threshold = best_target_score >= cry_threshold
+            model_th = CryDetectionConfig.MODEL_THRESHOLDS.get(model_name, cry_threshold)
+            passed_threshold = best_target_score >= model_th
             passed_gap = gap >= cry_gap
             passed = passed_threshold and passed_gap
             status = "✅ PASS" if passed else "❌ FAIL"
@@ -1924,7 +2121,7 @@ def detect_cry_from_full_audio(audio_path, source_filename=None):
             # 详细输出判定过程
             fail_reasons = []
             if not passed_threshold:
-                fail_reasons.append(f"分数{best_target_score:.3f}<阈值{cry_threshold}")
+                fail_reasons.append(f"分数{best_target_score:.3f}<阈值{model_th}")
             if not passed_gap:
                 fail_reasons.append(f"间隔{gap:.3f}<要求{cry_gap}")
             fail_info = f" 原因: {', '.join(fail_reasons)}" if fail_reasons else ""
@@ -2071,6 +2268,7 @@ def api_get_cry_event(event_id):
             "file_count": len(event_files),
             "audio_urls": audio_urls,
             "has_illustration": illustration_url is not None,
+            "sample_confirmed": bool(event.get("sample_confirmed")),
         })
     except Exception as e:
         logger_a.error(f"获取事件详情失败: {e}")
@@ -2099,6 +2297,7 @@ def api_get_cry_events():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/analyze_cry", methods=["POST"])
+@admin_required
 def api_analyze_cry():
     """
     主动触发单次哭声 Gemini 深度分析（供 reprocess 脚本在合并事件后调用）。
@@ -2311,7 +2510,11 @@ def api_analyze_cry():
         logger_a.error(f"[analyze_cry API] 异常: {e}")
         return jsonify({"error": str(e)}), 500
 
+# =================== 危险接口可选管理鉴权 ===================
+# admin_required 已上移至模块顶部（所有路由之前），此处不再重复定义。
+
 @app.route("/api/trigger_reprocess", methods=["POST"])
+@admin_required
 def trigger_reprocess():
     """触发重新处理历史音频任务"""
     global _history_reprocess_running, _history_reprocess_proc, _track_b_paused
@@ -2401,6 +2604,7 @@ def trigger_reprocess():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/stop_reprocess", methods=["POST"])
+@admin_required
 def stop_reprocess():
     """停止正在运行的历史音频处理任务"""
     global _history_reprocess_proc, _history_reprocess_running
@@ -2524,6 +2728,7 @@ def run_refresh_file_cache(target_dir):
         refresh_cache_task["running"] = False
 
 @app.route("/api/refresh_file_cache", methods=["POST"])
+@admin_required
 def refresh_file_cache():
     """启动刷盘任务（异步后台执行）"""
     global refresh_cache_task
@@ -2695,6 +2900,7 @@ def get_recovery_devices_status():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/recovery_devices/trigger", methods=["POST"])
+@admin_required
 def trigger_device_recovery():
     """手动触发指定设备的恢复命令"""
     try:
@@ -2709,6 +2915,7 @@ def trigger_device_recovery():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/start_live", methods=["POST"])
+@admin_required
 def start_live():
     """启动实时监听（B 轨）"""
     try:
@@ -2732,6 +2939,7 @@ def start_live():
         return jsonify({"message": f"启动失败: {e}", "status": "error"}), 500
 
 @app.route("/api/pause_live", methods=["POST"])
+@admin_required
 def pause_live():
     """暂停实时监听（B 轨）"""
     try:
@@ -2744,6 +2952,7 @@ def pause_live():
         return jsonify({"message": f"暂停失败: {e}", "status": "error"}), 500
 
 @app.route("/api/stop_live", methods=["POST"])
+@admin_required
 def stop_live():
     """停止实时监听（B 轨）"""
     try:
@@ -2756,6 +2965,7 @@ def stop_live():
         return jsonify({"message": f"停止失败: {e}", "status": "error"}), 500
 
 @app.route("/api/quick_cry_detect", methods=["POST"])
+@admin_required
 def quick_cry_detect():
     """
     【A轨快速哭声检测】
@@ -2775,18 +2985,14 @@ def quick_cry_detect():
         file.save(temp_path)
 
         # 音频预处理（快速模式：跳过响度归一化，SV模型对响度不敏感，省约0.5-1s）
+        # 通过参数传入而非改全局 Config，避免 Flask threaded=True 并发竞态
         proc_temp = os.path.join(Config.TEMP_DIR, f"quick_cry_proc_{int(time.time())}.wav")
-        orig_normalize = Config.NORMALIZE_AUDIO
-        Config.NORMALIZE_AUDIO = False  # 快速检测跳过归一化
-        try:
-            if not preprocess_audio(temp_path, proc_temp):
-                # 清理临时文件
-                for f in [temp_path, proc_temp]:
-                    if os.path.exists(f):
-                        os.remove(f)
-                return jsonify({"error": "Audio preprocessing failed"}), 500
-        finally:
-            Config.NORMALIZE_AUDIO = orig_normalize  # 恢复原始设置
+        if not preprocess_audio(temp_path, proc_temp, normalize=False):
+            # 清理临时文件
+            for f in [temp_path, proc_temp]:
+                if os.path.exists(f):
+                    os.remove(f)
+            return jsonify({"error": "Audio preprocessing failed"}), 500
 
         # 快速哭声检测（仅声纹匹配，无ASR）
         start_time = time.time()
@@ -2810,12 +3016,349 @@ def quick_cry_detect():
         logger_a.error(f"快速哭声检测失败: {e}")
         return jsonify({"error": str(e)}), 500
 
+
+# =================== 一键确认哭声事件为声纹样本 (自动喂样本库) ===================
+SAMPLE_TARGET_SPEAKER = "Baby"       # 确认样本写入的说话人（与 speaker_db_multi.json 实际 key 一致）
+SAMPLE_NAS_COPY_TIMEOUT = 60         # NAS 文件复制超时（秒）
+SAMPLE_WINDOW_SECONDS = 8.0          # 自动定位的纯哭声窗长（与库中手工样本 2~9s 同量级）
+SAMPLE_WINDOW_STEP = 2.0             # 滑窗步长
+SAMPLE_SEED_MODEL = "eres2net_large" # 滑窗粗筛用模型（三模型中精度最高）
+
+def _safe_copy_file(src, dst, timeout=SAMPLE_NAS_COPY_TIMEOUT):
+    """带超时的文件复制：NAS(SMB) 读取可能挂死，放子线程执行，超时返回失败。"""
+    result = {"ok": False, "error": None}
+
+    def _copy():
+        try:
+            shutil.copy2(src, dst)
+            result["ok"] = True
+        except Exception as e:
+            result["error"] = str(e)
+
+    t = threading.Thread(target=_copy, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        result["error"] = f"文件复制超时({timeout}s)"
+    return result["ok"], result["error"]
+
+
+def _get_audio_duration(path, timeout=10):
+    """ffprobe 获取音频时长（本地文件），失败返回 None"""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=timeout
+        )
+        return float(r.stdout.strip())
+    except Exception:
+        return None
+
+
+def _find_best_cry_window(src_local):
+    """在事件音频中自动定位最像 Baby 的纯哭声段（滑窗打分）。
+    用声纹库 Baby 平均声纹做种子：单模型全窗粗筛 → top 窗 3 模型精排。
+    返回 (start_sec, end_sec, score)；库中无声纹种子时返回 (None, None, 0)。"""
+    avg_embeddings = None
+    if SAMPLE_TARGET_SPEAKER in speaker_db and "avg_embeddings" in speaker_db[SAMPLE_TARGET_SPEAKER]:
+        avg_embeddings = speaker_db[SAMPLE_TARGET_SPEAKER]["avg_embeddings"]
+    seed_avg = (avg_embeddings or {}).get(SAMPLE_SEED_MODEL)
+    seed_pipe = sv_pipelines.get(SAMPLE_SEED_MODEL)
+    if seed_avg is None or seed_pipe is None:
+        return None, None, 0.0
+    seed_avg = np.array(seed_avg).flatten()
+
+    duration = _get_audio_duration(src_local)
+    if not duration or duration <= SAMPLE_WINDOW_SECONDS:
+        return 0.0, float(duration or 0.0), 0.0  # 整段不足一个窗，直接整段
+
+    win_ms = int(SAMPLE_WINDOW_SECONDS * 1000)
+    step_ms = int(SAMPLE_WINDOW_STEP * 1000)
+    total_ms = int(duration * 1000)
+
+    windows = []
+    start_ms = 0
+    while True:
+        end_ms = min(start_ms + win_ms, total_ms)
+        windows.append((start_ms, end_ms))
+        if end_ms >= total_ms:
+            break
+        start_ms += step_ms
+
+    os.makedirs(Config.TEMP_DIR, exist_ok=True)
+    # 粗筛：全窗单模型打分（只做相对排序，跳过响度归一化）
+    scored = []
+    for start_ms, end_ms in windows:
+        wpath = os.path.join(Config.TEMP_DIR, f"crywin_{start_ms}_{int(time.time() * 1000)}.wav")
+        try:
+            if not extract_segment(src_local, start_ms, end_ms, wpath):
+                continue
+            emb = extract_embedding_from_file(seed_pipe, wpath)
+            if emb is None:
+                continue
+            scored.append((1 - cosine(emb.flatten(), seed_avg), start_ms, end_ms))
+        finally:
+            try:
+                os.remove(wpath)
+            except Exception:
+                pass
+
+    if not scored:
+        return None, None, 0.0
+    scored.sort(reverse=True)
+
+    # 精排：top 5 窗走正式预处理 + 3 模型平均分
+    best = None
+    for _, s_ms, e_ms in scored[:5]:
+        wpath = os.path.join(Config.TEMP_DIR, f"crywinp_{s_ms}_{int(time.time() * 1000)}.wav")
+        ppath = os.path.join(Config.TEMP_DIR, f"crywinpp_{s_ms}_{int(time.time() * 1000)}.wav")
+        try:
+            if not extract_segment(src_local, s_ms, e_ms, wpath):
+                continue
+            if not preprocess_audio(wpath, ppath):
+                continue
+            sims = []
+            for m, pipe in sv_pipelines.items():
+                m_avg = avg_embeddings.get(m)
+                if m_avg is None:
+                    continue
+                emb = extract_embedding_from_file(pipe, ppath)
+                if emb is not None:
+                    sims.append(1 - cosine(emb.flatten(), np.array(m_avg).flatten()))
+            if sims:
+                s = sum(sims) / len(sims)
+                if best is None or s > best[0]:
+                    best = (s, s_ms, e_ms)
+        finally:
+            for p in (wpath, ppath):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+
+    if best is None:
+        s, s_ms, e_ms = scored[0]
+        return s_ms / 1000, e_ms / 1000, s
+    return best[1] / 1000, best[2] / 1000, best[0]
+
+
+def _locate_and_copy_event_audio(event):
+    """定位事件音频源文件并带超时复制到本地 temp。
+    优先级: audio_path(持久音频,分析完成后可能已清理) → event_files_json 中与
+    filename 匹配的文件 → event_files_json 其余文件。复制动作即存在性检查。
+    返回 (本地路径 or None, 错误信息)"""
+    candidates = []
+    audio_path = event.get("audio_path")
+    if audio_path:
+        candidates.append(audio_path)
+        if not os.path.isabs(audio_path):
+            candidates.append(os.path.join(FileMonitorConfig.SOURCE_DIR, audio_path))
+    event_files = event.get("event_files_json") or []
+    fname = event.get("filename")
+    for f in event_files:
+        if fname and os.path.basename(f) == fname and f not in candidates:
+            candidates.append(f)
+    for f in event_files:
+        if f not in candidates:
+            candidates.append(f)
+
+    os.makedirs(Config.TEMP_DIR, exist_ok=True)
+    src_ext = (os.path.splitext(candidates[0])[1] if candidates else "") or ".wav"
+    local_path = os.path.join(
+        Config.TEMP_DIR, f"confirm_src_{event.get('id')}_{int(time.time())}{src_ext}"
+    )
+    last_err = "事件无可定位的音频文件"
+    for src in candidates:
+        src = str(src).strip()
+        if not src:
+            continue
+        ok, err = _safe_copy_file(src, local_path)
+        if ok:
+            return local_path, None
+        last_err = f"{src}: {err}"
+    if os.path.exists(local_path):
+        try:
+            os.remove(local_path)
+        except Exception:
+            pass
+    return None, f"持久音频已清理且源文件不可达 → {last_err}"
+
+
+@app.route("/api/confirm_cry_sample/<int:event_id>", methods=["POST"])
+@admin_required
+def confirm_cry_sample(event_id):
+    """
+    【一键确认样本】将哭声事件自动截取的纯哭声段注册进声纹库 (自动喂样本库)。
+    - 自动定位事件音频（持久音频或 NAS 原文件，NAS 复制带超时保护）
+    - 用现有 Baby 声纹做种子，滑窗打分自动截取最像哭声的 ~8s 纯段
+      （与库中手工采集的纯哭声样本同形态，避免整条 60s 稀释平均声纹）
+    - 各声纹模型提取 embedding，追加样本并重算平均声纹
+    - 幂等：已确认的事件直接返回，不重复入库
+    """
+    from db_manager import get_baby_cry_event_by_id, mark_sample_confirmed
+
+    event = get_baby_cry_event_by_id(event_id)
+    if not event:
+        return jsonify({"error": "Event not found"}), 404
+    if event.get("is_deleted"):
+        return jsonify({"error": "事件已删除，无法确认为样本"}), 400
+    if event.get("sample_confirmed"):
+        return jsonify({
+            "message": "该事件此前已确认为样本",
+            "already_confirmed": True,
+            "sample_id": event.get("sample_id"),
+        })
+
+    temp_files = []
+    try:
+        # 1. 定位并复制源音频（NAS 读取带超时保护）
+        src_local, locate_err = _locate_and_copy_event_audio(event)
+        if not src_local:
+            return jsonify({"error": locate_err}), 500
+        temp_files.append(src_local)
+
+        duration = _get_audio_duration(src_local)
+        if duration and duration < 2.0:
+            return jsonify({"error": f"音频过短 ({duration:.1f}s)，无法作为样本"}), 400
+
+        # 2~4. 定位哭声段 + 预处理 + 提取 embedding（GPU 密集，统一持 gpu_lock）
+        sample_embeddings = {}
+        emb_arrays = {}
+        selected_window = None
+        window_score = None
+        with gpu_lock:
+            # 2. 滑窗自动定位最像 Baby 的纯哭声段（与库中手工样本同形态）
+            w_start, w_end, w_score = _find_best_cry_window(src_local)
+            if w_start is None:
+                w_start, w_end = 0.0, float(duration or 0.0)  # 库中无种子：回退整段
+            if w_end - w_start < 1.0:
+                return jsonify({"error": "未能定位出有效的哭声段，请检查该事件音频"}), 400
+            selected_window = [round(w_start, 2), round(w_end, 2)]
+            window_score = round(float(w_score), 4) if w_score else None
+
+            if duration and (w_end - w_start) >= duration * 0.95:
+                seg_path = src_local  # 选中的段几乎覆盖全长，无需剪辑
+            else:
+                seg_path = os.path.join(Config.TEMP_DIR, f"confirm_seg_{event_id}_{int(time.time())}.wav")
+                if not extract_segment(src_local, int(w_start * 1000), int(w_end * 1000), seg_path):
+                    return jsonify({"error": "剪出哭声段失败 (ffmpeg)"}), 500
+                temp_files.append(seg_path)
+
+            # 3. 预处理（与打分管线一致：响度归一化 + 16k 单声道）
+            proc_path = os.path.join(Config.TEMP_DIR, f"confirm_proc_{event_id}_{int(time.time())}.wav")
+            if not preprocess_audio(seg_path, proc_path):
+                return jsonify({"error": "音频预处理失败"}), 500
+            temp_files.append(proc_path)
+
+            # 4. 提取各模型 embedding
+            for model_name, sv_pipe in sv_pipelines.items():
+                emb = extract_embedding_from_file(sv_pipe, proc_path)
+                if emb is not None:
+                    emb_arrays[model_name] = emb
+                    sample_embeddings[model_name] = emb.tolist()
+
+        if not sample_embeddings:
+            return jsonify({"error": "声纹特征提取失败"}), 500
+
+        # 5. 合并入声纹库（db_lock 保护，与注册/识别流程互斥）
+        sample_id = f"event_{event_id}_{int(time.time())}"
+        speaker_dir = os.path.join("speaker_samples", SAMPLE_TARGET_SPEAKER)
+        os.makedirs(speaker_dir, exist_ok=True)
+        sample_audio_path = os.path.join(speaker_dir, f"{sample_id}.wav")
+        shutil.copy2(proc_path, sample_audio_path)
+
+        sample_info = {
+            "id": sample_id,
+            "filename": event.get("filename"),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "audio_path": sample_audio_path,
+            "embeddings": sample_embeddings,
+            "source": "confirmed_cry_event",
+            "event_id": event_id,
+        }
+        similarities = {}
+        low_similarity_warning = []
+
+        with db_lock:
+            existing = speaker_db.get(SAMPLE_TARGET_SPEAKER)
+            if existing and existing.get("avg_embeddings"):
+                # 合并前计算新样本与现有平均声纹的逐模型相似度（用于反馈）
+                for model_name, emb in emb_arrays.items():
+                    avg_emb = existing["avg_embeddings"].get(model_name)
+                    if avg_emb is None:
+                        continue
+                    sim = 1 - cosine(emb.flatten(), np.array(avg_emb).flatten())
+                    similarities[model_name] = round(float(sim), 4)
+                    ref_th = CryDetectionConfig.MODEL_THRESHOLDS.get(
+                        model_name, CryDetectionConfig.VOICEPRINT_THRESHOLD)
+                    if sim < ref_th:
+                        low_similarity_warning.append(
+                            f"{model_name}: {sim:.3f} (低于参考阈值 {ref_th})")
+
+                existing.setdefault("samples", []).append(sample_info)
+                # 重算所有样本的平均 embedding（与注册增强逻辑一致）
+                all_model_embeddings = {m: [] for m in sv_pipelines.keys()}
+                for sample in existing["samples"]:
+                    for m, e in sample.get("embeddings", {}).items():
+                        all_model_embeddings[m].append(np.array(e))
+                existing["avg_embeddings"] = {
+                    m: np.mean(lst, axis=0).tolist()
+                    for m, lst in all_model_embeddings.items() if lst
+                }
+                total_samples = len(existing["samples"])
+            else:
+                # 声纹库中尚无该说话人（兜底新建）
+                speaker_db[SAMPLE_TARGET_SPEAKER] = {
+                    "samples": [sample_info],
+                    "avg_embeddings": {m: e.tolist() for m, e in emb_arrays.items()},
+                }
+                total_samples = 1
+
+            with open(Config.SPEAKER_DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(speaker_db, f, indent=2, ensure_ascii=False)
+
+        logger_a.info(
+            f"🧬 [确认样本] 事件 {event_id} ({event.get('filename')}) 已注册为 "
+            f"[{SAMPLE_TARGET_SPEAKER}] 样本 sample_id={sample_id}, "
+            f"选中段 {selected_window}, 当前共 {total_samples} 个样本, 相似度={similarities}")
+
+        # 6. 标记 DB（在声纹库写成功之后，保证幂等标记与实际入库一致）
+        if not mark_sample_confirmed(event_id, sample_id):
+            logger_a.warning(f"🧬 [确认样本] 事件 {event_id} 声纹已入库但标记 DB 失败")
+
+        return jsonify({
+            "message": (f"已自动截取 {selected_window[0]}s~{selected_window[1]}s 哭声段，"
+                        f"加入 [{SAMPLE_TARGET_SPEAKER}] 声纹库"),
+            "already_confirmed": False,
+            "sample_id": sample_id,
+            "sample_count": total_samples,
+            "selected_window": selected_window,
+            "window_score": window_score,
+            "similarities": similarities,
+            "low_similarity_warning": low_similarity_warning,
+        })
+
+    except Exception as e:
+        logger_a.error(f"确认哭声样本失败 (event_id={event_id}): {e}")
+        import traceback
+        logger_a.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+    finally:
+        for f in temp_files:
+            try:
+                if f and os.path.exists(f):
+                    os.remove(f)
+            except Exception:
+                pass
+
+
 @app.route("/speakers", methods=["GET"])
 def get_speakers():
     """获取所有说话人列表"""
     try:
-        # 重新加载声纹数据库以确保数据是最新的
-        load_speaker_db()
+        # 读内存声纹库（mtime 变化时才重读盘，避免每次请求 JSON 解析）
+        load_speaker_db_if_changed()
         # 返回说话人列表（不包含具体的embedding数据）
         speakers_summary = {}
         for name, data in speaker_db.items():
@@ -2834,8 +3377,8 @@ def get_speakers():
 def get_speaker_samples(speaker_name):
     """获取指定说话人的样本列表"""
     try:
-        # 重新加载声纹数据库以确保数据是最新的
-        load_speaker_db()
+        # 读内存声纹库（mtime 变化时才重读盘，避免每次请求 JSON 解析）
+        load_speaker_db_if_changed()
         if speaker_name not in speaker_db:
             return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
 
@@ -2860,6 +3403,7 @@ def get_speaker_samples(speaker_name):
         return jsonify({"error": "Failed to retrieve speaker samples"}), 500
 
 @app.route("/speaker/<speaker_name>", methods=["DELETE"])
+@admin_required
 def delete_speaker(speaker_name):
     """删除指定说话人"""
     try:
@@ -2878,6 +3422,7 @@ def delete_speaker(speaker_name):
         return jsonify({"error": "Failed to delete speaker"}), 500
 
 @app.route("/speaker/<speaker_name>/sample/<sample_id>", methods=["DELETE"])
+@admin_required
 def delete_speaker_sample(speaker_name, sample_id):
     """删除指定说话人的特定样本"""
     try:
@@ -2963,8 +3508,8 @@ def delete_speaker_sample(speaker_name, sample_id):
 def list_speakers():
     """获取所有说话人列表 (Web Viewer格式)"""
     try:
-        # 重新加载声纹数据库以确保数据是最新的
-        load_speaker_db()
+        # 读内存声纹库（mtime 变化时才重读盘，避免每次请求 JSON 解析）
+        load_speaker_db_if_changed()
         # 返回说话人列表数组格式
         speakers_list = []
         for name, data in speaker_db.items():
@@ -2979,6 +3524,7 @@ def list_speakers():
         return jsonify({"error": "Failed to retrieve speakers"}), 500
 
 @app.route("/speaker/register", methods=["POST"])
+@admin_required
 def register_speaker_web():
     """注册声纹 (Web Viewer格式) - 适配器端点"""
     # 确保临时目录存在
@@ -3121,6 +3667,7 @@ def register_speaker_web():
                     pass
 
 @app.route("/register", methods=["POST"])
+@admin_required
 def register_speaker():
     # 确保临时目录存在
     os.makedirs(Config.TEMP_DIR, exist_ok=True)
@@ -3264,6 +3811,7 @@ def register_speaker():
 
 @app.route("/transcribe", methods=["POST"])
 @app.route("/transcribes", methods=["POST"])
+@admin_required
 def transcribe_audio():
     # 检查 B 轨是否暂停
     if _track_b_paused:
@@ -3873,8 +4421,8 @@ def transcribe_audio():
 def get_sample_audio(speaker_name, sample_id):
     """获取指定说话人样本的音频文件"""
     try:
-        # 重新加载声纹数据库以确保数据是最新的
-        load_speaker_db()
+        # 读内存声纹库（mtime 变化时才重读盘，避免每次请求 JSON 解析）
+        load_speaker_db_if_changed()
         if speaker_name not in speaker_db:
             return jsonify({"error": f"Speaker '{speaker_name}' not found."}), 404
 

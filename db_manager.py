@@ -171,6 +171,9 @@ def init_db():
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS illustration_url TEXT;")
             cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;")
             cursor.execute("UPDATE baby_cry_events SET is_deleted = FALSE WHERE is_deleted IS NULL;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS sample_confirmed BOOLEAN DEFAULT FALSE;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS sample_confirmed_at TIMESTAMP;")
+            cursor.execute("ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS sample_id TEXT;")
         except Exception as e:
             print(f"[DB] 字段升级提示: {e}")
 
@@ -467,7 +470,7 @@ def get_baby_cry_event_by_id(event_id: int) -> Dict:
 
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url FROM baby_cry_events WHERE id = %s",
+            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url, sample_confirmed, sample_confirmed_at, sample_id, is_deleted FROM baby_cry_events WHERE id = %s",
             (event_id,)
         )
         row = cursor.fetchone()
@@ -488,7 +491,11 @@ def get_baby_cry_event_by_id(event_id: int) -> Dict:
             'audio_path': row[10],
             'confidence': float(row[11]) if row[11] else 0,
             'details_json': row[12],
-            'illustration_url': row[13]
+            'illustration_url': row[13],
+            'sample_confirmed': bool(row[14]) if row[14] is not None else False,
+            'sample_confirmed_at': row[15].isoformat() if row[15] else None,
+            'sample_id': row[16],
+            'is_deleted': bool(row[17]) if row[17] is not None else False
         }
     except Exception as e:
         print(f"[DB Error] 查询哭声记录失败: {e}")
@@ -598,6 +605,34 @@ def update_cry_event_audio_path(event_id: int, audio_path: str) -> bool:
         return updated
     except Exception as e:
         print(f"  [DB Error] 更新哭声事件音频路径失败(ID={event_id}): {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            return_connection(conn)
+
+def mark_sample_confirmed(event_id: int, sample_id: str) -> bool:
+    """标记哭声事件已被用户确认为声纹样本（自动喂样本库）"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE baby_cry_events SET sample_confirmed = TRUE, sample_confirmed_at = %s, sample_id = %s WHERE id = %s",
+            (datetime.now(UTC_PLUS_8), sample_id, event_id)
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        cursor.close()
+        if updated:
+            print(f"  [DB] 已标记哭声事件确认为样本: ID={event_id}, sample_id={sample_id}")
+        return updated
+    except Exception as e:
+        print(f"  [DB Error] 标记哭声事件确认样本失败(ID={event_id}): {e}")
         if conn:
             conn.rollback()
         return False
@@ -729,7 +764,7 @@ def get_date_processing_stats() -> dict:
         result = {}
 
         # 格式1: /path/YYYY-MM-DD/file.m4a (带斜杠)
-        cursor.execute('''
+        cursor.execute(r'''
             SELECT (regexp_matches(filename, '/(\d{4}-\d{2}-\d{2})/'))[1] as date_str, COUNT(*) as cnt
             FROM processed_files_a
             WHERE filename ~ '/\d{4}-\d{2}-\d{2}/'
@@ -741,7 +776,7 @@ def get_date_processing_stats() -> dict:
 
         # 格式2: TermuxAudioRecording_YYYY-MM-DD_HH-MM-SS.acc 或 recording-YYYYMMDD-HHMMSS.m4a
         # 日期在文件名中，前面是下划线或短横线
-        cursor.execute('''
+        cursor.execute(r'''
             SELECT (regexp_matches(filename, '[_-](\d{4}-\d{2}-\d{2})[_-]'))[1] as date_str, COUNT(*) as cnt
             FROM processed_files_a
             WHERE filename ~ '[_-]\d{4}-\d{2}-\d{2}[_-]'
@@ -752,7 +787,7 @@ def get_date_processing_stats() -> dict:
                 result[row[0]] = result.get(row[0], 0) + row[1]
 
         # 格式3: recording-YYYYMMDD-HHMMSS.m4a (无横杠格式)
-        cursor.execute('''
+        cursor.execute(r'''
             SELECT SUBSTRING(filename FROM '\d{4}\d{2}\d{2}') as date_str, COUNT(*) as cnt
             FROM processed_files_a
             WHERE filename ~ '\d{4}\d{2}\d{2}' AND filename NOT LIKE '%-%-%'
@@ -888,7 +923,7 @@ def get_unanalyzed_cry_dates() -> list:
         cursor = conn.cursor()
 
         # 情况1：processed_files_a 有 cry 但 baby_cry_events 无记录
-        cursor.execute("""
+        cursor.execute(r"""
             SELECT DISTINCT cry_date FROM (
                 SELECT substring(filename from '\d{4}-\d{2}-\d{2}') AS cry_date
                 FROM processed_files_a
@@ -1274,7 +1309,7 @@ def get_all_cry_dates() -> list:
         cursor = conn.cursor()
 
         # 从 filename 中提取日期，按日期分组
-        cursor.execute("""
+        cursor.execute(r"""
             SELECT DISTINCT substring(filename from '(\d{4}-\d{2}-\d{2})') as d
             FROM processed_files_a 
             WHERE status='cry' AND filename ~ '\d{4}-\d{2}-\d{2}'
@@ -1367,8 +1402,9 @@ def refresh_file_cache(target_dir: str, audio_exts=('.m4a', '.mp3', '.wav', '.aa
             if is_processed_dir:
                 # 过滤掉已完成的日期
                 if skip_completed_dates:
-                    dirs[:] = [d for d in dirs if date_pattern.match(d) and d not in skip_completed_dates]
-                    skipped_dates = len([d for d in dirs if date_pattern.match(d) and d in skip_completed_dates])
+                    date_dirs_here = [d for d in dirs if date_pattern.match(d)]
+                    skipped_dates = len([d for d in date_dirs_here if d in skip_completed_dates])
+                    dirs[:] = [d for d in date_dirs_here if d not in skip_completed_dates]
                 else:
                     dirs[:] = [d for d in dirs if date_pattern.match(d)]
             elif is_date_dir:

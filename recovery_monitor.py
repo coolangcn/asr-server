@@ -23,7 +23,7 @@ class DeviceConfig:
     def __init__(self, name, source_dir, ssh_host, ssh_port=8022, ssh_user="root",
                  ssh_password="", recovery_command="", enabled=True,
                  stall_timeout=1800, recovery_cooldown=1800, recovery_timeout=90,
-                 active_hour_start=6, active_hour_end=23):
+                 active_hour_start=6, active_hour_end=23, room="unknown"):
         self.name = name
         self.source_dir = source_dir
         self.ssh_host = ssh_host
@@ -37,6 +37,10 @@ class DeviceConfig:
         self.recovery_timeout = int(recovery_timeout)
         self.active_hour_start = int(active_hour_start)
         self.active_hour_end = int(active_hour_end)
+        self.room = room
+
+
+ROOM_LABELS = {"living": "客厅", "bedroom": "卧室"}
 
 
 class DeviceState:
@@ -44,8 +48,25 @@ class DeviceState:
         self.last_new_file_time = time.time()
         self.last_stall_alert_time = 0.0
         self.last_stall_recovery_time = 0.0
+        self.last_mount_alert_time = 0.0
+        self.last_room_degrade_log_time = 0.0
         self.stall_active_since = 0.0
         self.lock = threading.Lock()
+
+
+def _room_has_other_active_device(device):
+    """房间视角：同房间其他设备是否仍在录音（有新文件）。用于降级单台故障的告警。"""
+    now = time.time()
+    for other in _devices:
+        if other.name == device.name or not other.enabled or other.room != device.room:
+            continue
+        other_state = _device_states.get(other.name)
+        if not other_state:
+            continue
+        with other_state.lock:
+            if now - other_state.last_new_file_time <= other.stall_timeout:
+                return True
+    return False
 
 
 def _parse_devices_from_env():
@@ -82,6 +103,7 @@ def _parse_devices_from_env():
         recovery_timeout = os.getenv(f"{env_prefix}RECOVERY_TIMEOUT", "90")
         active_hour_start = os.getenv(f"{env_prefix}ACTIVE_HOUR_START", "6")
         active_hour_end = os.getenv(f"{env_prefix}ACTIVE_HOUR_END", "23")
+        room = os.getenv(f"{env_prefix}ROOM", "unknown").strip().lower()
 
         device = DeviceConfig(
             name=name,
@@ -97,9 +119,10 @@ def _parse_devices_from_env():
             recovery_timeout=recovery_timeout,
             active_hour_start=active_hour_start,
             active_hour_end=active_hour_end,
+            room=room,
         )
         devices.append(device)
-        logger.info(f"📱 已配置恢复监控设备: {name} ({ssh_host}) -> {source_dir}")
+        logger.info(f"📱 已配置恢复监控设备: {name} ({ssh_host}) -> {source_dir} [房间: {room}]")
 
     return devices
 
@@ -149,6 +172,41 @@ def _get_latest_file_mtime(device):
     except Exception as e:
         logger.error(f"[{device.name}] 获取最新文件时间失败: {e}")
     return latest_mtime
+
+
+def _get_latest_file_mtime_with_timeout(device, timeout=45.0):
+    """带超时地扫描最新文件时间。SMB 挂载假死时 listdir/stat 会无限挂起，
+    必须在子线程中执行，超时后返回 0（按无新文件处理），避免看门狗线程被永久阻塞。"""
+    result = {"mtime": 0}
+
+    def _scan():
+        result["mtime"] = _get_latest_file_mtime(device)
+
+    t = threading.Thread(target=_scan, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        logger.warning(f"[{device.name}] 目录扫描超时 ({timeout}s)，本轮按无新文件处理")
+        return 0
+    return result["mtime"]
+
+
+def _probe_nas_mount(source_dir, timeout=15.0):
+    """探测 SMB 挂载是否可读（带超时）。挂载不可读 ≠ 手机上传停止，
+    此时应等挂载看门狗修复，而不是 SSH 重启手机。"""
+    result = {"ok": False}
+
+    def _probe():
+        try:
+            os.listdir(source_dir)
+            result["ok"] = True
+        except Exception:
+            result["ok"] = False
+
+    t = threading.Thread(target=_probe, daemon=True)
+    t.start()
+    t.join(timeout)
+    return result["ok"]
 
 
 def _attempt_ssh_recovery(device, elapsed_min, last_time_str):
@@ -323,6 +381,10 @@ def _device_watchdog(device):
                 f"活跃时段: {device.active_hour_start}:00 ~ {device.active_hour_end}:00")
 
     CHECK_INTERVAL = 60
+    PROBE_TIMEOUT = 45           # 单次目录扫描超时（秒）
+    CONFIRM_WINDOW = 180         # 告警/恢复前的复测观察窗口（秒）
+    CONFIRM_INTERVAL = 20        # 复测间隔（秒）
+    MOUNT_ALERT_COOLDOWN = 7200  # 挂载异常告警冷却（秒）
 
     while True:
         try:
@@ -334,7 +396,7 @@ def _device_watchdog(device):
             if not (device.active_hour_start <= current_hour < device.active_hour_end):
                 continue
 
-            actual_latest = _get_latest_file_mtime(device)
+            actual_latest = _get_latest_file_mtime_with_timeout(device, PROBE_TIMEOUT)
             if actual_latest > 0:
                 with state.lock:
                     if actual_latest > state.last_new_file_time:
@@ -359,12 +421,62 @@ def _device_watchdog(device):
             elapsed_min = int(elapsed // 60)
             last_time_str = datetime.fromtimestamp(last_file_time).strftime("%Y-%m-%d %H:%M:%S")
 
+            # ---- 挂载健康检查：挂载不可读 ≠ 手机上传停止 ----
+            if not _probe_nas_mount(device.source_dir):
+                logger.warning(f"📡 [{device.name}] NAS 挂载不可读（手机上传可能正常，是 Mac 侧挂载假死），"
+                               "不触发上传停滞告警和手机重启，等待挂载看门狗修复")
+                with state.lock:
+                    mount_alert_due = (time.time() - state.last_mount_alert_time) >= MOUNT_ALERT_COOLDOWN
+                    if mount_alert_due:
+                        state.last_mount_alert_time = time.time()
+                if mount_alert_due:
+                    try:
+                        from email_utils import send_email_sync
+                        send_email_sync(
+                            f"NAS 挂载异常（{device.name}）——非手机上传问题",
+                            f"Mac 侧 SMB 挂载不可读，已 {elapsed_min} 分钟看不到 {device.name} 的新文件。\n"
+                            "挂载看门狗会自动重挂（通常 1-3 分钟内恢复），手机上传不受影响。\n"
+                            f"上次文件时间: {last_time_str}"
+                        )
+                    except Exception as e:
+                        logger.error(f"[{device.name}] 挂载异常邮件发送失败: {e}")
+                continue
+
+            with state.lock:
+                recovery_due = (time.time() - state.last_stall_recovery_time) >= device.recovery_cooldown
+                alert_due = (time.time() - state.last_stall_alert_time) >= device.stall_timeout
+
+            if not (recovery_due or alert_due):
+                # 恢复与告警都在冷却期内：仅记录日志，等待下一轮
+                logger.warning(f"🚨 [{device.name}] 上传停滞持续 {elapsed_min} 分钟 "
+                               f"(上次文件: {last_time_str})，冷却等待中")
+                continue
+
+            logger.warning(f"🚨 [{device.name}] 上传停滞 {elapsed_min} 分钟 "
+                           f"(上次文件: {last_time_str})，开始复测确认...")
+
+            # ---- 复测：发告警/执行恢复前观察一小段时间，排除"正在自行恢复"的抖动 ----
+            recheck_mtime = 0
+            confirm_deadline = time.time() + CONFIRM_WINDOW
+            while time.time() < confirm_deadline:
+                time.sleep(CONFIRM_INTERVAL)
+                recheck_mtime = _get_latest_file_mtime_with_timeout(device, PROBE_TIMEOUT)
+                if recheck_mtime > last_file_time:
+                    break
+
+            if recheck_mtime > last_file_time:
+                with state.lock:
+                    if recheck_mtime > state.last_new_file_time:
+                        state.last_new_file_time = recheck_mtime
+                logger.info(f"👀 [{device.name}] 复测发现新文件已到达 "
+                            f"({datetime.fromtimestamp(recheck_mtime).strftime('%H:%M:%S')})，"
+                            f"判定为短暂停滞，跳过本次告警与恢复")
+                continue
+
+            # ---- 复测确认仍无新文件：真停滞，执行恢复与告警 ----
             with state.lock:
                 if state.stall_active_since <= 0:
                     state.stall_active_since = last_file_time
-
-            logger.warning(f"🚨 [{device.name}] 上传停滞告警！已 {elapsed_min} 分钟没有新文件到达 "
-                           f"(上次文件: {last_time_str})")
 
             recovery_result = {
                 "attempted": False,
@@ -372,22 +484,40 @@ def _device_watchdog(device):
                 "message": "自动恢复冷却中，未重复执行",
                 "output": "",
             }
-            with state.lock:
-                if (time.time() - state.last_stall_recovery_time) >= device.recovery_cooldown:
+            if recovery_due:
+                with state.lock:
                     state.last_stall_recovery_time = time.time()
-                    do_recover = True
-                else:
-                    do_recover = False
-
-            if do_recover:
                 recovery_result = _attempt_ssh_recovery(device, elapsed_min, last_time_str)
 
-            with state.lock:
-                if (time.time() - state.last_stall_alert_time) < device.stall_timeout:
-                    continue
-                state.last_stall_alert_time = time.time()
-
-            _send_stall_alert_email(device, elapsed_min, last_time_str, recovery_result)
+            if alert_due:
+                if device.room != "unknown" and _room_has_other_active_device(device):
+                    # ---- 房间视角降级：同房间其他设备仍在录音，房间覆盖正常 ----
+                    # 只静默恢复+低频轻提醒，不更新告警冷却（若之后同房间全部停滞可立即升级为失聪警报）
+                    room_label = ROOM_LABELS.get(device.room, device.room)
+                    with state.lock:
+                        throttle_due = (time.time() - state.last_room_degrade_log_time) >= 3600
+                        if throttle_due:
+                            state.last_room_degrade_log_time = time.time()
+                    if throttle_due:
+                        try:
+                            from email_utils import send_email_sync
+                            send_email_sync(
+                                f"🟡 [{room_label}] {device.name} 录音停滞已自动处理（{room_label}覆盖正常）",
+                                f"{device.name}（{room_label}）录音上传停滞 {elapsed_min} 分钟。\n\n"
+                                f"同房间的其他设备仍在正常录音，{room_label}的听觉覆盖没有中断。\n"
+                                f"系统已自动执行恢复命令，无需人工干预。\n"
+                                f"上次收到文件: {last_time_str}"
+                            )
+                        except Exception as e:
+                            logger.error(f"[{device.name}] 房间降级提醒邮件发送失败: {e}")
+                    logger.warning(
+                        f"🟡 [{device.name}] 上传停滞 {elapsed_min} 分钟，但同房间其他设备仍在录音"
+                        f"（{room_label}覆盖正常）——已静默恢复，不发送失聪警报"
+                    )
+                else:
+                    with state.lock:
+                        state.last_stall_alert_time = time.time()
+                    _send_stall_alert_email(device, elapsed_min, last_time_str, recovery_result)
 
         except Exception as e:
             logger.error(f"[{device.name}] 看门狗线程异常: {e}")
@@ -450,6 +580,7 @@ def get_all_stall_status():
                 "enabled": device.enabled,
                 "ssh_host": device.ssh_host,
                 "source_dir": device.source_dir,
+                "room": device.room,
                 "last_file_time": datetime.fromtimestamp(state.last_new_file_time).strftime("%Y-%m-%d %H:%M:%S"),
                 "elapsed_seconds": int(elapsed),
                 "is_stalled": is_stalled,

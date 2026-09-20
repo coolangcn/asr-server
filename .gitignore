@@ -95,6 +95,8 @@ speaker_db*.json
 # Environment Variables
 # ============================================
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 
@@ -122,8 +124,19 @@ long_sentences/
 # 声纹数据库
 speaker_db_multi.json
 
+# 声纹样本音频（属个人语音数据，由 backup_daily.sh 每日单独备份，不入 git）
+speaker_samples/
+
 # 插图文件
 illustrations/
 
 # 本地配置（可能包含敏感信息）
 config.local.py
+
+# 备份与本地数据（由 backup_daily.sh 单独管理，不入 git）
+backups/
+.trae/
+# 检测/扫描结果数据
+event_scores.jsonl
+neg_scores.jsonl
+scan_results.jsonl

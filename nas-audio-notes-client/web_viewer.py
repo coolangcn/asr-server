@@ -4,6 +4,7 @@
 import os
 import re
 import json
+import hmac
 import sys
 import threading
 import time
@@ -102,10 +103,26 @@ def update_config(args):
 # -----------------
 
 app = Flask(__name__)
-app.secret_key = os.getenv('WEB_SECRET_KEY') or os.getenv('SECRET_KEY') or os.urandom(32).hex()
+_web_secret_key = (os.getenv('WEB_SECRET_KEY') or os.getenv('SECRET_KEY') or '').strip()
+if not _web_secret_key:
+    raise RuntimeError(
+        "❌ 未配置 WEB_SECRET_KEY：会话签名密钥必须显式配置。"
+        "请在 .env 中设置 WEB_SECRET_KEY=<随机字符串> 后重启。"
+    )
+app.secret_key = _web_secret_key
 
 # 密码保护配置
-REQUIRED_PASSWORD = os.getenv('WEB_PASSWORD') or os.getenv('ASR_WEB_PASSWORD') or 'cncncncn'
+REQUIRED_PASSWORD = (os.getenv('WEB_PASSWORD') or os.getenv('ASR_WEB_PASSWORD') or '').strip()
+if not REQUIRED_PASSWORD:
+    raise RuntimeError(
+        "❌ 未配置 WEB_PASSWORD：登录密码必须显式配置，已移除代码内默认口令。"
+        "请在 .env 中设置 WEB_PASSWORD=<你的密码> 后重启。"
+    )
+
+def _asr_admin_headers():
+    """代理转发到 5008 危险接口时自动注入管理令牌（.env 的 ADMIN_TOKEN，未配置则不注入）"""
+    token = (os.getenv('ADMIN_TOKEN') or '').strip()
+    return {'X-Admin-Token': token} if token else {}
 
 def check_auth():
     """检查是否已登录"""
@@ -171,10 +188,10 @@ def setup_web_logger():
     
     formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
     
-    # 写入与 asr_server 相同的系统日志文件
+    # 写入与 asr_server 相同的系统日志文件（按大小轮转：50MB×5）
     log_path = os.path.join(log_dir, "asr-web.log")
-    handler = TimedRotatingFileHandler(
-        log_path, when='M', interval=10, backupCount=144, encoding='utf-8'
+    handler = RotatingFileHandler(
+        log_path, maxBytes=50*1024*1024, backupCount=5, encoding='utf-8'
     )
     handler.setFormatter(formatter)
     l.addHandler(handler)
@@ -187,7 +204,7 @@ def setup_web_logger():
     return l
 
 import logging
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 logger_web = setup_web_logger()
 
 def update_system_status():
@@ -736,7 +753,7 @@ def build_growth_dictionary(items, speaker_filter=None):
 def login():
     if request.method == 'POST':
         password = request.form.get('password', '')
-        if password == REQUIRED_PASSWORD:
+        if hmac.compare_digest(password, REQUIRED_PASSWORD):
             session['logged_in'] = True
             return redirect(url_for('index'))
         else:
@@ -770,6 +787,7 @@ def proxy_register_speaker():
             f"{ASR_SERVER_URL}/speaker/register",
             files=files,
             data=data,
+            headers=_asr_admin_headers(),
             timeout=30
         )
         
@@ -792,7 +810,7 @@ def proxy_list_speakers():
 def proxy_delete_speaker(speaker_name):
     """转发删除说话人请求"""
     try:
-        response = requests.delete(f"{ASR_SERVER_URL}/speaker/{speaker_name}", timeout=10)
+        response = requests.delete(f"{ASR_SERVER_URL}/speaker/{speaker_name}", timeout=10, headers=_asr_admin_headers())
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -845,7 +863,7 @@ def proxy_trigger_reprocess():
         end_time = request.args.get('end_time', '')
         replace_param = request.args.get('replace', 'false')
         url = f"{ASR_SERVER_URL}/api/trigger_reprocess?date={date_param}&start_time={start_time}&end_time={end_time}&replace={replace_param}"
-        response = requests.post(url, timeout=10)
+        response = requests.post(url, timeout=10, headers=_asr_admin_headers())
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -855,7 +873,7 @@ def proxy_trigger_reprocess():
 def proxy_stop_reprocess():
     try:
         url = f"{ASR_SERVER_URL}/api/stop_reprocess"
-        response = requests.post(url, timeout=10)
+        response = requests.post(url, headers=_asr_admin_headers(), timeout=10)
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -865,7 +883,7 @@ def proxy_stop_reprocess():
 def proxy_refresh_file_cache():
     try:
         url = f"{ASR_SERVER_URL}/api/refresh_file_cache"
-        response = requests.post(url, timeout=30)  # 启动任务很快，不需要长超时
+        response = requests.post(url, headers=_asr_admin_headers(), timeout=30)  # 启动任务很快，不需要长超时
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -914,6 +932,18 @@ def proxy_cry_event(event_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/cry_event/<int:event_id>/confirm_sample', methods=['POST'])
+@login_required
+def proxy_confirm_cry_sample(event_id):
+    """代理"确认为声纹样本"：转发到 ASR 服务，后端含 NAS 复制+声纹提取，超时放宽到 120s"""
+    try:
+        response = requests.post(f"{ASR_SERVER_URL}/api/confirm_cry_sample/{event_id}", headers=_asr_admin_headers(), timeout=120)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except requests.Timeout:
+        return jsonify({"error": "后端处理超时（NAS 读取或声纹提取过慢），请稍后重试"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/illustration/<filename>')
 @login_required
 def proxy_illustration(filename):
@@ -946,7 +976,7 @@ def proxy_live_logs():
 @login_required
 def proxy_start_reprocess():
     try:
-        response = requests.post(f"{ASR_SERVER_URL}/api/trigger_reprocess", timeout=5)
+        response = requests.post(f"{ASR_SERVER_URL}/api/trigger_reprocess", timeout=5, headers=_asr_admin_headers())
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -955,7 +985,7 @@ def proxy_start_reprocess():
 @login_required
 def proxy_start_live():
     try:
-        response = requests.post(f"{ASR_SERVER_URL}/api/start_live", timeout=5)
+        response = requests.post(f"{ASR_SERVER_URL}/api/start_live", headers=_asr_admin_headers(), timeout=5)
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -964,7 +994,7 @@ def proxy_start_live():
 @login_required
 def proxy_pause_live():
     try:
-        response = requests.post(f"{ASR_SERVER_URL}/api/pause_live", timeout=5)
+        response = requests.post(f"{ASR_SERVER_URL}/api/pause_live", headers=_asr_admin_headers(), timeout=5)
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -973,7 +1003,7 @@ def proxy_pause_live():
 @login_required
 def proxy_stop_live():
     try:
-        response = requests.post(f"{ASR_SERVER_URL}/api/stop_live", timeout=5)
+        response = requests.post(f"{ASR_SERVER_URL}/api/stop_live", headers=_asr_admin_headers(), timeout=5)
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

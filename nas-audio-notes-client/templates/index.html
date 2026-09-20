@@ -4187,6 +4187,15 @@
                                 <i class="fa-regular fa-clock mr-2"></i>${timeStr}
                             </div>
                         </div>
+                        ${data.sample_confirmed ? `
+                            <span class="px-3 py-1.5 rounded-xl bg-gray-700/40 border border-white/10 text-gray-400 text-xs font-bold flex items-center gap-2 flex-shrink-0">
+                                <i class="fa-solid fa-check text-emerald-400"></i> 已确认样本
+                            </span>
+                        ` : `
+                            <button id="confirmSampleBtn" onclick="confirmSampleCry(${data.id})" class="px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-2 transition-all flex-shrink-0 active:scale-95">
+                                <i class="fa-solid fa-dna"></i> 确认为样本
+                            </button>
+                        `}
                     </div>
                     
                     <!-- 插图 -->
@@ -4335,6 +4344,47 @@
             if (_currentDetailAudio) {
                 _currentDetailAudio.pause();
                 _currentDetailAudio = null;
+            }
+        }
+
+        // 一键确认哭声事件为声纹样本（自动喂样本库）
+        async function confirmSampleCry(eventId) {
+            const btn = document.getElementById('confirmSampleBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 处理中...';
+            }
+            try {
+                const resp = await fetch(`/api/cry_event/${eventId}/confirm_sample`, { method: 'POST' });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || `HTTP ${resp.status}`);
+                }
+                if (btn) {
+                    btn.outerHTML = `<span class="px-3 py-1.5 rounded-xl bg-gray-700/40 border border-white/10 text-gray-400 text-xs font-bold flex items-center gap-2 flex-shrink-0"><i class="fa-solid fa-check text-emerald-400"></i> 已确认样本</span>`;
+                }
+                if (data.already_confirmed) {
+                    alert('✅ ' + (data.message || '该事件此前已确认为样本'));
+                    return;
+                }
+                let msg = data.message || '已确认为样本';
+                if (data.sample_count) msg += `\n当前 Baby 共 ${data.sample_count} 个样本`;
+                if (data.similarities && Object.keys(data.similarities).length > 0) {
+                    msg += '\n\n与现有平均声纹相似度：';
+                    for (const [m, s] of Object.entries(data.similarities)) {
+                        msg += `\n· ${m}: ${s}`;
+                    }
+                }
+                if (data.low_similarity_warning && data.low_similarity_warning.length > 0) {
+                    msg += '\n\n⚠️ 低相似度提醒（已入库，可听样本复核）：\n· ' + data.low_similarity_warning.join('\n· ');
+                }
+                alert('✅ ' + msg);
+            } catch (err) {
+                alert('❌ 确认失败: ' + err.message);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-dna"></i> 确认为样本';
+                }
             }
         }
     </script>

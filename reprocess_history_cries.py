@@ -12,8 +12,10 @@ import threading
 import signal
 import atexit
 import socket
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, get_completed_events_for_date, get_completed_cry_covered_files_for_date, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # 进度状态文件路径（供 API 读取）
 PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
@@ -29,6 +31,15 @@ except ImportError:
 
 API_URL = "http://localhost:5008/transcribes"
 QUICK_DETECT_URL = "http://localhost:5008/api/quick_cry_detect"  # 快速哭声检测接口（无ASR）
+
+
+def _admin_headers():
+    """调用 5008 的写操作/转写接口时附带管理令牌（.env 的 ADMIN_TOKEN，未配置则不附带）"""
+    token = (os.getenv("ADMIN_TOKEN") or "").strip()
+    return {"X-Admin-Token": token} if token else {}
+
+
+_ADMIN_HEADERS = _admin_headers()
 SOURCE_DIR = "/Volumes/download/records/Sony-2"
 PROCESSED_DIR = os.path.join(SOURCE_DIR, "processed")
 
@@ -41,12 +52,11 @@ reprocess_logger = logging.getLogger('reprocess_history')
 reprocess_logger.setLevel(logging.INFO)
 reprocess_logger.handlers = []
 
-# 输出到 asr-a.log（与主服务日志合并，使用相同的轮转配置）
-file_handler_a = TimedRotatingFileHandler(
-    os.path.join(log_dir, "asr-a.log"), 
-    when='midnight', 
-    interval=1, 
-    backupCount=30, 
+# 输出到 asr-a.log（与主服务日志合并，按大小轮转：50MB×5）
+file_handler_a = RotatingFileHandler(
+    os.path.join(log_dir, "asr-a.log"),
+    maxBytes=50*1024*1024,
+    backupCount=5,
     encoding='utf-8'
 )
 file_handler_a.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
@@ -67,6 +77,43 @@ def log_detail(message, level='info'):
         reprocess_logger.error(message)
     elif level == 'debug':
         reprocess_logger.debug(message)
+
+COMPLETED_DATES_KEY = 'babycry_done:dates'   # 独立命名空间，不会被刷盘清缓存误删
+COMPLETED_DATES_TTL = 7 * 86400
+
+
+def _load_completed_dates_from_redis():
+    """从 Redis 加载已完成日期集合；Redis 不可用时返回空集（回退全量扫描）"""
+    try:
+        import valkey
+        uri = os.environ.get('VALKEY_URI', '')
+        if not uri:
+            return set()
+        r = valkey.from_url(uri, socket_connect_timeout=5)
+        members = r.smembers(COMPLETED_DATES_KEY)
+        return {m.decode() if isinstance(m, bytes) else m for m in members}
+    except Exception as e:
+        log_detail(f"⚠️ 加载已完成日期失败（将全量扫描）: {e}", 'warning')
+        return set()
+
+
+def _save_completed_dates_to_redis(dates):
+    """把新完成的日期合并进 Redis 集合，返回合并后的总数"""
+    try:
+        import valkey
+        uri = os.environ.get('VALKEY_URI', '')
+        if not uri:
+            return None
+        r = valkey.from_url(uri, socket_connect_timeout=5)
+        pipe = r.pipeline()
+        pipe.sadd(COMPLETED_DATES_KEY, *dates)
+        pipe.expire(COMPLETED_DATES_KEY, COMPLETED_DATES_TTL)
+        pipe.execute()
+        return r.scard(COMPLETED_DATES_KEY)
+    except Exception as e:
+        log_detail(f"⚠️ 持久化已完成日期失败: {e}", 'warning')
+        return None
+
 
 def write_progress(data):
     """将进度状态原子写入 JSON 文件，供 API 读取"""
@@ -581,8 +628,19 @@ if __name__ == "__main__":
             if count % 1000 == 0:
                 log_detail(f"    📁 刷盘进度: {count} 个文件 @ {current_dir}", 'info')
 
-        # 获取已完成的日期列表（用于刷盘时跳过）
-        completed_dates_set = set(completed_dates) if 'completed_dates' in dir() else set()
+        # 获取已完成日期集合（扫描/刷盘时直接跳过，避免全量扫描浪费时间）
+        # 仅普通续传模式跳过；强制重刷(--replace)和定向检索必须全量扫描
+        if not force_replace and not is_targeted:
+            completed_dates_set = _load_completed_dates_from_redis()
+            if not date_stats:
+                # 数据库无任何处理记录时不能信任持久化集合（可能 DB 被清空过）
+                completed_dates_set = set()
+            else:
+                completed_dates_set &= {d for d, c in date_stats.items() if c > 0}
+            if completed_dates_set:
+                log_detail(f"[*] 已加载 {len(completed_dates_set)} 个已完成日期，扫描时将自动跳过", 'info')
+        else:
+            completed_dates_set = set()
 
         cache_count = refresh_file_cache(
             PROCESSED_DIR,
@@ -592,7 +650,7 @@ if __name__ == "__main__":
             skip_completed_dates=completed_dates_set if completed_dates_set else None
         )
 
-        if cache_count > 0:
+        if cache_count >= 0:  # 刷盘成功（0 个文件也合法：可能所有日期都被跳过）
             log_detail(f"[*] ✅ 刷盘完成，缓存了 {cache_count} 个文件，现在从缓存读取", 'success')
             all_files = get_file_cache_from_redis()
             all_files = [f['filepath'] for f in all_files]
@@ -625,6 +683,9 @@ if __name__ == "__main__":
 
                         current_container = os.path.basename(root) or 'root'
                         if current_container != 'root' and re.match(r'\d{4}-\d{2}-\d{2}', current_container):
+                            if current_container in completed_dates_set:
+                                dirs[:] = []  # 不再深入
+                                continue      # 已完成日期：整个目录跳过，不扫描
                             log_detail(f"    📅 【扫描日期】{current_container}", 'info')
 
                         for file in files:
@@ -746,7 +807,10 @@ if __name__ == "__main__":
 
             # 【修复】始终使用精确文件匹配，而非依赖数量比较
             # 原因：Redis 缓存和数据库可能不同步，数量比较会导致误判
-            processed_set = get_processed_files_for_date(d)
+            # 【2026-09-18】只把 status='cry'（已确认哭声）视为已做。
+            # no_cry / b_realtime_success / b_catchup_success / skipped_night
+            # 都是旧规则或未做哭声检测的标记，需要用新规则重新检测。
+            processed_set = set(get_cry_files_for_date(d))
             # 关键修复：files 中是完整路径，processed_set 中是文件名
             # 必须提取文件名后再比较！
             remaining = [f for f in files if os.path.basename(f) not in processed_set]
@@ -782,6 +846,11 @@ if __name__ == "__main__":
 
         if completed_dates:
             log_detail(f"[*] 智能续传：跳过 {len(completed_dates)} 个已完成日期", 'info')
+            # 持久化到 Redis，下次运行时扫描阶段直接跳过这些日期
+            if not force_replace and not is_targeted:
+                total_saved = _save_completed_dates_to_redis(completed_dates)
+                if total_saved is not None:
+                    log_detail(f"[*] 已完成日期已持久化到 Redis（累计 {total_saved} 个，后续扫描自动跳过）", 'info')
         if incomplete_dates_from_resume:
             log_detail(f"[*] 智能续传：{len(incomplete_dates_from_resume)} 个日期阶段二不完整（缺事件/分析不完整），将重跑: {', '.join(incomplete_dates_from_resume)}", 'info')
         if partial_dates:
@@ -1084,7 +1153,8 @@ if __name__ == "__main__":
 
                         with open_audio_file() as f:
                             files_data = {'audio_file': (filename, f, 'audio/m4a')}
-                            response = requests.post(QUICK_DETECT_URL, files=files_data, timeout=60)
+                            response = requests.post(QUICK_DETECT_URL, files=files_data,
+                                                     headers=_ADMIN_HEADERS, timeout=60)
                         request_success = True
                         break
                     except (OSError, IOError) as e:
@@ -1227,6 +1297,7 @@ if __name__ == "__main__":
                                 resp = requests.post(
                                     "http://localhost:5008/api/analyze_cry",
                                     json=req_data,
+                                    headers=_ADMIN_HEADERS,
                                     timeout=180
                                 )
                                 if resp.status_code == 200:
@@ -1315,6 +1386,7 @@ if __name__ == "__main__":
                         return requests.post(
                             QUICK_DETECT_URL,
                             files={'audio_file': (rep_filename, f, 'audio/m4a')},
+                            headers=_ADMIN_HEADERS,
                             timeout=30
                         )
 
@@ -1353,6 +1425,7 @@ if __name__ == "__main__":
                             "end_ms": end_ms,
                             "audio_paths": event_files,
                         },
+                        headers=_ADMIN_HEADERS,
                         timeout=180
                     )
                     if response.status_code == 200:
