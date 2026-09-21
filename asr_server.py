@@ -28,7 +28,7 @@ from datetime import datetime, timezone, timedelta
 
 # 东八区时区 (UTC+8) - 上海时间
 UTC_PLUS_8 = timezone(timedelta(hours=8))
-from email_utils import send_cry_alert_email   # 增加邮件通知支持
+from email_utils import send_cry_alert_email, send_cry_webhook, send_cry_analysis_webhook   # 邮件通知 + 哭声报警/分析报告 Webhook
 import audio_processor
 import recovery_monitor
 
@@ -73,7 +73,7 @@ class Config:
     SAVE_LONG_SENTENCES = True  # 是否保存长句音频
     MIN_TEXT_LENGTH_TO_SAVE = 15  # 最少字数
     LONG_SENTENCES_DIR = "long_sentences"  # 保存目录
-    TEMP_DIR = "temp"  # 临时文件目录
+    TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")  # 临时文件目录（绝对路径，防 cwd 歧义）
 
     ONLY_REGISTERED_SPEAKERS = True  # 只保留已注册说话人,丢弃Unknown
     # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
@@ -2269,6 +2269,7 @@ def api_get_cry_event(event_id):
             "audio_urls": audio_urls,
             "has_illustration": illustration_url is not None,
             "sample_confirmed": bool(event.get("sample_confirmed")),
+            "false_positive": bool(event.get("false_positive")),
         })
     except Exception as e:
         logger_a.error(f"获取事件详情失败: {e}")
@@ -3025,13 +3026,34 @@ SAMPLE_WINDOW_STEP = 2.0             # 滑窗步长
 SAMPLE_SEED_MODEL = "eres2net_large" # 滑窗粗筛用模型（三模型中精度最高）
 
 def _safe_copy_file(src, dst, timeout=SAMPLE_NAS_COPY_TIMEOUT):
-    """带超时的文件复制：NAS(SMB) 读取可能挂死，放子线程执行，超时返回失败。"""
+    """带超时的文件复制：NAS(SMB) 读取可能挂死，放子线程执行，超时返回失败。
+    【2026-09-20】改用 mkstemp 原子创建可写文件 + copyfileobj（不用 copy2 的
+    copystat——NAS 源文件的怪权限位曾被同步到本地副本，导致后续 EPERM）。
+    dst 若已给出则只取其扩展名，实际写入 mkstemp 生成的可写路径。"""
     result = {"ok": False, "error": None}
 
     def _copy():
         try:
-            shutil.copy2(src, dst)
-            result["ok"] = True
+            fd, real_dst = tempfile.mkstemp(
+                prefix="copysrc_", suffix=os.path.splitext(dst)[1] or ".tmp", dir=os.path.dirname(os.path.abspath(dst)))
+            os.close(fd)
+            try:
+                with open(src, "rb") as fsrc, open(real_dst, "wb") as fdst:
+                    shutil.copyfileobj(fsrc, fdst)
+                os.chmod(real_dst, 0o644)
+                if os.path.exists(dst):
+                    try:
+                        os.remove(dst)
+                    except Exception:
+                        pass
+                os.replace(real_dst, dst)
+                result["ok"] = True
+            except Exception:
+                try:
+                    os.remove(real_dst)
+                except Exception:
+                    pass
+                raise
         except Exception as e:
             result["error"] = str(e)
 
@@ -3056,22 +3078,22 @@ def _get_audio_duration(path, timeout=10):
         return None
 
 
-def _find_best_cry_window(src_local):
-    """在事件音频中自动定位最像 Baby 的纯哭声段（滑窗打分）。
+def _find_top_cry_windows(src_local, top_n=5):
+    """在事件音频中自动定位最像 Baby 的纯哭声段（滑窗打分），返回 top_n 个候选窗。
     用声纹库 Baby 平均声纹做种子：单模型全窗粗筛 → top 窗 3 模型精排。
-    返回 (start_sec, end_sec, score)；库中无声纹种子时返回 (None, None, 0)。"""
+    返回 [(score, start_sec, end_sec), ...]（分数降序）；库中无声纹种子时返回 []。"""
     avg_embeddings = None
     if SAMPLE_TARGET_SPEAKER in speaker_db and "avg_embeddings" in speaker_db[SAMPLE_TARGET_SPEAKER]:
         avg_embeddings = speaker_db[SAMPLE_TARGET_SPEAKER]["avg_embeddings"]
     seed_avg = (avg_embeddings or {}).get(SAMPLE_SEED_MODEL)
     seed_pipe = sv_pipelines.get(SAMPLE_SEED_MODEL)
     if seed_avg is None or seed_pipe is None:
-        return None, None, 0.0
+        return []
     seed_avg = np.array(seed_avg).flatten()
 
     duration = _get_audio_duration(src_local)
     if not duration or duration <= SAMPLE_WINDOW_SECONDS:
-        return 0.0, float(duration or 0.0), 0.0  # 整段不足一个窗，直接整段
+        return [(0.0, 0.0, float(duration or 0.0))]  # 整段不足一个窗，直接整段
 
     win_ms = int(SAMPLE_WINDOW_SECONDS * 1000)
     step_ms = int(SAMPLE_WINDOW_STEP * 1000)
@@ -3105,12 +3127,12 @@ def _find_best_cry_window(src_local):
                 pass
 
     if not scored:
-        return None, None, 0.0
+        return []
     scored.sort(reverse=True)
 
-    # 精排：top 5 窗走正式预处理 + 3 模型平均分
-    best = None
-    for _, s_ms, e_ms in scored[:5]:
+    # 精排：top 8 窗走正式预处理 + 3 模型平均分，输出 top_n 个候选窗
+    refined = []
+    for _, s_ms, e_ms in scored[:8]:
         wpath = os.path.join(Config.TEMP_DIR, f"crywinp_{s_ms}_{int(time.time() * 1000)}.wav")
         ppath = os.path.join(Config.TEMP_DIR, f"crywinpp_{s_ms}_{int(time.time() * 1000)}.wav")
         try:
@@ -3127,9 +3149,7 @@ def _find_best_cry_window(src_local):
                 if emb is not None:
                     sims.append(1 - cosine(emb.flatten(), np.array(m_avg).flatten()))
             if sims:
-                s = sum(sims) / len(sims)
-                if best is None or s > best[0]:
-                    best = (s, s_ms, e_ms)
+                refined.append((sum(sims) / len(sims), s_ms / 1000, e_ms / 1000))
         finally:
             for p in (wpath, ppath):
                 try:
@@ -3137,10 +3157,60 @@ def _find_best_cry_window(src_local):
                 except Exception:
                     pass
 
-    if best is None:
-        s, s_ms, e_ms = scored[0]
-        return s_ms / 1000, e_ms / 1000, s
-    return best[1] / 1000, best[2] / 1000, best[0]
+    refined.sort(reverse=True)
+    # 候选去重叠：相邻滑窗(步长2s)内容高度重复，"换一段"必须听到不同的音频。
+    # 规则：与已选窗口重叠 <4s（即至少 4s 新内容）才入选
+    selected = []
+    for cand in refined:
+        if all(cand[1] >= b - 4.0 for _, _, b in selected):
+            selected.append(cand)
+        if len(selected) >= top_n:
+            break
+    if not selected and refined:
+        selected = [refined[0]]
+    return selected
+
+
+def _find_best_cry_window(src_local):
+    """返回最像 Baby 哭声的单个窗口 (start_sec, end_sec, score)；无种子返回 (None, None, 0)。"""
+    wins = _find_top_cry_windows(src_local, top_n=1)
+    if not wins:
+        return None, None, 0.0
+    score, w_start, w_end = wins[0]
+    return w_start, w_end, score
+
+
+def preset_cry_segments(event_id, src_local, top_n=5):
+    """【2026-09-20 用户建议落地】分析时顺手预切哭声候选片段并存盘。
+    之后预览/确认直接读文件——零 GPU 等待，彻底避开补跑抢 GPU 导致的预览卡顿。
+    失败只降级到旧的"用时定位"路径，不影响主流程。"""
+    try:
+        seg_dir = os.path.join(Config.TEMP_DIR, "preview_segments")
+        os.makedirs(seg_dir, exist_ok=True)
+        manifest_path = os.path.join(seg_dir, f"{event_id}.json")
+        if os.path.exists(manifest_path):
+            return True
+        with gpu_lock:
+            windows = _find_top_cry_windows(src_local, top_n=top_n)
+        if not windows:
+            return False
+        manifest = []
+        for i, (score, ws, we) in enumerate(windows):
+            if we - ws < 1.0:
+                continue
+            seg_path = os.path.join(seg_dir, f"{event_id}_v{i}.wav")
+            if extract_segment(src_local, int(ws * 1000), int(we * 1000), seg_path):
+                manifest.append({"variant": i, "start": round(ws, 2), "end": round(we, 2),
+                                 "score": round(float(score), 4)})
+        if not manifest:
+            return False
+        with open(manifest_path, "w", encoding="utf-8") as mf:
+            json.dump(manifest, mf, ensure_ascii=False)
+        logger_b.info(f"🎵 [预切片段] 事件 {event_id} 已预存 {len(manifest)} 个候选段")
+        return True
+    except Exception as seg_err:
+        logger_a.warning(f"预切片段失败 (event_id={event_id}): {seg_err}")
+        return False
 
 
 def _locate_and_copy_event_audio(event):
@@ -3183,6 +3253,41 @@ def _locate_and_copy_event_audio(event):
         except Exception:
             pass
     return None, f"持久音频已清理且源文件不可达 → {last_err}"
+
+
+@app.route("/api/preset_cry_segments/<int:event_id>", methods=["POST"])
+@admin_required
+def api_preset_cry_segments(event_id):
+    """【2026-09-20】为历史事件预切哭声候选片段（批量补历史预览用，同步执行）。
+    已有清单幂等返回；滑窗+精排约 10-60s（GPU 经 gpu_lock 与补跑排队共存）。"""
+    try:
+        from db_manager import get_baby_cry_event_by_id
+        event = get_baby_cry_event_by_id(event_id)
+        if not event:
+            return jsonify({"error": "事件不存在"}), 404
+        if event.get("is_deleted"):
+            return jsonify({"skipped": "deleted"}), 200
+        if event.get("false_positive"):
+            return jsonify({"skipped": "false_positive"}), 200
+        seg_dir = os.path.join(Config.TEMP_DIR, "preview_segments")
+        if os.path.exists(os.path.join(seg_dir, f"{event_id}.json")):
+            return jsonify({"already": True}), 200
+        src_local, locate_err = _locate_and_copy_event_audio(event)
+        if not src_local:
+            return jsonify({"error": f"音频不可达: {locate_err}"}), 404
+        try:
+            ok = preset_cry_segments(event_id, src_local)
+            return jsonify({"ok": bool(ok)}), 200
+        finally:
+            # 清理批量定位产生的临时副本（持久音频 cry_*.wav 不在此列，绝不删）
+            if os.path.basename(src_local).startswith("confirm_src_"):
+                try:
+                    os.remove(src_local)
+                except Exception:
+                    pass
+    except Exception as e:
+        logger_a.error(f"预切失败 (event_id={event_id}): {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/confirm_cry_sample/<int:event_id>", methods=["POST"])
@@ -3229,7 +3334,35 @@ def confirm_cry_sample(event_id):
         window_score = None
         with gpu_lock:
             # 2. 滑窗自动定位最像 Baby 的纯哭声段（与库中手工样本同形态）
-            w_start, w_end, w_score = _find_best_cry_window(src_local)
+            # 【2026-09-20】支持 variant：与试听端点一致的多候选序号，用户"换一段"后
+            # 确认入库的就是他正在听的那段（试听门槛保证听过的才允许确认）
+            try:
+                confirm_variant = max(0, int((request.get_json(silent=True) or {}).get("variant") or 0))
+            except (TypeError, ValueError):
+                confirm_variant = 0
+            wins = None
+            # 优先读预存清单（零 GPU）；无预存才用时定位
+            try:
+                manifest_path = os.path.join(Config.TEMP_DIR, "preview_segments", f"{event_id}.json")
+                if os.path.exists(manifest_path):
+                    with open(manifest_path, encoding="utf-8") as mf:
+                        manifest = json.load(mf)
+                    if manifest:
+                        if confirm_variant >= len(manifest):
+                            confirm_variant %= len(manifest)
+                        _m = next(m for m in manifest if m["variant"] == confirm_variant)
+                        wins = [(_m.get("score", 0.0), _m["start"], _m["end"])]
+            except Exception as man_err:
+                logger_a.warning(f"确认读预存清单失败 (event_id={event_id})，回退用时定位: {man_err}")
+                wins = None
+            if wins is None:
+                wins = _find_top_cry_windows(src_local, top_n=5)
+            if wins:
+                if confirm_variant >= len(wins):
+                    confirm_variant = confirm_variant % len(wins)
+                w_score, w_start, w_end = wins[confirm_variant]
+            else:
+                w_start, w_end, w_score = None, None, 0.0
             if w_start is None:
                 w_start, w_end = 0.0, float(duration or 0.0)  # 库中无种子：回退整段
             if w_end - w_start < 1.0:
@@ -3351,6 +3484,153 @@ def confirm_cry_sample(event_id):
                     os.remove(f)
             except Exception:
                 pass
+
+
+@app.route("/api/cry_segment_preview/<int:event_id>", methods=["GET"])
+@admin_required
+def cry_segment_preview(event_id):
+    """
+    【哭声片段试听】返回事件最像哭声的纯段音频（与"确认为样本"入库的是同一段）。
+    - 优先滑窗自动定位（与 confirm_cry_sample 同款逻辑），失败回退事件的 start/end_time
+    - 结果缓存到 TEMP（事件音频不变，切片可复用，避免每次都跑 GPU 滑窗打分）
+    - 前端要求：用户须先试听本片段，才允许点击"确认为样本"
+    """
+    from db_manager import get_baby_cry_event_by_id
+
+    event = get_baby_cry_event_by_id(event_id)
+    if not event:
+        return jsonify({"error": "Event not found"}), 404
+
+    # 【2026-09-20】variant：候选片段序号（0=最佳，1..N=换一段）。自动定位可能选偏，
+    # 提供多候选让用户耳朵裁决；确认样本时按所选 variant 入库对应片段
+    try:
+        variant = max(0, int(request.args.get("variant", 0) or 0))
+    except (TypeError, ValueError):
+        variant = 0
+    if variant > 9:
+        variant = 9
+    cached = os.path.join(
+        Config.TEMP_DIR,
+        f"preview_cryseg_{event_id}.wav" if variant == 0 else f"preview_cryseg_{event_id}_v{variant}.wav",
+    )
+    if os.path.exists(cached) and os.path.getsize(cached) > 1000:
+        resp = send_file(cached, mimetype="audio/wav")
+        resp.headers["X-Cry-Variant"] = str(variant)
+        return resp
+    # 优先读分析时预存的候选片段（零 GPU，秒开）；无预存才走"用时定位"
+    seg_dir = os.path.join(Config.TEMP_DIR, "preview_segments")
+    manifest_path = os.path.join(seg_dir, f"{event_id}.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, encoding="utf-8") as mf:
+                manifest = json.load(mf)
+            if manifest:
+                if variant >= len(manifest):
+                    variant %= len(manifest)
+                seg_path = os.path.join(seg_dir, f"{event_id}_v{variant}.wav")
+                if os.path.isfile(seg_path) and os.path.getsize(seg_path) > 1000:
+                    resp = send_file(seg_path, mimetype="audio/wav")
+                    resp.headers["X-Cry-Variant"] = str(variant)
+                    resp.headers["X-Cry-Windows"] = str(len(manifest))
+                    return resp
+        except Exception as man_err:
+            logger_a.warning(f"读取预切片段失败 (event_id={event_id})，回退用时定位: {man_err}")
+
+    temp_files = []
+    try:
+        src_local, locate_err = _locate_and_copy_event_audio(event)
+        if not src_local:
+            return jsonify({"error": locate_err}), 500
+        temp_files.append(src_local)
+
+        duration = _get_audio_duration(src_local) or 0.0
+
+        # 滑窗定位最像哭声的 ~8s 段（GPU 密集，持 gpu_lock）；失败回退事件时间段
+        windows = []
+        try:
+            with gpu_lock:
+                windows = _find_top_cry_windows(src_local, top_n=5)
+        except Exception as win_err:
+            logger_a.warning(f"滑窗定位失败 (event_id={event_id})，回退事件时间段: {win_err}")
+        used_slide_window = bool(windows)
+        if used_slide_window:
+            if variant >= len(windows):
+                variant = variant % len(windows)
+            _score, w_start, w_end = windows[variant]
+            windows_total = len(windows)
+        else:
+            # 回退场景（声纹管线未就绪/无种子/滑窗异常）不缓存，待服务完全就绪后可重新定位
+            windows_total = 0
+            w_start = float(event.get("start_time") or 0.0)
+            w_end = float(event.get("end_time") or min(8.0, duration))
+            logger_a.info(f"哭声试听回退事件时间段 (event_id={event_id}): {w_start:.1f}-{w_end:.1f}s")
+        if w_end - w_start < 1.0:
+            w_start, w_end = 0.0, min(8.0, max(duration, 1.0))
+        w_start = max(0.0, min(w_start, max(duration - 1.0, 0.0)))
+        w_end = max(w_start + 1.0, min(w_end, duration if duration > 0 else w_end))
+        logger_a.info(
+            f"哭声试听窗口 (event_id={event_id}): {w_start:.2f}-{w_end:.2f}s "
+            f"滑窗定位={used_slide_window} variant={variant}/{windows_total}"
+        )
+
+        os.makedirs(Config.TEMP_DIR, exist_ok=True)
+        if duration > 0 and (w_end - w_start) >= duration * 0.95:
+            send_path = src_local  # 段几乎覆盖全长，直接发原文件
+        else:
+            # 只有滑窗定位结果才写长期缓存；回退结果写临时文件用完即弃
+            out_path = cached if used_slide_window else os.path.join(Config.TEMP_DIR, f"preview_cryseg_{event_id}_tmp.wav")
+            if not extract_segment(src_local, int(w_start * 1000), int(w_end * 1000), out_path):
+                return jsonify({"error": "切片失败 (ffmpeg)"}), 500
+            send_path = out_path
+
+        resp = send_file(send_path, mimetype="audio/wav")
+        resp.headers["X-Cry-Variant"] = str(variant)
+        resp.headers["X-Cry-Windows"] = str(windows_total)
+        return resp
+    except Exception as e:
+        logger_a.error(f"哭声片段试听失败 (event_id={event_id}): {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        for f in temp_files:
+            try:
+                if f and os.path.exists(f) and f != send_path:
+                    os.remove(f)
+            except Exception:
+                pass
+
+
+@app.route("/api/cry_event_feedback/<int:event_id>", methods=["POST"])
+@admin_required
+def cry_event_feedback(event_id):
+    """
+    【人工反馈】哭声事件标注：
+    - verdict=false_positive：误报（假阳性）。DB 标记 false_positive=TRUE，
+      供后续训练/阈值校准使用；与 sample_confirmed 互斥（已喂样本的事件不允许标误报）。
+    """
+    from db_manager import get_baby_cry_event_by_id, mark_event_false_positive
+
+    data = request.get_json(silent=True) or {}
+    verdict = data.get("verdict")
+    if verdict != "false_positive":
+        return jsonify({"error": "verdict 仅支持 false_positive（确认哭声请走 confirm_cry_sample）"}), 400
+
+    event = get_baby_cry_event_by_id(event_id)
+    if not event:
+        return jsonify({"error": "Event not found"}), 404
+    if event.get("sample_confirmed"):
+        return jsonify({"error": "该事件已确认为样本（真哭声），不能同时标记为误报"}), 400
+
+    if not mark_event_false_positive(event_id):
+        return jsonify({"error": "标记失败（事件不存在或数据库异常）"}), 500
+
+    logger_a.info(f"人工反馈：事件 {event_id} 标记为误报 "
+                  f"(confidence={event.get('confidence')}, category={event.get('reason_category')})")
+    return jsonify({
+        "message": "已标记为误报",
+        "event_id": event_id,
+        "confidence": event.get("confidence"),
+        "reason_category": event.get("reason_category"),
+    })
 
 
 @app.route("/speakers", methods=["GET"])
@@ -3876,6 +4156,19 @@ def transcribe_audio():
             cry_detected = False
             cry_detection_completed = False
             skip_cry_flag = request.form.get('skip_cry', 'false').lower() == 'true'
+            # 【2026-09-21】历史文件防线：录音时间早于 6 小时前的一律按历史文件处理——
+            # 不发即时报警邮件、不发 Webhook、不写实时事件（历史检测由补跑脚本负责，
+            # 那条链路有自己的入库方式）。防止手机端积压补传的旧录音在凌晨触发
+            # 轰炸式"重复告警"。与 audio_processor 的提交侧防线互为兜底。
+            try:
+                from db_manager import parse_recording_time as _prt
+                _rec_t = _prt(file.filename)
+                if _rec_t and (datetime.now() - _rec_t).total_seconds() > 6 * 3600:
+                    skip_cry_flag = True
+            except Exception:
+                pass
+            # 上传来源设备名（audio_processor 从 NAS 路径推导，如 Sony-2），用于哭声报警 Webhook
+            source_device = (request.form.get('source_device') or '').strip()
             try:
                 cry_detected, cry_confidence, cry_details = detect_cry_from_full_audio(proc_temp, source_filename=file.filename)
                 cry_detection_completed = True
@@ -3937,7 +4230,16 @@ def transcribe_audio():
                                 except Exception as path_update_err:
                                     logger_b.warning(f"⚠️ [BabyCry] 更新持久音频路径失败: {path_update_err}")
 
-                            def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det):
+                                # 【2026-09-20】后台预切哭声候选片段：报警不被阻塞，GPU 由 gpu_lock 排队
+                                if placeholder_id:
+                                    import threading as _threading
+                                    _t = _threading.Thread(
+                                        target=preset_cry_segments,
+                                        args=(placeholder_id, _persist_audio_path),
+                                        name=f"preset-seg-{placeholder_id}", daemon=True)
+                                    _t.start()
+
+                            def start_delayed_analysis(fname, a_path, dur, p_id, cry_conf, cry_det, src_device=""):
                                 # 从文件名提取时间作为第一封邮件的时间范围
                                 from db_manager import parse_recording_time
                                 rec_time = parse_recording_time(fname)
@@ -3955,6 +4257,19 @@ def transcribe_audio():
                                     category="analyzing",
                                     image_data=None,
                                     time_range=time_range_str
+                                )
+
+                                # 【2026-09-20】同步向外部 Webhook 推送哭声报警
+                                # （.env: CRY_WEBHOOK_URL/CRY_WEBHOOK_TOKEN，异步不阻塞，仅即时报警发一次）
+                                send_cry_webhook(
+                                    cry_conf,
+                                    event_id=p_id,
+                                    filename=fname,
+                                    recording_time=rec_time.strftime('%Y-%m-%d %H:%M:%S') if rec_time else None,
+                                    time_range=time_range_str,
+                                    audio_duration=dur,
+                                    device=src_device or None,
+                                    models=cry_det,
                                 )
 
                                 logger_b.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
@@ -3996,6 +4311,7 @@ def transcribe_audio():
 
                                 # 生成插图（仅分析成功时）
                                 image_data_for_email = None
+                                image_url = None  # 5008 侧相对路径（/api/illustration/xxx），生成失败保持 None
                                 try:
                                     if analysis_ok and reason and reason != "未知" and "深度分析中" not in (reason or ""):
                                         logger_a.info(f"🎨 [邮件插图] 开始生成邮件插图...")
@@ -4058,6 +4374,23 @@ def transcribe_audio():
                                     time_range=event_time_range
                                 )
 
+                                # 【2026-09-20】深度分析 + AI 插图完成后，向外部 Webhook 推送"分析报告"（第二推）
+                                # 仅在插图成功生成时才推送（无图不发）；插图直链带预览令牌
+                                if image_url:
+                                    send_cry_analysis_webhook(
+                                        event_id=p_id,
+                                        status="ok" if analysis_ok else "failed",
+                                        category=category,
+                                        reason=reason,
+                                        advice=advice,
+                                        confidence=cry_conf,
+                                        filename=fname,
+                                        recording_time=rec_time.strftime('%Y-%m-%d %H:%M:%S') if rec_time else None,
+                                        time_range=event_time_range,
+                                        device=src_device or None,
+                                        illustration_path=image_url,
+                                    )
+
                                 # 分析失败时保留音频，供未完成事件自动重试使用。
                                 if analysis_ok:
                                     try:
@@ -4071,7 +4404,7 @@ def transcribe_audio():
 
                             threading.Thread(
                                 target=start_delayed_analysis,
-                                args=(file.filename, _persist_audio_path, audio_duration, placeholder_id, cry_confidence, cry_details),
+                                args=(file.filename, _persist_audio_path, audio_duration, placeholder_id, cry_confidence, cry_details, source_device),
                                 daemon=True
                             ).start()
             except Exception as ex:

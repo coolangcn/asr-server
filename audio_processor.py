@@ -923,13 +923,31 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
             _move_file(filepath, filename, processed_dir, recording_time)
             return True
 
+        # 【2026-09-21】历史掉队文件防线：录音时间超过 6 小时的文件不进实时管线。
+        # 手机端积压队列补传会让几天前的录音此刻才落到 NAS（如 Sony-1 在 09-09
+        # 傍晚停滞期的积压），若照常送 ASR，A 轨会把它们逐个当成"实时哭声"触发
+        # 即时报警+Webhook，造成凌晨轰炸式"重复告警"。
+        # 历史文件的哭声检测由补跑脚本（reprocess_history_cries.py）统一负责，
+        # 那条链路不会触发报警。文件仍归档到 processed/，未打 DB 标记，
+        # 补跑跑到对应月份时会正常补检。
+        _age_sec = (datetime.now() - recording_time).total_seconds()
+        if _age_sec > 6 * 3600:
+            logger.info(f"⏭️ 跳过历史掉队文件 (录音于 {_age_sec/3600:.1f} 小时前): {filename}")
+            _move_file(filepath, filename, processed_dir, recording_time)
+            return True
+
     logger.info(f"📤 开始处理: {filename}")
     
     # 2. 发起转录请求
     try:
+        # 从 NAS 路径推导来源设备名（.../records/Sony-2/2026-09-20/xxx.m4a → Sony-2），
+        # 供 5008 哭声报警 Webhook 标注报警来源
+        _m_dev = re.search(r"records/([^/]+)/", filepath.replace("\\", "/"))
+        source_device = _m_dev.group(1) if _m_dev else ""
         with open(filepath, 'rb') as f:
             files_data = {'audio_file': (filename, f, 'audio/mpeg')}
             response = requests.post(FileMonitorConfig.ASR_TRANSCRIBE_URL, files=files_data,
+                                     data={'source_device': source_device},
                                      headers=_admin_headers(), timeout=7200)
         
         if response.status_code == 200:

@@ -492,6 +492,11 @@ def _device_watchdog(device):
             if alert_due:
                 if device.room != "unknown" and _room_has_other_active_device(device):
                     # ---- 房间视角降级：同房间其他设备仍在录音，房间覆盖正常 ----
+                    # 为什么客厅两台都能降级：B轨有多源fallback(audio_processor)，
+                    # Sony-2(分析源)停滞10分钟后自动切Sony-1接管分析，哭声检测不断流，
+                    # 故单机停滞只等于"客厅降级单机运行"。两台都停时
+                    # _room_has_other_active_device 返回False，走正常失聪警报。
+                    # 卧室Sony-3是单点(room=bedroom无同伴)，其停滞永远正常警报。
                     # 只静默恢复+低频轻提醒，不更新告警冷却（若之后同房间全部停滞可立即升级为失聪警报）
                     room_label = ROOM_LABELS.get(device.room, device.room)
                     with state.lock:

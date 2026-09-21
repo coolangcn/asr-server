@@ -4188,13 +4188,25 @@
                             </div>
                         </div>
                         ${data.sample_confirmed ? `
-                            <span class="px-3 py-1.5 rounded-xl bg-gray-700/40 border border-white/10 text-gray-400 text-xs font-bold flex items-center gap-2 flex-shrink-0">
+                            <span class="px-3 py-1.5 rounded-xl bg-gray-700/40 border border-white/10 text-gray-400 text-xs font-bold flex items-center gap-2 flex-shrink-0 mt-10">
                                 <i class="fa-solid fa-check text-emerald-400"></i> 已确认样本
                             </span>
+                        ` : data.false_positive ? `
+                            <span class="px-3 py-1.5 rounded-xl bg-gray-700/40 border border-white/10 text-gray-400 text-xs font-bold flex items-center gap-2 flex-shrink-0 mt-10">
+                                <i class="fa-solid fa-flag text-red-400"></i> 已标误报
+                            </span>
                         ` : `
-                            <button id="confirmSampleBtn" onclick="confirmSampleCry(${data.id})" class="px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-2 transition-all flex-shrink-0 active:scale-95">
-                                <i class="fa-solid fa-dna"></i> 确认为样本
-                            </button>
+                            <div class="flex items-center gap-2 flex-shrink-0 mt-10">
+                                <button id="previewCrySegBtn" onclick="previewCrySegment(${data.id})" class="px-3 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-400 text-xs font-bold flex items-center gap-2 transition-all active:scale-95">
+                                    <i class="fa-solid fa-play"></i> 试听哭声
+                                </button>
+                                <button id="confirmSampleBtn" onclick="confirmSampleCry(${data.id})" class="px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-2 transition-all active:scale-95">
+                                    <i class="fa-solid fa-dna"></i> 确认为样本
+                                </button>
+                                <button id="falsePositiveBtn" onclick="markFalsePositive(${data.id})" class="px-3 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-2 transition-all active:scale-95">
+                                    <i class="fa-solid fa-xmark"></i> 误报
+                                </button>
+                            </div>
                         `}
                     </div>
                     
@@ -4345,10 +4357,88 @@
                 _currentDetailAudio.pause();
                 _currentDetailAudio = null;
             }
+            // 停止哭声片段试听（2026-09-20）
+            if (_previewAudio) {
+                _previewAudio.pause();
+                _previewAudio = null;
+            }
+        }
+
+        // —— 哭声片段试听 + 误报反馈（2026-09-20）——
+        let _segmentListenedFor = null;   // 已试听过片段的事件ID：确认样本前必须先试听
+        let _previewAudio = null;         // 当前试听音频对象
+
+        async function previewCrySegment(eventId) {
+            const btn = document.getElementById('previewCrySegBtn');
+            // 播放中再次点击 = 停止
+            if (_previewAudio && !_previewAudio.paused) {
+                _previewAudio.pause();
+                return;
+            }
+            _previewAudio = null;
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 定位中...';
+            }
+            try {
+                const resp = await fetch(`/api/cry_event/${eventId}/segment_preview`);
+                if (!resp.ok) {
+                    let msg = `HTTP ${resp.status}`;
+                    try { const j = await resp.json(); msg = j.error || msg; } catch (e) {}
+                    throw new Error(msg);
+                }
+                const blob = await resp.blob();
+                _previewAudio = new Audio(URL.createObjectURL(blob));
+                _previewAudio.onended = () => { if (btn) btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> 重听片段'; };
+                _previewAudio.onpause = () => { if (btn) btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> 重听片段'; };
+                if (btn) btn.innerHTML = '<i class="fa-solid fa-stop"></i> 播放中...';
+                await _previewAudio.play();
+                _segmentListenedFor = eventId;   // 试听完成，解锁"确认为样本"
+            } catch (err) {
+                alert('❌ 试听失败: ' + err.message);
+                if (btn) btn.innerHTML = '<i class="fa-solid fa-play"></i> 试听哭声';
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function markFalsePositive(eventId) {
+            if (!confirm('确定这是误报吗？标记后将作为负样本用于后续检测准确度训练。')) return;
+            const btn = document.getElementById('falsePositiveBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 标记中...';
+            }
+            try {
+                const resp = await fetch(`/api/cry_event/${eventId}/feedback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ verdict: 'false_positive' })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+                if (btn) {
+                    btn.outerHTML = '<span class="px-3 py-1.5 rounded-xl bg-gray-700/40 border border-white/10 text-gray-400 text-xs font-bold flex items-center gap-2 flex-shrink-0"><i class="fa-solid fa-flag text-red-400"></i> 已标误报</span>';
+                }
+                const confirmBtn = document.getElementById('confirmSampleBtn');
+                if (confirmBtn) confirmBtn.remove();
+                alert('✅ 已标记为误报，感谢反馈');
+            } catch (err) {
+                alert('❌ 标记失败: ' + err.message);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-xmark"></i> 误报';
+                }
+            }
         }
 
         // 一键确认哭声事件为声纹样本（自动喂样本库）
         async function confirmSampleCry(eventId) {
+            // 试听门槛：必须先试听哭声片段并确认是准确哭声，才能入库为声纹样本
+            if (_segmentListenedFor !== eventId) {
+                alert('请先点击「试听哭声」确认是准确的哭声后，再确认为样本');
+                return;
+            }
             const btn = document.getElementById('confirmSampleBtn');
             if (btn) {
                 btn.disabled = true;

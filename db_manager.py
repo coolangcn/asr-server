@@ -375,7 +375,9 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
         cursor = conn.cursor()
         
         # 构建 WHERE 子句
-        where_clauses = ["is_deleted = FALSE"]
+        # 【2026-09-20】已标误报的事件不再出现在列表里（数据库保留，供后续校准用）
+        _ensure_false_positive_column()
+        where_clauses = ["is_deleted = FALSE", "COALESCE(false_positive, FALSE) = FALSE"]
         params = []
         
         # 1. 日期过滤 (YYYY-MM-DD)
@@ -445,8 +447,9 @@ def get_baby_cry_count(date_filter: str = None) -> int:
 
         cursor = conn.cursor()
         target_date = date_filter or datetime.now(UTC_PLUS_8).date().isoformat()
+        _ensure_false_positive_column()
         cursor.execute(
-            "SELECT COUNT(*) FROM baby_cry_events WHERE COALESCE(recording_time, created_at)::date = %s AND is_deleted = FALSE",
+            "SELECT COUNT(*) FROM baby_cry_events WHERE COALESCE(recording_time, created_at)::date = %s AND is_deleted = FALSE AND COALESCE(false_positive, FALSE) = FALSE",
             (target_date,)
         )
         row = cursor.fetchone()
@@ -462,6 +465,7 @@ def get_baby_cry_count(date_filter: str = None) -> int:
 
 def get_baby_cry_event_by_id(event_id: int) -> Dict:
     """根据 ID 获取单个宝宝哭声分析事件"""
+    _ensure_false_positive_column()  # 详情查询含 false_positive 列，先确保列存在
     conn = None
     try:
         conn = get_connection()
@@ -470,7 +474,7 @@ def get_baby_cry_event_by_id(event_id: int) -> Dict:
 
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url, sample_confirmed, sample_confirmed_at, sample_id, is_deleted FROM baby_cry_events WHERE id = %s",
+            "SELECT id, filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url, sample_confirmed, sample_confirmed_at, sample_id, false_positive, is_deleted FROM baby_cry_events WHERE id = %s",
             (event_id,)
         )
         row = cursor.fetchone()
@@ -906,9 +910,95 @@ def get_cry_files_for_date(date_str: str) -> list:
         if conn: return_connection(conn)
 
 
+def get_newrule_done_files_for_date(date_str: str) -> list:
+    """获取指定日期已被【新规则】检测过的文件名列表（补跑断点续传依据）。
+
+    包含 status IN ('cry', 'b_reprocess_success')：
+    - cry：新规则检出哭声（阶段二会建事件）
+    - b_reprocess_success：新规则检测过、未检出
+    与 get_cry_files_for_date 的区别：后者只返回 cry（阶段二恢复事件用）。
+    注意 status='no_cry' 不算"已做"——2026-09-20 之前的补跑在病态挂载期
+    误标了大量 no_cry（文件实际从未被检测），这些必须重检。
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return []
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT filename FROM processed_files_a "
+            "WHERE status IN ('cry','b_reprocess_success') AND filename ~ %s",
+            (date_str,)
+        )
+        result = sorted(r[0] for r in cursor.fetchall())
+        cursor.close()
+        return result
+    except Exception as e:
+        print(f"  [DB Error] 获取日期新规则已检文件列表失败: {e}")
+        return []
+    finally:
+        if conn: return_connection(conn)
+
+
+# 误报标记列确保只执行一次（进程级）
+_fp_column_ensured = False
+
+def _ensure_false_positive_column():
+    """确保 baby_cry_events 有误报标记列（幂等，进程内只执行一次）"""
+    global _fp_column_ensured
+    if _fp_column_ensured:
+        return
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return
+        cursor = conn.cursor()
+        cursor.execute("""
+            ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS false_positive BOOLEAN DEFAULT FALSE
+        """)
+        cursor.execute("""
+            ALTER TABLE baby_cry_events ADD COLUMN IF NOT EXISTS feedback_at TIMESTAMP
+        """)
+        conn.commit()
+        cursor.close()
+        _fp_column_ensured = True
+    except Exception as e:
+        print(f"  [DB Error] 确保误报标记列失败: {e}")
+    finally:
+        if conn: return_connection(conn)
+
+
+def mark_event_false_positive(event_id: int) -> bool:
+    """将哭声事件标记为误报（人工反馈：假阳性，后续训练/校准负样本数据）。
+
+    Returns:
+        True 标记成功；False 事件不存在
+    """
+    _ensure_false_positive_column()
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn: return False
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE baby_cry_events
+            SET false_positive = TRUE, feedback_at = NOW()
+            WHERE id = %s AND is_deleted = FALSE
+        """, (event_id,))
+        updated = cursor.rowcount > 0
+        conn.commit()
+        cursor.close()
+        return updated
+    except Exception as e:
+        print(f"  [DB Error] 标记误报失败: {e}")
+        return False
+    finally:
+        if conn: return_connection(conn)
+
+
 def get_unanalyzed_cry_dates() -> list:
     """获取有 cry 记录但缺少有效 baby_cry_events 分析的日期列表
-    
+
     包含两类情况：
     1. processed_files_a 中 status='cry' 但 baby_cry_events 中无对应记录
     2. baby_cry_events 中有记录但分析不完整（reason为空/category=analyzing/category=未分类）

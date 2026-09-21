@@ -1,12 +1,16 @@
 #!/bin/bash
 # ==============================================
-#   SMB 挂载看门狗 v3 (launchd 每 90 秒调用)
+#   SMB 挂载看门狗 v4 (launchd 每 90 秒调用)
 #   设计原则：宁可漏判，不可误杀
-#   - 探测超时 30 秒（补跑高负载时 NAS 响应慢是正常的）
-#   - 连续 2 轮探测失败才动手（防单次慢读误判）
-#   - 用 Finder 正规途径挂载（osascript），不走裸 mount_smbfs
-#     （mount_smbfs 直接挂 /Volumes 会被磁盘仲裁卡掉）
-#   - 2026-09-19 v2 教训：误判健康挂载并强拆，造成反复断挂
+#   - 探测超时 60 秒 + 连续 5 轮(约7.5分钟)失败才动手：
+#     NAS 高负载(补跑+5008并发)时阵发慢是常态，探测超时≠挂载死亡
+#     (2026-09-19 v3 曾因 30s+2轮 过于激进，一天误拆健康挂载 13 次)
+#   - 仅用 mount_smbfs 挂载，Finder/osascript 通道已弃用：
+#     当天 mount volume / open smb:// 集体挂起且可能弹密码框卡死后台
+#   - 目录枚举探测：SMB 会话半损坏时"列表截断"(挂载可见但条目骤减且
+#     稳定不自行恢复)，读单个文件探测发现不了，必须数 records/ 条目数
+#   - 超时用轮询等待而非 wait：SMB 卡死时子进程进 D 状态(不可中断)，
+#     kill -9 都打不死，传统 wait 会跟着无限等(2026-09-20 看门狗睡死7.7h教训)
 # ==============================================
 
 MOUNT_POINT="/Volumes/download"
@@ -69,12 +73,17 @@ with_timeout() {
 }
 
 probe_alive() {
-    with_timeout $PROBE_TIMEOUT ls "$CHECK_PATH" > /dev/null 2>&1 || return 1
+    # 【2026-09-20】重大发现：launchd 上下文中 bash/ls 访问 SMB 挂载被 macOS TCC 拦截
+    # (Operation not permitted，瞬时失败)，而 python3 二进制持有网络卷授权——
+    # 因此探测必须用 python3 而非 ls。此前探测 100% 假失败，导致看门狗每 7.5 分钟
+    # 强拆重挂一次健康挂载（截断病反复发作的重大嫌疑）。
+    # 注：mount_smbfs/unmount 走内核 syscall 不受 TCC 限制，无需更换。
+    with_timeout $PROBE_TIMEOUT /Users/mac/asr_env/bin/python3 -c "import os; os.listdir('$CHECK_PATH')" > /dev/null 2>&1 || return 1
     # 目录枚举探测：SMB 会话半损坏时会"列表截断"（能看到挂载但条目骤减，
-    # 且截断状态稳定不恢复）。records/ 正常有 Sony-1/2/3 + processed 等条目，
+    # 且截断状态稳定不恢复）。records/ 正常有 Sony-1/2/3 等条目，
     # 少于 3 个即判定为病态挂载，走重挂流程。
     local entries
-    entries=$(with_timeout $PROBE_TIMEOUT ls "$MOUNT_POINT/records" 2>/dev/null | wc -l | tr -d ' ')
+    entries=$(with_timeout $PROBE_TIMEOUT /Users/mac/asr_env/bin/python3 -c "import os; print(len(os.listdir('$MOUNT_POINT/records')))" 2>/dev/null | tr -d ' \r')
     [ -n "$entries" ] && [ "$entries" -ge 3 ]
 }
 

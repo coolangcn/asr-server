@@ -2173,6 +2173,21 @@
                     </div>
                     ${audioHtml}
                     <div class="cry-detail-section">
+                        <div class="cry-detail-section-title">🎵 哭声片段（自动定位可能不准，可换一段）</div>
+                        <div style="display:flex;gap:8px">
+                            <button id="mSegBtn_${eventId}" onclick="mobilePlaySegment(${eventId})" style="flex:1.4;padding:12px;border-radius:12px;border:1px solid rgba(129,140,248,.4);background:rgba(129,140,248,.12);color:#a5b4fc;font-size:13px;font-weight:700;cursor:pointer">▶ 试听第 1 段</button>
+                            <button onclick="mobileNextSegment(${eventId})" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#cbd5e1;font-size:13px;font-weight:700;cursor:pointer">🔄 换一段</button>
+                        </div>
+                    </div>
+                    <div class="cry-detail-section" id="mActionSec_${eventId}">
+                        <div class="cry-detail-section-title">🧬 反馈操作</div>
+                        ${data.sample_confirmed
+                            ? '<div style="display:inline-block;padding:8px 16px;border-radius:999px;background:rgba(16,185,129,.15);color:#34d399;font-size:13px;font-weight:700">✓ 已确认样本</div>'
+                            : data.false_positive
+                            ? '<div style="display:inline-block;padding:8px 16px;border-radius:999px;background:rgba(239,68,68,.15);color:#f87171;font-size:13px;font-weight:700">🚩 已标误报</div>'
+                            : '<div style="display:flex;gap:10px"><button id="mConfirmBtn" onclick="mobileConfirmSample(' + eventId + ')" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(16,185,129,.35);background:rgba(16,185,129,.12);color:#34d399;font-size:14px;font-weight:700;cursor:pointer">🧬 确认为样本</button><button id="mFpBtn" onclick="mobileMarkFalsePositive(' + eventId + ')" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#f87171;font-size:14px;font-weight:700;cursor:pointer">🚩 误报</button></div><div style="color:#6b7280;font-size:11px;margin-top:8px;line-height:1.5">确认样本：哭声入库声纹库（约十几秒）；误报：标记假阳性用于校准</div>'}
+                    </div>
+                    <div class="cry-detail-section">
                         <div class="cry-detail-section-title">💡 安抚建议</div>
                         <div class="cry-advice-box">${formattedAdvice}</div>
                     </div>
@@ -2219,8 +2234,96 @@
             }
         }
 
+        // ===== 移动端哭声片段试听 + 反馈操作（与桌面端/预览页能力对齐）=====
+        const _mobileSegState = {};  // eventId -> { variant, total, audio }
+        function _segLabel(btn, st, playing) {
+            const total = st.total || '?';
+            btn.textContent = playing ? `⏸ 停止（第 ${st.variant + 1}/${total} 段）` : `▶ 试听第 ${st.variant + 1}/${total} 段`;
+        }
+        async function mobilePlaySegment(eventId) {
+            const btn = document.getElementById('mSegBtn_' + eventId);
+            if (!btn) return;
+            const st = _mobileSegState[eventId] || (_mobileSegState[eventId] = { variant: 0, total: 5, audio: null });
+            if (st.audio) {
+                // iOS 上首次 play 可能被静默拦截：此时音频已就绪，再点一次即从手势上下文播放
+                st.audio.play().then(() => _segLabel(btn, st, true)).catch(() => {});
+                return;
+            }
+            btn.disabled = true; btn.textContent = '⏳ 定位片段中...';
+            const slowTip = setTimeout(() => { btn.textContent = '⏳ 定位中...（GPU 正被补跑/检测占用，首次可能需 1-2 分钟）'; }, 12000);
+            // 150 秒硬超时：绝不无限转圈
+            const ctrl = new AbortController();
+            const kill = setTimeout(() => ctrl.abort(), 150000);
+            try {
+                const resp = await fetch(`/api/cry_event/${eventId}/segment_preview?variant=${st.variant}`, { signal: ctrl.signal });
+                if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.error || ('HTTP ' + resp.status)); }
+                const total = parseInt(resp.headers.get('X-Cry-Windows') || '5', 10);
+                if (total > 0) { st.total = total; st.variant = st.variant % total; }
+                const blob = await resp.blob();
+                st.audio = new Audio(URL.createObjectURL(blob));
+                st.audio.onended = () => { st.audio = null; _segLabel(btn, st, false); };
+                try {
+                    await st.audio.play();
+                    _segLabel(btn, st, true);
+                } catch (perr) {
+                    // iOS 手势上下文丢失：音频已就绪，提示用户再点一次
+                    _segLabel(btn, st, false);
+                }
+            } catch (e) {
+                const msg = (e.name === 'AbortError') ? '定位超时（GPU 繁忙），请稍后再试' : e.message;
+                alert('❌ 试听失败: ' + msg);
+                st.audio = null; _segLabel(btn, st, false);
+            }
+            clearTimeout(slowTip); clearTimeout(kill);
+            btn.disabled = false;
+        }
+        async function mobileNextSegment(eventId) {
+            const st = _mobileSegState[eventId] || (_mobileSegState[eventId] = { variant: 0, total: 5, audio: null });
+            if (st.audio) { st.audio.pause(); st.audio = null; }
+            const btn = document.getElementById('mSegBtn_' + eventId);
+            st.variant = st.variant + 1;  // 超出总数由服务端取模
+            if (btn) await mobilePlaySegment(eventId);
+        }
+        async function mobileConfirmSample(eventId) {
+            const btn = document.getElementById('mConfirmBtn');
+            if (!btn) return;
+            btn.disabled = true; btn.textContent = '⏳ 处理中...（约十几秒）';
+            try {
+                const resp = await fetch(`/api/cry_event/${eventId}/confirm_sample`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({variant: (_mobileSegState[eventId] || {}).variant || 0}) });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+                let msg = data.message || '已确认为样本';
+                if (data.sample_count) msg += '\n当前 Baby 共 ' + data.sample_count + ' 个样本';
+                alert('✅ ' + msg);
+                if (_cryDetailCache[eventId]) _cryDetailCache[eventId].sample_confirmed = true;
+                const sec = document.getElementById('mActionSec_' + eventId);
+                if (sec) sec.innerHTML = '<div class="cry-detail-section-title">🧬 反馈操作</div><div style="display:inline-block;padding:8px 16px;border-radius:999px;background:rgba(16,185,129,.15);color:#34d399;font-size:13px;font-weight:700">✓ 已确认样本</div>';
+            } catch (e) {
+                alert('❌ 确认失败: ' + e.message);
+                btn.disabled = false; btn.textContent = '🧬 确认为样本';
+            }
+        }
+        async function mobileMarkFalsePositive(eventId) {
+            if (!confirm('确定这是误报吗？标记后将作为负样本用于检测准确度训练。')) return;
+            const btn = document.getElementById('mFpBtn');
+            if (!btn) return;
+            btn.disabled = true; btn.textContent = '⏳ 标记中...';
+            try {
+                const resp = await fetch(`/api/cry_event/${eventId}/feedback`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({verdict: 'false_positive'}) });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+                alert('✅ 已标记为误报，感谢反馈');
+                if (_cryDetailCache[eventId]) _cryDetailCache[eventId].false_positive = true;
+                const sec = document.getElementById('mActionSec_' + eventId);
+                if (sec) sec.innerHTML = '<div class="cry-detail-section-title">🧬 反馈操作</div><div style="display:inline-block;padding:8px 16px;border-radius:999px;background:rgba(239,68,68,.15);color:#f87171;font-size:13px;font-weight:700">🚩 已标误报</div>';
+            } catch (e) {
+                alert('❌ 标记失败: ' + e.message);
+                btn.disabled = false; btn.textContent = '🚩 误报';
+            }
+        }
         function closeCryDetail() {
             // 停止播放中的音频
+            for (const k in _mobileSegState) { const st = _mobileSegState[k]; if (st.audio) { st.audio.pause(); st.audio = null; } }
             if (_currentPlayingAudio) {
                 _currentPlayingAudio.pause();
                 _currentPlayingAudio.currentTime = 0;

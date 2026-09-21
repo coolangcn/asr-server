@@ -140,3 +140,10 @@ backups/
 event_scores.jsonl
 neg_scores.jsonl
 scan_results.jsonl
+
+# 哭声事件持久音频（个人语音数据，不入 git）
+temp_cry/
+
+# 补跑运行状态文件
+backfill_dates_snapshot.txt
+backfill_failed_dates.txt

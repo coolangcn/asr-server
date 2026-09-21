@@ -13,7 +13,7 @@ import signal
 import atexit
 import socket
 from logging.handlers import RotatingFileHandler
-from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, get_completed_events_for_date, get_completed_cry_covered_files_for_date, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
+from db_manager import init_pool, is_file_processed_a, mark_file_processed_a, get_connection, return_connection, get_date_processing_stats, get_processed_files_for_date, get_file_cache_from_redis, get_file_count_from_redis, refresh_file_cache, get_cry_files_for_date, get_newrule_done_files_for_date, get_all_cry_dates, get_unanalyzed_cry_dates, get_incomplete_cry_events, get_completed_events_for_date, get_completed_cry_covered_files_for_date, delete_incomplete_cry_events, check_cache_freshness, get_uncovered_cry_count
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
@@ -810,7 +810,9 @@ if __name__ == "__main__":
             # 【2026-09-18】只把 status='cry'（已确认哭声）视为已做。
             # no_cry / b_realtime_success / b_catchup_success / skipped_night
             # 都是旧规则或未做哭声检测的标记，需要用新规则重新检测。
-            processed_set = set(get_cry_files_for_date(d))
+            # 【2026-09-20】"已做"判定改为 cry + b_reprocess_success（新规则已检），
+            # 旧标记 no_cry 不算——病态挂载期补跑曾把未检测文件误标 no_cry。
+            processed_set = set(get_newrule_done_files_for_date(d))
             # 关键修复：files 中是完整路径，processed_set 中是文件名
             # 必须提取文件名后再比较！
             remaining = [f for f in files if os.path.basename(f) not in processed_set]
@@ -869,18 +871,20 @@ if __name__ == "__main__":
 
     log_detail(f"\n找到 {len(files_to_process)} 个文件进行哭声识别（扫描范围内共 {len(all_files)} 个音频文件，哭声事件将从中选取上下文）...", 'info')
 
-    # ── 过滤 Redis 缓存中过时的文件（NAS 上已不存在的文件）──
-    # 只检查 files_to_process（待处理列表），all_files 在后续按日期分组时自然过滤
+    # ── 核对 Redis 缓存与磁盘的差异 ──
+    # 注意：挂载半损坏(SMB列表截断病)时 os.path.exists 会大面积误报 False，
+    # 不能据此过滤文件或写入任何状态标记——保留在列表中，由阶段一逐文件重试判定。
+    # (2026-09-20 教训：病态挂载期 18365 个文件被"文件不存在"误跳过并标记 no_cry，
+    #  补跑"假完成"，实际新规则检测覆盖率不足 1%)
     if files_to_process:
         missing_files = [f for f in files_to_process if not os.path.exists(f)]
         if missing_files:
-            log_detail(f"[*] ⚠️  发现 {len(missing_files)} 个文件在 NAS 上不存在（Redis缓存过时），已标记跳过", 'warning')
-            if not is_targeted:
-                for f in missing_files:
-                    mark_file_processed_a(os.path.basename(f), status="no_cry")
-            files_to_process = [f for f in files_to_process if os.path.exists(f)]
-            all_files = [f for f in all_files if os.path.exists(f)]
-            log_detail(f"[*] 过滤后实际需要处理 {len(files_to_process)} 个文件", 'info')
+            miss_ratio = len(missing_files) / len(files_to_process)
+            log_detail(f"[*] ⚠️  {len(missing_files)}/{len(files_to_process)} 个文件 exists() 不可达", 'warning')
+            if miss_ratio > 0.3:
+                log_detail(f"[*] 🚨 不可达比例 {miss_ratio:.0%} 过高，疑似挂载截断病发作，中止 (exit 3，待挂载恢复后重跑，断点续传)", 'error')
+                sys.exit(3)
+            # 少量缺失：保留在列表里，阶段一会再次校验并重试
 
     # =====================================================================
     # 【按日期滚动处理】每天独立完成 阶段一(检测) + 阶段二(分析)
@@ -1093,6 +1097,7 @@ if __name__ == "__main__":
             day_success = 0
             day_error = 0
             day_skip = 0
+            day_unreachable = 0   # exists() 不可达数：疑似挂载截断病，不写任何标记
             day_start = time.time()
 
             write_progress({
@@ -1119,21 +1124,31 @@ if __name__ == "__main__":
                     day_skip += 1
                     continue
 
-                # 检查文件是否实际存在（Redis 缓存可能过时）
+                # 检查文件可达性。挂载半损坏(截断病)时 exists() 会误报 False——
+                # 必须重试并验证挂载健康，确认真不存在才跳过，且不写入任何标记
+                # (2026-09-20 教训：病态挂载期 1395 个文件被误标 no_cry，当天"假完成")
                 if not os.path.exists(filepath):
-                    log_detail(f"\n  [{file_idx}/{len(day_files)}] {filename} — ⏭️ 文件不存在（已从NAS移除），跳过", 'info')
-                    if not is_targeted:
-                        mark_file_processed_a(filename, status="no_cry")
-                    day_skip += 1
-                    continue
+                    reachable = False
+                    for _chk in range(3):
+                        if wait_for_network_mount(SOURCE_DIR, max_wait=20, check_interval=5):
+                            time.sleep(2)
+                            if os.path.exists(filepath):
+                                reachable = True
+                                break
+                        time.sleep(3)
+                    if not reachable:
+                        log_detail(f"\n  [{file_idx}/{len(day_files)}] {filename} — 🚨 文件不可达(疑似挂载异常)，不标记，待重跑", 'warning')
+                        day_skip += 1
+                        day_unreachable += 1
+                        continue
 
                 log_detail(f"\n  [{file_idx}/{len(day_files)}] {filename}", 'info')
 
                 if not wait_for_network_mount(SOURCE_DIR, max_wait=300, check_interval=5):
-                    log_detail(f"    ❌ 网络挂载不可用，跳过", 'error')
-                    if not is_targeted:
-                        mark_file_processed_a(filename, status="no_cry")
+                    # 挂载 300s 未恢复：不写标记（文件未检测），计为不可达，超阈值则中止
+                    log_detail(f"    🚨 网络挂载不可用，不标记，待重跑", 'error')
                     day_skip += 1
+                    day_unreachable += 1
                     continue
 
                 max_retries = 5
@@ -1195,7 +1210,10 @@ if __name__ == "__main__":
 
                     day_success += 1
                     if not is_targeted:
-                        mark_file_processed_a(filename, status="cry" if is_cry else "no_cry")
+                        # 新规则检测完成的文件标 b_reprocess_success（断点续传依据，
+                        # 与旧规则时代的 b_realtime_success 区分）；
+                        # 检出哭声的标 cry（续传只跳过这两类）
+                        mark_file_processed_a(filename, status="cry" if is_cry else "b_reprocess_success")
                 else:
                     log_detail(f"    ❌ 失败 (Status {response.status_code})", 'error')
                     day_error += 1
@@ -1228,6 +1246,9 @@ if __name__ == "__main__":
             day_elapsed = time.time() - day_start
             log_detail(f"\n{'─'*40}", 'info')
             log_detail(f"📊 {current_date} 阶段一完成: 成功={day_success}, 跳过={day_skip}, 错误={day_error}, 哭声={len(cry_file_paths)}, 耗时={day_elapsed/60:.1f}分钟", 'info')
+            if day_unreachable >= 30:
+                log_detail(f"\n🚨 {current_date} 有 {day_unreachable} 个文件不可达，疑似挂载截断病发作，中止补跑 (exit 3)。挂载恢复后重跑即可断点续传。", 'error')
+                sys.exit(3)
 
         # ── 同时从数据库恢复该日期已标记的 cry 文件（补全之前中断累积的） ──
         db_cry_filenames = get_cry_files_for_date(current_date)

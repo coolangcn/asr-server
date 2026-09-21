@@ -8,7 +8,7 @@ import hmac
 import sys
 import threading
 import time
-from flask import Flask, render_template, jsonify, request, Response, send_file, session, redirect, url_for
+from flask import Flask, render_template, render_template_string, jsonify, request, Response, send_file, session, redirect, url_for, make_response
 import datetime
 from collections import Counter, defaultdict
 import requests
@@ -944,6 +944,315 @@ def proxy_confirm_cry_sample(event_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/cry_event/<int:event_id>/segment_preview', methods=['GET'])
+@login_required
+def proxy_cry_segment_preview(event_id):
+    """代理哭声片段试听：后端滑窗定位+切片，首次可能较慢，超时放宽到 120s。
+    【2026-09-20】透传 variant（换一段候选序号），否则手机端换一段永远拿到第 1 段"""
+    try:
+        variant = request.args.get('variant', '0')
+        response = requests.get(f"{ASR_SERVER_URL}/api/cry_segment_preview/{event_id}?variant={variant}", headers=_asr_admin_headers(), timeout=120)
+        resp = Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+        if response.headers.get('X-Cry-Windows'):
+            resp.headers['X-Cry-Windows'] = response.headers['X-Cry-Windows']
+        return resp
+    except requests.Timeout:
+        return jsonify({"error": "片段定位超时（滑窗扫描过慢），请稍后重试"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/cry_event/<int:event_id>/feedback', methods=['POST'])
+@login_required
+def proxy_cry_event_feedback(event_id):
+    """代理误报反馈：转发 verdict 到 ASR 服务，标记 false_positive 积累训练数据"""
+    try:
+        response = requests.post(f"{ASR_SERVER_URL}/api/cry_event_feedback/{event_id}", headers=_asr_admin_headers(), json=request.get_json(silent=True) or {}, timeout=15)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ── 免鉴权哭声报警预览（2026-09-20）──
+# 供 Webhook 接收方通过 CF 隧道（rd.moco.fun）或局域网点开直接查看事件详情，
+# 媒体（哭声片段/上下文录音/AI 插图）全部由 5009 同源直出，公网可达；
+# 可选访问令牌：.env 设置 CRY_PREVIEW_TOKEN 后需带 ?t=，未设置则免鉴权。
+# 仅暴露单个事件关联的只读媒体；正式面板（含管理操作）仍需登录。
+
+def _preview_auth_ok():
+    """预览资源访问校验：未配置 CRY_PREVIEW_TOKEN 时完全开放（免鉴权）"""
+    tok = (os.getenv('CRY_PREVIEW_TOKEN') or '').strip()
+    if not tok:
+        return True
+    return request.args.get('t', '') == tok
+
+def _fetch_preview_event(event_id):
+    """拉取事件详情（5008 侧公开接口）；失败返回 None"""
+    try:
+        r = requests.get(f"{ASR_SERVER_URL}/api/cry_event/{event_id}", timeout=10)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+_CRY_PREVIEW_HTML = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>宝宝哭声报警预览</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: linear-gradient(160deg,#1a1c2e,#252840); min-height: 100vh; color: #e8e8f0; padding: 24px 16px; }
+  .card { max-width: 520px; margin: 0 auto; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 20px; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #9aa0b5; font-size: 13px; margin-bottom: 18px; }
+  .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; margin-right: 8px; background: rgba(239,68,68,.18); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+  .conf { background: rgba(255,255,255,.08); color: #cbd5e1; border: 1px solid rgba(255,255,255,.12); }
+  .sec { margin-top: 18px; }
+  .sec h2 { font-size: 13px; color: #9aa0b5; font-weight: 600; margin-bottom: 8px; letter-spacing: .05em; }
+  .reason { font-size: 15px; line-height: 1.6; }
+  .advice { font-size: 14px; line-height: 1.6; color: #fbbf24; }
+  audio { width: 100%; margin-top: 6px; }
+  .illu { width: 100%; border-radius: 14px; border: 1px solid rgba(255,255,255,.1); }
+  .file { color: #6b7280; font-size: 12px; margin-top: 14px; word-break: break-all; }
+  a.full { display: block; text-align: center; margin-top: 20px; color: #818cf8; font-size: 13px; text-decoration: none; }
+  .btn-row { display: flex; gap: 10px; }
+  .btn { flex: 1; padding: 12px 8px; border-radius: 14px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; transition: all .15s; }
+  .btn:disabled { opacity: .6; }
+  .btn.ok { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.3); }
+  .btn.deny { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+  .hint { color: #6b7280; font-size: 12px; margin-top: 8px; line-height: 1.5; }
+  .pv-badge { display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .pv-badge.ok { background: rgba(16,185,129,.12); color: #34d399; }
+  .pv-badge.deny { background: rgba(239,68,68,.12); color: #f87171; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🍼 宝宝哭声报警</h1>
+  <div class="sub">{{ recording_time }}</div>
+  <div>
+    <span class="badge">{{ reason_category }}</span>
+    {% if confidence %}<span class="badge conf">置信度 {{ confidence }}</span>{% endif %}
+  </div>
+  {% if illustration %}
+  <div class="sec"><h2>AI 场景插图</h2><img class="illu" src="{{ illustration }}" alt="场景插图"></div>
+  {% endif %}
+  <div class="sec">
+    <h2>哭声片段试听</h2>
+    <audio id="pvSegAudio" controls preload="none" src="/preview/cry/{{ event_id }}/audio{{ q }}"></audio>
+    <button id="pvNextSegBtn" onclick="pvNextSegment()" class="btn" style="margin-top:8px;background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(255,255,255,.15)">🔄 换一段（自动定位可能不准）</button>
+  </div>
+  {% if reason %}
+  <div class="sec"><h2>原因分析</h2><div class="reason">{{ reason }}</div></div>
+  {% endif %}
+  {% if advice %}
+  <div class="sec"><h2>安抚建议</h2><div class="advice">{{ advice }}</div></div>
+  {% endif %}
+  {% if context_audios %}
+  <div class="sec">
+    <h2>上下文录音（事件前后）</h2>
+    {% for a in context_audios %}<audio controls preload="none" src="{{ a }}"></audio>{% endfor %}
+  </div>
+  {% endif %}
+  <div class="file">📁 {{ filename }}</div>
+  <div class="sec">
+    <h2>反馈操作</h2>
+    {% if sample_confirmed %}
+    <span class="pv-badge ok">✓ 已确认样本</span>
+    {% elif false_positive %}
+    <span class="pv-badge deny">🚩 已标误报</span>
+    {% else %}
+    <div class="btn-row">
+      <button id="pvConfirmBtn" onclick="pvConfirm()" class="btn ok">🧬 确认为样本</button>
+      <button id="pvFeedbackBtn" onclick="pvFeedback()" class="btn deny">🚩 误报</button>
+    </div>
+    <div class="hint">确认为样本：将该哭声入库声纹库，提升后续检测准确度（约需十几秒）。误报：标记为假阳性，用于后续规则校准。</div>
+    {% endif %}
+  </div>
+  <a class="full" href="/">打开完整监控面板 →</a>
+</div>
+<script>
+// 哭声片段候选轮换：确认样本时会带上当前选中的 variant，入库的就是听到的这段
+let _pvVariant = 0;
+async function pvNextSegment() {
+  _pvVariant += 1;  // 超出总数由服务端取模
+  const audio = document.getElementById('pvSegAudio');
+  const btn = document.getElementById('pvNextSegBtn');
+  btn.disabled = true; btn.textContent = '⏳ 定位中...';
+  try {
+    const sep = '{{ q }}' ? '&' : '?';
+    audio.src = '/preview/cry/{{ event_id }}/audio' + '{{ q }}' + sep + 'variant=' + _pvVariant;
+    try { await audio.play(); } catch (e) {}
+    btn.textContent = '🔄 再换一段';
+  } catch (e) { alert('❌ 切换失败: ' + e.message); }
+  btn.disabled = false;
+}
+async function pvConfirm() {
+  const btn = document.getElementById('pvConfirmBtn');
+  btn.disabled = true; btn.textContent = '处理中...（声纹提取约十几秒）';
+  try {
+    const resp = await fetch('/preview/cry/{{ event_id }}/confirm_sample{{ q }}', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({variant: _pvVariant}) });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+    let msg = data.message || '已确认为样本';
+    if (data.sample_count) msg += '\n当前 Baby 共 ' + data.sample_count + ' 个样本';
+    if (data.low_similarity_warning && data.low_similarity_warning.length) msg += '\n\n⚠️ 低相似度提醒:\n· ' + data.low_similarity_warning.join('\n· ');
+    alert('✅ ' + msg);
+    btn.outerHTML = '<span class="pv-badge ok">✓ 已确认样本</span>';
+    const fb = document.getElementById('pvFeedbackBtn'); if (fb) fb.remove();
+  } catch (e) {
+    alert('❌ 确认失败: ' + e.message);
+    btn.disabled = false; btn.textContent = '🧬 确认为样本';
+  }
+}
+async function pvFeedback() {
+  if (!confirm('确定这是误报吗？标记后将作为负样本用于检测准确度训练。')) return;
+  const btn = document.getElementById('pvFeedbackBtn');
+  btn.disabled = true; btn.textContent = '标记中...';
+  try {
+    const resp = await fetch('/preview/cry/{{ event_id }}/feedback{{ q }}', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+    alert('✅ 已标记为误报，感谢反馈');
+    btn.outerHTML = '<span class="pv-badge deny">🚩 已标误报</span>';
+    const cb = document.getElementById('pvConfirmBtn'); if (cb) cb.remove();
+  } catch (e) {
+    alert('❌ 标记失败: ' + e.message);
+    btn.disabled = false; btn.textContent = '🚩 误报';
+  }
+}
+</script>
+</body>
+</html>
+"""
+
+@app.route('/preview/cry/<int:event_id>')
+def public_cry_preview(event_id):
+    """免登录哭声事件预览页：插图 + 信息 + 哭声片段/上下文试听（可经 CF 隧道公网访问，只读）"""
+    if not _preview_auth_ok():
+        return "<h3 style='font-family:sans-serif;padding:24px'>无效的预览令牌</h3>", 403
+    ev = _fetch_preview_event(event_id)
+    if not ev:
+        return "<h3 style='font-family:sans-serif;padding:24px'>事件不存在或已删除</h3>", 404
+    # 所有媒体走 5009 同源代理，保证经 CF 隧道公网访问时可用（5008 端口不对外）
+    q = f"?t={request.args.get('t', '')}" if (os.getenv('CRY_PREVIEW_TOKEN') or '').strip() else ""
+    ctx_urls = [f"/preview/cry/{event_id}/media{u[len('/api/audio'):]}{q}"
+                for u in (ev.get('audio_urls') or []) if u.startswith('/api/audio/')]
+    illustration = ev.get('illustration_url') or ''
+    if illustration.startswith('data:'):
+        pass  # 内联图片直接使用
+    elif illustration.startswith('/api/illustration/'):
+        illustration = f"/preview/cry/{event_id}/illustration{q}"
+    else:
+        illustration = ''
+    conf = ev.get('confidence')
+    html = render_template_string(
+        _CRY_PREVIEW_HTML,
+        event_id=event_id,
+        q=q,
+        illustration=illustration,
+        recording_time=ev.get('recording_time') or '',
+        reason_category=ev.get('reason_category') or '未分类',
+        confidence=f"{conf * 100:.0f}%" if isinstance(conf, (int, float)) else '',
+        reason=ev.get('reason') or '',
+        advice=ev.get('advice') or '',
+        filename=ev.get('filename') or '',
+        context_audios=ctx_urls,
+        sample_confirmed=bool(ev.get('sample_confirmed')),
+        false_positive=bool(ev.get('false_positive')),
+    )
+    # 手机浏览器/微信 webview 常缓存旧页面，显式禁缓存保证按钮等改动即时生效
+    resp = make_response(html)
+    resp.headers['Cache-Control'] = 'no-store, max-age=0'
+    return resp
+
+@app.route('/preview/cry/<int:event_id>/audio')
+def public_cry_preview_audio(event_id):
+    """免登录哭声片段音频流：服务端注入管理令牌从 5008 拉取滑窗定位的哭声片段"""
+    if not _preview_auth_ok():
+        return jsonify({"error": "无效的预览令牌"}), 403
+    try:
+        variant = request.args.get('variant', '0')
+        r = requests.get(f"{ASR_SERVER_URL}/api/cry_segment_preview/{event_id}?variant={variant}", headers=_asr_admin_headers(), timeout=120)
+        resp = Response(r.content, status=r.status_code, content_type=r.headers.get('Content-Type', 'audio/wav'))
+        if r.headers.get('X-Cry-Windows'):
+            resp.headers['X-Cry-Windows'] = r.headers['X-Cry-Windows']
+        return resp
+    except requests.Timeout:
+        return jsonify({"error": "片段定位超时，请稍后刷新重试"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/preview/cry/<int:event_id>/media/<path:media_path>')
+def public_cry_preview_media(event_id, media_path):
+    """免登录事件上下文录音流：仅允许访问该事件关联的音频文件（防止开放全量录音库）。
+    直接读 NAS（复用面板 /api/audio 的 processed/根目录两级解析），不经 5008。"""
+    if not _preview_auth_ok():
+        return jsonify({"error": "无效的预览令牌"}), 403
+    ev = _fetch_preview_event(event_id)
+    if not ev:
+        return jsonify({"error": "事件不存在"}), 404
+    allowed = {u[len('/api/audio/'):] for u in (ev.get('audio_urls') or []) if u.startswith('/api/audio/')}
+    if media_path not in allowed:
+        return jsonify({"error": "该文件不属于此事件"}), 403
+    try:
+        source_dir = CONFIG["SOURCE_DIR"]
+        for cand in (os.path.join(source_dir, "processed", media_path),
+                     os.path.join(source_dir, media_path)):
+            if os.path.isfile(cand):
+                return send_file(cand)
+        return jsonify({"error": "媒体文件不存在"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/preview/cry/<int:event_id>/illustration')
+def public_cry_preview_illustration(event_id):
+    """免登录 AI 场景插图：仅允许访问该事件关联的插图文件"""
+    if not _preview_auth_ok():
+        return jsonify({"error": "无效的预览令牌"}), 403
+    ev = _fetch_preview_event(event_id)
+    if not ev:
+        return jsonify({"error": "事件不存在"}), 404
+    ill = ev.get('illustration_url') or ''
+    if not ill.startswith('/api/illustration/'):
+        return jsonify({"error": "该事件无插图"}), 404
+    fname = ill[len('/api/illustration/'):]
+    try:
+        r = requests.get(f"{ASR_SERVER_URL}/api/illustration/{fname}", timeout=30)
+        return Response(r.content, status=r.status_code, content_type=r.headers.get('Content-Type', 'image/jpeg'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/preview/cry/<int:event_id>/confirm_sample', methods=['POST'])
+def public_cry_preview_confirm(event_id):
+    """预览页"确认为样本"：令牌保护，服务端注入管理令牌代理到 5008（NAS 复制+声纹提取，耗时较长）"""
+    if not _preview_auth_ok():
+        return jsonify({"error": "无效的预览令牌"}), 403
+    ev = _fetch_preview_event(event_id)
+    if not ev:
+        return jsonify({"error": "事件不存在"}), 404
+    try:
+        r = requests.post(f"{ASR_SERVER_URL}/api/confirm_cry_sample/{event_id}", headers=_asr_admin_headers(), json=request.get_json(silent=True) or {}, timeout=180)
+        return Response(r.content, status=r.status_code, content_type=r.headers.get('Content-Type'))
+    except requests.Timeout:
+        return jsonify({"error": "处理超时（NAS 读取或声纹提取过慢），请稍后重试"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/preview/cry/<int:event_id>/feedback', methods=['POST'])
+def public_cry_preview_feedback(event_id):
+    """预览页"误报"标记：令牌保护，服务端注入管理令牌代理到 5008"""
+    if not _preview_auth_ok():
+        return jsonify({"error": "无效的预览令牌"}), 403
+    ev = _fetch_preview_event(event_id)
+    if not ev:
+        return jsonify({"error": "事件不存在"}), 404
+    try:
+        r = requests.post(f"{ASR_SERVER_URL}/api/cry_event_feedback/{event_id}", headers=_asr_admin_headers(), json={"verdict": "false_positive"}, timeout=30)
+        return Response(r.content, status=r.status_code, content_type=r.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/illustration/<filename>')
 @login_required
 def proxy_illustration(filename):
@@ -1667,6 +1976,12 @@ def serve_original_audio(filepath):
     """提供原始或已处理的录音文件回放"""
     try:
         source_dir = CONFIG["SOURCE_DIR"]
+        # 【2026-09-20】本地持久音频（temp_cry 暂存区）：audio_urls 形如
+        # /api/audio/Users/mac/asr-server/temp_cry/cry_xxx.wav，此前只在 NAS 目录找 → 404 无声
+        if filepath.startswith("Users/mac/asr-server/temp_cry/"):
+            local_path = "/" + filepath
+            if os.path.isfile(local_path):
+                return send_file(local_path)
         # 先尝试在 processed 目录下找
         processed_path = os.path.join(source_dir, "processed", filepath)
         if os.path.exists(processed_path) and os.path.isfile(processed_path):
