@@ -588,6 +588,96 @@ def update_cry_analysis(event_id: int, reason: str, advice: str,
         if conn:
             return_connection(conn)
 
+def find_mergeable_cry_event(rec_time: Optional[datetime], window_minutes: int = 10) -> Optional[dict]:
+    """【2026-09-21 哭声回合合并】查找可并入的进行中哭声回合。
+
+    规则：最近创建的、仍处于分析占位状态（reason_category='analyzing'）且未删除、
+    未标误报的事件，其"最后一个文件的录音时间"距新文件录音时间不超过 window_minutes
+    → 视为同一哭闹回合，可并入（不新建事件、不重复报警）。
+
+    锚点时间 = max(事件代表文件, event_files_json 里最后一个文件) 的解析时间。
+    """
+    if rec_time is None:
+        return None
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return None
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, filename, event_files_json FROM baby_cry_events "
+            "WHERE is_deleted = FALSE AND COALESCE(false_positive, FALSE) = FALSE "
+            "AND reason_category = 'analyzing' "
+            "ORDER BY created_at DESC LIMIT 1"
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        if not row:
+            return None
+        event_id, rep_filename, files_json = row[0], row[1], row[2]
+
+        # 计算锚点：事件里最后一个文件的录音时间
+        anchor = parse_recording_time(rep_filename) if rep_filename else None
+        if files_json:
+            try:
+                files = json.loads(files_json)
+                for f in files:
+                    t = parse_recording_time(os.path.basename(str(f))) or parse_recording_time(str(f))
+                    if t and (anchor is None or t > anchor):
+                        anchor = t
+            except Exception:
+                pass
+        if anchor is None:
+            return None
+
+        diff_sec = (rec_time - anchor).total_seconds()
+        if abs(diff_sec) <= window_minutes * 60:
+            return {"id": event_id, "anchor": anchor, "diff_sec": diff_sec}
+        return None
+    except Exception as e:
+        print(f"  [DB Error] 查找可合并哭声回合失败: {e}")
+        return None
+    finally:
+        if conn:
+            return_connection(conn)
+
+def append_file_to_cry_event(event_id: int, filename: str) -> bool:
+    """【2026-09-21 哭声回合合并】把新检出的录音文件追加进既有哭声事件的文件列表。"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("SELECT event_files_json FROM baby_cry_events WHERE id = %s", (event_id,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return False
+        try:
+            files = json.loads(row[0]) if row[0] else []
+        except Exception:
+            files = []
+        if filename not in files:
+            files.append(filename)
+        cursor.execute(
+            "UPDATE baby_cry_events SET event_files_json = %s WHERE id = %s",
+            (json.dumps(files, ensure_ascii=False), event_id)
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        cursor.close()
+        return updated
+    except Exception as e:
+        print(f"  [DB Error] 追加哭声事件文件失败: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            return_connection(conn)
+
 def update_cry_event_audio_path(event_id: int, audio_path: str) -> bool:
     """更新宝宝哭声事件的持久音频路径"""
     conn = None

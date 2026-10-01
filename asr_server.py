@@ -78,6 +78,7 @@ class Config:
     ONLY_REGISTERED_SPEAKERS = True  # 只保留已注册说话人,丢弃Unknown
     # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
     ASR_MODEL = "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"  # 从 SenseVoiceSmall 切换到 Paraformer
+    ASR_HOTWORD = os.getenv('ASR_HOTWORD', '大可').strip()  # SeACo 热词定制: 提升人名/专有词识别(空格分隔多个词, 置空禁用)
     VAD_MODEL = "fsmn-vad"       # VAD模型
     SPK_MODEL = "cam++"          # 说话人分离模型
     PUNC_MODEL = "ct-punc"       # 标点恢复模型
@@ -385,6 +386,8 @@ def load_models():
     print("\n====== 🚀 启动 SOTA 融合服务 ======")
 
     load_speaker_db()
+    load_negative_samples()
+    start_negative_worker()
 
     # 2. 加载 ASR (FunASR)
     print(f"🧠 加载 ASR: {Config.ASR_MODEL} ...")
@@ -1588,10 +1591,15 @@ def cleanup_temp_dir():
                 continue
 
             cleaned_count = 0
+
             try:
                 for filename in os.listdir(dir_name):
                     filepath = os.path.join(dir_name, filename)
                     try:
+                        # 预切哭声候选片段缓存(temp/preview_segments/)是"零GPU秒开预览"的核心，
+                        # 按事件ID幂等复用且体积小，曾被1小时清理误删导致每次预览都重新GPU定位——永久保留
+                        if dir_name == Config.TEMP_DIR and filename == "preview_segments":
+                            continue
                         if os.path.isfile(filepath):
                             file_age = current_time - os.path.getmtime(filepath)
                             if (
@@ -1912,6 +1920,7 @@ def identify_speaker_fusion(segment_path):
 
     model_votes = {}
     model_scores = {}
+    neg_scores = {}   # 各模型与黑名单负样本的最大相似度（拒绝器候选分）
 
     logger_sys.info(f"🎯 开始声纹识别: 音频段路径={segment_path}")
     logger_sys.info(f"📋 声纹数据库包含 {len(speaker_db)} 个说话人")
@@ -1962,6 +1971,21 @@ def identify_speaker_fusion(segment_path):
         top2_name, top2_score = scores[1] if len(scores) > 1 else (None, 0.0)
         score_gap = top1_score - top2_score
 
+        # 负样本黑名单比对: 该模型与所有负样本逐一算相似度, 取最大（向量已就绪, 仅加几次点积, 微秒级）
+        if negative_samples:
+            neg_best = 0.0
+            for ne in negative_samples:
+                ne_vec = (ne.get('embeddings') or {}).get(model_name)
+                if ne_vec:
+                    try:
+                        s = 1 - cosine(emb_a.flatten(), np.array(ne_vec, dtype=np.float32).flatten())
+                        if s > neg_best:
+                            neg_best = s
+                    except Exception:
+                        continue
+            if neg_best > 0:
+                neg_scores[model_name] = neg_best
+
         logger_sys.debug(f"  {model_name}: {top1_name}={top1_score:.3f} (gap={score_gap:.3f})")
 
         # 【轨道B】使用标准阈值，不做任何哭声补偿
@@ -1988,6 +2012,15 @@ def identify_speaker_fusion(segment_path):
 
     # 【轨道B】标准 2/3 投票，不做任何哭声特许
     if count >= 2:
+        # 【负样本拒绝器】在≥2个可比模型上"更像黑名单" → 拒绝归属（宁可漏放, 不误伤家人真声）
+        cmp_models = [mn for mn in neg_scores if mn in model_scores]
+        neg_hits = [mn for mn in cmp_models if neg_scores[mn] > model_scores[mn]]
+        if len(cmp_models) >= 2 and len(neg_hits) >= 2:
+            logger_b.info(f"🚫 [负样本拒绝] 黑名单更近的模型: {neg_hits} | 负样本分: "
+                          + ", ".join(f"{mn}={neg_scores[mn]:.3f}" for mn in cmp_models)
+                          + f" | 家人分: {model_scores} → 拒绝归属")
+            return None, 0.0, [f"负样本拒绝: 黑名单在 {len(neg_hits)}/{len(cmp_models)} 个模型上更近"]
+
         # 计算获胜者的平均置信度
         winning_scores = [model_scores[model] for model, vote in model_votes.items() if vote == winner]
         avg_confidence = np.mean(winning_scores)
@@ -2270,6 +2303,8 @@ def api_get_cry_event(event_id):
             "has_illustration": illustration_url is not None,
             "sample_confirmed": bool(event.get("sample_confirmed")),
             "false_positive": bool(event.get("false_positive")),
+            # 预切状态：候选片段清单已存在 → 试听/切换秒开，否则首次需 GPU 定位
+            "presliced": os.path.exists(os.path.join(Config.TEMP_DIR, "preview_segments", f"{event_id}.json")),
         })
     except Exception as e:
         logger_a.error(f"获取事件详情失败: {e}")
@@ -2292,9 +2327,33 @@ def api_get_cry_events():
             start_time_filter=start_time_filter,
             end_time_filter=end_time_filter
         )
+        # 预切状态标注（一次 listdir；manifest 存在 → 前端显示"秒开"，否则提示需 GPU 定位）
+        try:
+            seg_dir = os.path.join(Config.TEMP_DIR, "preview_segments")
+            presliced_ids = {f[:-5] for f in os.listdir(seg_dir) if f.endswith(".json")}
+            for ev in events:
+                ev["presliced"] = str(ev.get("id")) in presliced_ids
+        except OSError:
+            pass
         return jsonify({"events": events, "total": total})
     except Exception as e:
         logger_a.error(f"获取宝宝哭声记录失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/preview_progress", methods=["GET"])
+def api_preview_progress():
+    """预切总进度：已预切事件数 / 应预切总数（排除已删除与误报事件）"""
+    try:
+        seg_dir = os.path.join(Config.TEMP_DIR, "preview_segments")
+        presliced = 0
+        if os.path.isdir(seg_dir):
+            presliced = sum(1 for f in os.listdir(seg_dir) if f.endswith(".json"))
+        from db_manager import get_baby_cry_events
+        _, total = get_baby_cry_events(offset=0, limit=1)
+        pct = min(100.0, round(presliced * 100.0 / total, 1)) if total else 100.0
+        return jsonify({"presliced": presliced, "total": total, "pct": pct})
+    except Exception as e:
+        logger_a.error(f"获取预切进度失败: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/analyze_cry", methods=["POST"])
@@ -2798,6 +2857,18 @@ def get_live_status():
         from db_manager import get_baby_cry_count
         # 检查 A 轨进程是否还在运行
         a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
+        # 【2026-09-26】兼容外部启动的补跑（驱动脚本拉起，非 5008 子进程）：
+        # 进度文件心跳新鲜(10分钟内)且状态为 running 时视为运行中，
+        # 否则手机端在整个外部补跑期间会一直错误显示"暂停中"
+        _progress_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
+        if not a_running and os.path.exists(_progress_file):
+            try:
+                if time.time() - os.path.getmtime(_progress_file) < 600:
+                    with open(_progress_file, "r", encoding="utf-8") as _pf:
+                        if json.load(_pf).get("status") == "running":
+                            a_running = True
+            except Exception:
+                pass
         today_cry_count = get_baby_cry_count()
 
         # 读取 A 轨日志（无论进程是否在运行，都返回日志内容）
@@ -3232,6 +3303,26 @@ def _locate_and_copy_event_audio(event):
     for f in event_files:
         if f not in candidates:
             candidates.append(f)
+
+    # 【2026-09-21】NAS 回退：老事件（尤其回合合并前 created 的实时事件，event_files 为空）
+    # 持久音频被清理后，按录音日期到 NAS 各设备源目录找原文件；
+    # 覆盖统一归档 processed/（B 轨处理后的文件都会移到 Sony-2/processed/<日期>/）。
+    # 复制动作自带存在性检查，多候选逐个尝试即可。
+    try:
+        # 注意：recording_time 从 DB 读出是 ISO 字符串而非 datetime，直接用文件名解析最稳
+        _rec = parse_recording_time(fname or "")
+        if _rec and fname:
+            _date_str = _rec.strftime("%Y-%m-%d")
+            _records_root = os.path.dirname("/Volumes/download/records/Sony-2")
+            for _dev in ("Sony-2", "Sony-1", "Sony-3"):
+                for _cand in (
+                    os.path.join(_records_root, _dev, _date_str, fname),
+                    os.path.join(_records_root, _dev, "processed", _date_str, fname),
+                ):
+                    if _cand not in candidates:
+                        candidates.append(_cand)
+    except Exception:
+        pass
 
     os.makedirs(Config.TEMP_DIR, exist_ok=True)
     src_ext = (os.path.splitext(candidates[0])[1] if candidates else "") or ".wav"
@@ -3728,12 +3819,13 @@ def delete_speaker_sample(speaker_name, sample_id):
                 return jsonify({"error": f"Sample '{sample_id}' not found for speaker '{speaker_name}'."}), 404
 
             # 删除样本的音频文件
-            if "audio_path" in sample_to_remove and os.path.exists(sample_to_remove["audio_path"]):
+            _ap = _resolve_sample_audio_path(sample_to_remove)
+            if _ap:
                 try:
-                    os.remove(sample_to_remove["audio_path"])
-                    logger_b.info(f"🗑️ 删除了音频文件: {sample_to_remove['audio_path']}")
+                    os.remove(_ap)
+                    logger_b.info(f"🗑️ 删除了音频文件: {_ap}")
                 except Exception as e:
-                    logger_b.warning(f"⚠️ 删除音频文件失败: {sample_to_remove['audio_path']}, 错误: {str(e)}")
+                    logger_b.warning(f"⚠️ 删除音频文件失败: {_ap}, 错误: {str(e)}")
 
             # 从数据库中移除样本记录
             del samples[sample_index]
@@ -3946,6 +4038,215 @@ def register_speaker_web():
                 except:
                     pass
 
+# =================== 负样本黑名单（拒绝器） ===================
+# 用户在移动端把"电视/动画等非家人声音"标为负样本 → 向量以个体形式存档
+# 归属时只做"拒绝"（更像黑名单就不标任何人），绝不参与正向归属
+NEGATIVE_DB_FILE = "negative_samples.json"
+negative_samples = []
+neg_lock = threading.Lock()
+NEG_PENDING_DIR = os.path.join("negative_samples", "pending")
+
+def _process_negative_job(job_file):
+    """后台处理单个负样本建模任务: 预处理 + GPU提取三模型向量 + 入黑名单"""
+    temp_files = []
+    try:
+        with open(job_file, 'r', encoding='utf-8') as f:
+            job = json.load(f)
+        wav_path = job.get('wav') or ''
+        src_name = job.get('source') or 'seg.wav'
+        if not wav_path or not os.path.exists(wav_path):
+            raise RuntimeError(f"待处理音频缺失: {wav_path}")
+        proc_temp = os.path.join(Config.TEMP_DIR, f"neg_proc_{int(time.time())}.wav")
+        temp_files.append(proc_temp)
+        if not preprocess_audio(wav_path, proc_temp):
+            raise RuntimeError("音频预处理失败")
+        embeddings = {}
+        with gpu_lock:
+            for model_name, sv_pipe in sv_pipelines.items():
+                emb = extract_embedding_from_file(sv_pipe, proc_temp)
+                if emb is not None:
+                    embeddings[model_name] = emb.tolist()
+        if not embeddings:
+            raise RuntimeError("声纹提取失败")
+        entry_id = job.get('id') or f"neg_{time.strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        entry = {
+            "id": entry_id,
+            "ts": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "source": src_name[:200],
+            "embeddings": embeddings,
+        }
+        neg_dir = "negative_samples"
+        os.makedirs(neg_dir, exist_ok=True)
+        entry["audio"] = os.path.join(neg_dir, f"{entry_id}.wav")
+        try:
+            shutil.copy2(proc_temp, entry["audio"])
+        except Exception as e:
+            logger_sys.warning(f"负样本音频副本保存失败(不影响黑名单): {e}")
+            entry.pop("audio", None)
+        with neg_lock:
+            negative_samples.append(entry)
+            with open(NEGATIVE_DB_FILE, 'w', encoding='utf-8') as f:
+                json.dump(negative_samples, f, ensure_ascii=False)
+        logger_b.info(f"🚫 [负样本] 已建模入黑名单: {entry['id']} | 共 {len(negative_samples)} 条")
+        for p in (job_file, wav_path):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+        return True
+    except Exception as e:
+        logger_b.error(f"负样本建模失败({os.path.basename(job_file)}): {e}")
+        try:
+            os.rename(job_file, job_file + ".failed")  # 保留现场, 不阻塞后续任务
+        except Exception:
+            pass
+        return False
+    finally:
+        for tmp in temp_files:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+
+def _negative_worker_loop():
+    os.makedirs(NEG_PENDING_DIR, exist_ok=True)
+    while True:
+        try:
+            if not sv_pipelines:
+                time.sleep(5)   # 模型未就绪(启动中/加载失败)时等待
+                continue
+            jobs = sorted(fn for fn in os.listdir(NEG_PENDING_DIR) if fn.endswith('.json'))
+            if not jobs:
+                time.sleep(2)
+                continue
+            _process_negative_job(os.path.join(NEG_PENDING_DIR, jobs[0]))
+        except Exception as e:
+            logger_sys.error(f"负样本工作线程异常: {e}")
+            time.sleep(5)
+
+def start_negative_worker():
+    threading.Thread(target=_negative_worker_loop, daemon=True, name="negative-worker").start()
+    logger_sys.info("🚫 负样本后台建模线程已启动")
+
+def load_negative_samples():
+    global negative_samples
+    try:
+        if os.path.exists(NEGATIVE_DB_FILE):
+            with open(NEGATIVE_DB_FILE, 'r', encoding='utf-8') as f:
+                negative_samples = json.load(f)
+        # ID 唯一性清理: 历史数据可能出现重复 id(旧版时间戳+hash 生成), 仅保留首条
+        seen, uniq = set(), []
+        for n in negative_samples:
+            nid = n.get('id')
+            if nid and nid in seen:
+                continue
+            seen.add(nid)
+            uniq.append(n)
+        if len(uniq) != len(negative_samples):
+            logger_sys.warning(f"负样本黑名单发现重复 id: {len(negative_samples)} → {len(uniq)} 条, 已去重")
+            negative_samples = uniq
+            try:
+                with open(NEGATIVE_DB_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(negative_samples, f, ensure_ascii=False)
+            except Exception as e:
+                logger_sys.error(f"负样本黑名单去重回写失败: {e}")
+        logger_sys.info(f"📦 负样本黑名单已加载: {len(negative_samples)} 条")
+    except Exception as e:
+        logger_sys.error(f"负样本黑名单加载失败: {e}")
+        negative_samples = []
+
+def _negative_source_exists(src):
+    """同源去重: 该切片路径已在黑名单或待处理队列中则返回 True"""
+    if not src:
+        return False
+    with neg_lock:
+        if any(n.get('source') == src for n in negative_samples):
+            return True
+    try:
+        if os.path.isdir(NEG_PENDING_DIR):
+            for fn in glob.glob(os.path.join(NEG_PENDING_DIR, '*.json')):
+                try:
+                    with open(fn, 'r', encoding='utf-8') as f:
+                        if json.load(f).get('source') == src:
+                            return True
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return False
+
+@app.route('/speaker/negative', methods=['POST'])
+@admin_required
+def register_negative_sample():
+    """登记负样本(异步): 音频入队即返回202, 后台线程提取三模型向量进黑名单(仅拒绝用)"""
+    try:
+        if 'audio_file' not in request.files:
+            return jsonify({"error": "audio_file is required"}), 400
+        file = request.files['audio_file']
+        src_name = request.form.get('source_path', '').strip() or (file.filename or 'seg.wav')
+        if _negative_source_exists(src_name):
+            logger_b.info(f"🚫 [负样本] 重复标记忽略: {src_name[:80]}")
+            return jsonify({"ok": True, "duplicate": True})
+        os.makedirs(NEG_PENDING_DIR, exist_ok=True)
+        job_id = f"neg_{time.strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        wav_path = os.path.join(NEG_PENDING_DIR, f"{job_id}.wav")
+        file.save(wav_path)
+        with open(os.path.join(NEG_PENDING_DIR, f"{job_id}.json"), 'w', encoding='utf-8') as f:
+            json.dump({"id": job_id, "source": src_name[:200], "wav": wav_path,
+                       "ts": time.strftime('%Y-%m-%d %H:%M:%S')}, f, ensure_ascii=False)
+        logger_b.info(f"🚫 [负样本] 已入队: {job_id} | {src_name[:80]}")
+        return jsonify({"ok": True, "queued": True, "id": job_id}), 202
+    except Exception as e:
+        logger_b.error(f"负样本入队失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/negative/list', methods=['GET'])
+def list_negative_samples():
+    """负样本黑名单列表(不含向量, 供样本管理页核对; 接口低频, 直接读盘保证与其它端写入一致)"""
+    with neg_lock:
+        load_negative_samples()
+        items = [{"id": n.get("id"), "ts": n.get("ts"), "source": n.get("source"),
+                  "has_audio": bool(n.get("audio") and os.path.exists(n.get("audio")))}
+                 for n in reversed(negative_samples)]
+    return jsonify({"total": len(items), "samples": items})
+
+@app.route('/speaker/negative/<neg_id>/audio', methods=['GET'])
+def get_negative_sample_audio(neg_id):
+    """试听负样本音频副本"""
+    with neg_lock:
+        entry = next((n for n in negative_samples if n.get("id") == neg_id), None)
+    if not entry:
+        return jsonify({"error": "negative sample not found"}), 404
+    ap = entry.get("audio")
+    if not ap or not os.path.exists(ap):
+        return jsonify({"error": "audio file missing"}), 404
+    return send_file(ap, mimetype="audio/wav", as_attachment=True, download_name=f"{neg_id}.wav")
+
+@app.route('/speaker/negative/<neg_id>', methods=['DELETE'])
+@admin_required
+def delete_negative_sample(neg_id):
+    """从黑名单移除单条负样本(回滚)"""
+    global negative_samples
+    with neg_lock:
+        before = len(negative_samples)
+        entry = next((n for n in negative_samples if n.get("id") == neg_id), None)
+        negative_samples = [n for n in negative_samples if n.get("id") != neg_id]
+        if len(negative_samples) == before:
+            return jsonify({"error": "not found"}), 404
+        try:
+            with open(NEGATIVE_DB_FILE, 'w', encoding='utf-8') as f:
+                json.dump(negative_samples, f, ensure_ascii=False)
+        except Exception as e:
+            logger_sys.error(f"负样本黑名单写盘失败: {e}")
+    if entry and entry.get("audio") and os.path.exists(entry["audio"]):
+        try:
+            os.remove(entry["audio"])
+        except Exception:
+            pass
+    logger_b.info(f"🗑️ [负样本] 已移除: {neg_id} | 剩余 {len(negative_samples)} 条")
+    return jsonify({"ok": True, "total": len(negative_samples)})
+
 @app.route("/register", methods=["POST"])
 @admin_required
 def register_speaker():
@@ -4149,7 +4450,10 @@ def transcribe_audio():
             except: pass
 
             logger_b.info("  [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...")
-            res = asr_pipeline.generate(input=proc_temp, language="auto", use_itn=True, use_punc=True)
+            _gen_kwargs = dict(language="auto", use_itn=True, use_punc=True)
+            if Config.ASR_HOTWORD:
+                _gen_kwargs["hotword"] = Config.ASR_HOTWORD  # SeACo 热词偏置
+            res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
 
             # 【轨道A: 独立哭声检测】直接对完整 60s 原始音频做声纹匹配
             # 使用 CryDetectionConfig 独立参数，与轨道B (VAD+语音识别) 完全隔离
@@ -4160,6 +4464,7 @@ def transcribe_audio():
             # 不发即时报警邮件、不发 Webhook、不写实时事件（历史检测由补跑脚本负责，
             # 那条链路有自己的入库方式）。防止手机端积压补传的旧录音在凌晨触发
             # 轰炸式"重复告警"。与 audio_processor 的提交侧防线互为兜底。
+            _rec_t = None
             try:
                 from db_manager import parse_recording_time as _prt
                 _rec_t = _prt(file.filename)
@@ -4185,17 +4490,41 @@ def transcribe_audio():
                     if skip_cry_flag:
                         logger_b.info(f"      [skip_cry] 哭声已标记，历史模式不发送即时邮件")
                     else:
-                        # 冷却机制
-                        global _last_cry_trigger_time
-                        now = time.time()
-                        with _cry_cooldown_lock:
-                            in_cooldown = (now - _last_cry_trigger_time) < CryDetectionConfig.COOLDOWN_SEC
-                            if not in_cooldown:
-                                _last_cry_trigger_time = now
+                        # 【2026-09-21 哭声回合合并】先看能否并入进行中的回合：
+                        # 10 分钟内连续检出的哭声录音属于同一场哭闹，并入最近一个
+                        # 仍处于分析占位状态的事件（追加 event_files），不新建事件、
+                        # 不重复报警。深度分析由该事件的延迟线程在合并窗口关闭后
+                        # 统一执行（其上下文收集会覆盖全部相邻录音）。
+                        _merge_target = None
+                        try:
+                            from db_manager import find_mergeable_cry_event, append_file_to_cry_event
+                            _merge_target = find_mergeable_cry_event(_rec_t, window_minutes=10)
+                        except Exception as _merge_err:
+                            logger_b.warning(f"      ⚠️ [回合合并] 合并检查失败: {_merge_err}")
 
-                        if in_cooldown:
-                            elapsed = int(now - _last_cry_trigger_time)
-                            logger_b.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
+                        if _merge_target:
+                            _merged = append_file_to_cry_event(_merge_target['id'], file.filename)
+                            if _merged:
+                                logger_b.info(
+                                    f"      🍼 [轨道A] 哭声并入回合 #{_merge_target['id']}"
+                                    f"（距上一段 {abs(_merge_target['diff_sec'])/60:.1f} 分钟，同一回合），不重复报警"
+                                )
+                            else:
+                                logger_b.warning(f"      ⚠️ [回合合并] 文件追加失败，按新回合处理")
+                                _merge_target = None  # 追加失败走新回合，避免丢事件
+
+                        if not _merge_target:
+                            # 冷却机制
+                            global _last_cry_trigger_time
+                            now = time.time()
+                            with _cry_cooldown_lock:
+                                in_cooldown = (now - _last_cry_trigger_time) < CryDetectionConfig.COOLDOWN_SEC
+                                if not in_cooldown:
+                                    _last_cry_trigger_time = now
+
+                            if in_cooldown:
+                                elapsed = int(now - _last_cry_trigger_time)
+                                logger_b.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
                         else:
                             # ── 正式报警：先保存占位，后续在分析和插图生成后发送邮件 ──
 
@@ -4212,7 +4541,7 @@ def transcribe_audio():
                             from db_manager import save_cry_analysis
                             placeholder_id = save_cry_analysis(
                                 file.filename, 0, audio_duration,
-                                "深度分析中 (5分钟观察期)...", "请稍候内容更新",
+                                "深度分析中 (等待合并窗口关闭)...", "请稍候内容更新",
                                 reason_category="analyzing", event_files=[],
                                 audio_path=_persist_audio_path,
                                 confidence=cry_confidence,
@@ -4253,7 +4582,7 @@ def transcribe_audio():
                                 send_cry_alert_email(
                                     fname, cry_conf, cry_det,
                                     reason="正在深度分析中，请稍候...",
-                                    advice="系统正在收集完整上下文音频，5 分钟后将发送详细分析报告",
+                                    advice="系统正在收集完整上下文音频，稍后将发送详细分析报告",
                                     category="analyzing",
                                     image_data=None,
                                     time_range=time_range_str
@@ -4272,8 +4601,11 @@ def transcribe_audio():
                                     models=cry_det,
                                 )
 
-                                logger_b.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 300s 后更新占位 (ID={p_id})...")
-                                time.sleep(300)
+                                # 【2026-09-21 回合合并】延迟 720s = 合并窗口 10min + 2min 缓冲，
+                                # 确保窗口内后续并入的录音都被收齐后，一次性做深度分析
+                                # （process_baby_cry_async 的上下文收集会覆盖全部相邻录音）
+                                logger_b.info(f"⏳ [BabyCry] 已启动延迟分析线程，等待 720s (合并窗口关闭) 后更新占位 (ID={p_id})...")
+                                time.sleep(720)
 
                                 # 执行分析并获取结果
                                 logger_b.info(f"🔍 [BabyCry] 开始执行深度分析...")
@@ -4750,6 +5082,16 @@ def transcribe_audio():
                     try: os.remove(f)
                     except: pass
 
+def _resolve_sample_audio_path(sample):
+    """解析样本音频绝对路径: 兼容旧库中的 Windows 反斜杠路径与相对路径"""
+    ap = (sample.get("audio_path") or "").replace("\\", "/")
+    if not ap:
+        return None
+    if not os.path.isabs(ap):
+        ap = os.path.join(os.path.dirname(os.path.abspath(__file__)), ap)
+    return ap if os.path.exists(ap) else None
+
+
 @app.route("/speaker/<speaker_name>/sample/<sample_id>/audio")
 def get_sample_audio(speaker_name, sample_id):
     """获取指定说话人样本的音频文件"""
@@ -4766,8 +5108,9 @@ def get_sample_audio(speaker_name, sample_id):
         # 查找指定样本
         for sample in speaker_data["samples"]:
             if sample["id"] == sample_id:
-                if "audio_path" in sample and os.path.exists(sample["audio_path"]):
-                    return send_file(sample["audio_path"], as_attachment=True, download_name=sample["filename"])
+                ap = _resolve_sample_audio_path(sample)
+                if ap:
+                    return send_file(ap, as_attachment=True, download_name=sample["filename"])
                 else:
                     return jsonify({"error": f"Audio file for sample '{sample_id}' not found."}), 404
 

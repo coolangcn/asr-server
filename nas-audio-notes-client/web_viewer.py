@@ -795,12 +795,119 @@ def proxy_register_speaker():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# =================== 负样本反馈（电视/动画声音标记） ===================
+SPK_NEG_FEEDBACK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'spk_negative_feedback.json')
+
+def _load_spk_negative_paths():
+    """已标记为负样本的句子切片路径集合（用于展示层过滤）"""
+    try:
+        with open(SPK_NEG_FEEDBACK_FILE, 'r', encoding='utf-8') as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
+
+def _add_spk_negative_path(path):
+    try:
+        cur = _load_spk_negative_paths()
+        cur.add(path)
+        with open(SPK_NEG_FEEDBACK_FILE, 'w', encoding='utf-8') as f:
+            json.dump(sorted(cur), f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"[spk-negative] 反馈记录写盘失败: {e}")
+
+@app.route('/api/spk_negative', methods=['POST'])
+@login_required
+def api_spk_negative():
+    """移动端标记负样本: 先持久记录路径(展示层即时隐藏), 再转发 ASR 服务后台建模"""
+    try:
+        if 'audio_file' not in request.files:
+            return jsonify({"error": "audio_file is required"}), 400
+        audio_file = request.files['audio_file']
+        src = request.form.get('source_path', '')
+        if src:
+            _add_spk_negative_path(src)   # 不等 GPU, 隐藏意图立即落盘
+        files = {'audio_file': (audio_file.filename, audio_file.stream, audio_file.content_type)}
+        data = {'source_path': src}
+        response = requests.post(
+            f"{ASR_SERVER_URL}/speaker/negative",
+            files=files, data=data, headers=_asr_admin_headers(), timeout=30
+        )
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        # ASR 服务不可达: 隐藏意图已保留, 仅建模未完成, 用户可稍后重标
+        return jsonify({"ok": True, "queued": False, "hidden": True,
+                        "warning": f"建模队列暂不可达: {e}"}), 200
+
+@app.route('/speaker/negative/list', methods=['GET'])
+@login_required
+def proxy_negative_list():
+    """负样本黑名单列表（供声纹 Tab 核对）"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/speaker/negative/list", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/negative/<neg_id>/audio', methods=['GET'])
+@login_required
+def proxy_negative_audio(neg_id):
+    """试听负样本音频副本"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/speaker/negative/{neg_id}/audio", timeout=30, stream=True)
+        return Response(response.iter_content(chunk_size=8192), status=response.status_code,
+                        content_type=response.headers.get('Content-Type', 'audio/wav'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/negative/<neg_id>', methods=['DELETE'])
+@login_required
+def proxy_negative_delete(neg_id):
+    """从黑名单移除单条负样本（回滚）"""
+    try:
+        response = requests.delete(f"{ASR_SERVER_URL}/speaker/negative/{neg_id}", headers=_asr_admin_headers(), timeout=15)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/speaker/list', methods=['GET'])
 @login_required
 def proxy_list_speakers():
     """转发获取说话人列表请求"""
     try:
         response = requests.get(f"{ASR_SERVER_URL}/speaker/list", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/<speaker_name>', methods=['GET'])
+@login_required
+def proxy_speaker_samples(speaker_name):
+    """转发获取指定说话人的样本列表"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/speaker/{speaker_name}", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/<speaker_name>/sample/<sample_id>/audio', methods=['GET'])
+@login_required
+def proxy_speaker_sample_audio(speaker_name, sample_id):
+    """转发样本音频流"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/speaker/{speaker_name}/sample/{sample_id}/audio", timeout=30, stream=True)
+        return Response(response.iter_content(chunk_size=8192),
+                       status=response.status_code,
+                       content_type=response.headers.get('Content-Type', 'audio/wav'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/speaker/<speaker_name>/sample/<sample_id>', methods=['DELETE'])
+@login_required
+def proxy_delete_speaker_sample(speaker_name, sample_id):
+    """转发删除单个样本请求"""
+    try:
+        response = requests.delete(f"{ASR_SERVER_URL}/speaker/{speaker_name}/sample/{sample_id}",
+                                   timeout=15, headers=_asr_admin_headers())
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -850,6 +957,14 @@ def proxy_baby_cry_page():
         html = html.replace('/api/', '/api/') # 本地代理也是 /api/
         # 修改静态资源和导航链接
         html = html.replace('href="/manage"', 'href="/"')
+        # 注入统一顶部导航(自包含样式, 不依赖页面自身 CSS)
+        try:
+            nav_path = os.path.join(SCRIPT_DIR, 'templates', 'nav.html')
+            with open(nav_path, encoding='utf-8') as _f:
+                _nav = _f.read()
+            html = re.sub(r'(<body[^>]*>)', lambda m: m.group(1) + _nav, html, count=1)
+        except Exception:
+            pass
         return html
     except Exception as e:
         return f"<h1>Error loading baby cry page</h1><p>{str(e)}</p>", 500
@@ -919,6 +1034,16 @@ def proxy_cry_events():
         if date_filter:
             params += f"&date={date_filter}"
         response = requests.get(f"{ASR_SERVER_URL}/api/cry_events?{params}", timeout=10)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/preview_progress', methods=['GET'])
+@login_required
+def proxy_preview_progress():
+    """预切总进度代理（试听秒开覆盖率）"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/preview_progress", timeout=10)
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1434,6 +1559,34 @@ def api_scan_dates():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/transcript_dates')
+@login_required
+def api_transcript_dates():
+    """有转写记录的日期列表(直接查 transcriptions 表, 与刷盘缓存无关)"""
+    conn = None
+    try:
+        conn = get_connection()
+        if not conn:
+            return jsonify({"dates": []})
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT COALESCE(recording_time, created_at)::date AS d, COUNT(*) AS n
+            FROM transcriptions
+            GROUP BY d ORDER BY d DESC
+            """
+        )
+        dates = [{'date': row[0].isoformat(), 'count': row[1]} for row in cursor.fetchall()]
+        cursor.close()
+        return_connection(conn)
+        return jsonify({"dates": dates})
+    except Exception as e:
+        logger_web.error(f"[Error] 查询转写日期失败: {e}")
+        if conn:
+            return_connection(conn)
+        return jsonify({"dates": []})
+
+
 @app.route('/api/event_audio/<int:event_id>', methods=['GET'])
 @login_required
 def proxy_event_audio(event_id):
@@ -1645,11 +1798,22 @@ def api_data_range():
         
         # 按时间倒序排序
         filtered_items.sort(key=lambda x: x.get('parsed_time', ''), reverse=True)
-        
+
         # 应用分页
         total_count = len(filtered_items)
         paginated_items = filtered_items[offset:offset+limit]
-        
+
+        # 展示层负样本过滤: 被用户标为"不是家里任何人"的句子 → spk 置 Unknown（前端自动隐藏）
+        try:
+            neg_paths = _load_spk_negative_paths()
+            if neg_paths:
+                for item in paginated_items:
+                    for seg in (item.get('segments') or []):
+                        if seg.get('segment_audio_path') in neg_paths:
+                            seg['spk'] = 'Unknown'
+        except Exception:
+            pass
+
         return jsonify({
             "transcripts": paginated_items,
             "meta": {
@@ -1965,10 +2129,107 @@ def serve_audio_segment(filepath):
         # 安全检查：确保路径在segments目录内
         if not os.path.abspath(full_path).startswith(os.path.abspath(segments_dir)):
             return jsonify({"error": "Invalid path"}), 403
-        
+
         return send_file(full_path, mimetype='audio/wav')
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ---------------- Groq Whisper 重识别 (外部 ASR 对比/兜底, key 轮换) ----------------
+_GROQ_STATE = {"cursor": 0}
+
+def _groq_keys():
+    raw = os.getenv('GROQ_API_KEYS', '')
+    return [k.strip() for k in raw.split(',') if k.strip()]
+
+@app.route('/api/retranscribe', methods=['POST'])
+@login_required
+def api_retranscribe():
+    """对一句 VAD 切片用 Groq whisper 重识别, 返回对比文本 (登录保护)"""
+    data = request.get_json(silent=True) or {}
+    rel = (data.get('path') or '').strip()
+    if not rel:
+        return jsonify({"error": "missing path"}), 400
+    segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")
+    rel_clean = rel.replace('\\', '/')
+    for prefix in ('/audio_segments/', 'audio_segments/'):
+        if rel_clean.startswith(prefix):
+            rel_clean = rel_clean[len(prefix):]
+            break
+    full_path = os.path.abspath(os.path.join(segments_dir, rel_clean))
+    if not full_path.startswith(os.path.abspath(segments_dir) + os.sep):
+        return jsonify({"error": "Invalid path"}), 403
+    if not os.path.isfile(full_path):
+        return jsonify({"error": "audio not found: " + rel_clean}), 404
+    keys = _groq_keys()
+    if not keys:
+        return jsonify({"error": "GROQ_API_KEYS 未配置"}), 503
+    model = os.getenv('GROQ_ASR_MODEL', 'whisper-large-v3-turbo')
+    lang = (data.get('language') or 'zh').strip()
+    last_err, n = None, len(keys)
+    for i in range(n):
+        key = keys[(_GROQ_STATE["cursor"] + i) % n]
+        try:
+            with open(full_path, 'rb') as f:
+                resp = requests.post(
+                    'https://api.groq.com/openai/v1/audio/transcriptions',
+                    headers={'Authorization': f'Bearer {key}'},
+                    files={'file': (os.path.basename(full_path), f, 'audio/wav')},
+                    data={'model': model, 'language': lang, 'response_format': 'json'},
+                    timeout=40,
+                )
+        except Exception as e:
+            last_err = str(e)
+            continue
+        if resp.status_code == 200:
+            _GROQ_STATE["cursor"] = (_GROQ_STATE["cursor"] + i + 1) % n
+            try:
+                return jsonify({"text": resp.json().get('text', ''), "model": model, "engine": "groq"})
+            except Exception:
+                last_err = "bad json"
+                continue
+        if resp.status_code in (401, 403, 429):
+            last_err = f"HTTP {resp.status_code}"
+            continue  # key 无效/限流 → 轮换下一个
+        return jsonify({"error": f"Groq HTTP {resp.status_code}: {resp.text[:200]}"}), 502
+    return jsonify({"error": f"全部 Groq key 失败: {last_err}"}), 502
+
+@app.route('/api/nano_transcribe', methods=['POST'])
+@login_required
+def api_nano_transcribe():
+    """对一句 VAD 切片用本地 Fun-ASR-Nano 重识别 (audiocpp_server 代理, 登录保护)"""
+    data = request.get_json(silent=True) or {}
+    rel = (data.get('path') or '').strip()
+    if not rel:
+        return jsonify({"error": "missing path"}), 400
+    segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")
+    rel_clean = rel.replace('\\', '/')
+    for prefix in ('/audio_segments/', 'audio_segments/'):
+        if rel_clean.startswith(prefix):
+            rel_clean = rel_clean[len(prefix):]
+            break
+    full_path = os.path.abspath(os.path.join(segments_dir, rel_clean))
+    if not full_path.startswith(os.path.abspath(segments_dir) + os.sep):
+        return jsonify({"error": "Invalid path"}), 403
+    if not os.path.isfile(full_path):
+        return jsonify({"error": "audio not found: " + rel_clean}), 404
+    nano_url = os.getenv('NANO_ASR_URL', 'http://127.0.0.1:8123/v1/audio/transcriptions')
+    lang = (data.get('language') or 'auto').strip() or 'auto'
+    try:
+        with open(full_path, 'rb') as f:
+            resp = requests.post(
+                nano_url,
+                files={'file': (os.path.basename(full_path), f, 'audio/wav')},
+                data={'model': 'fun-asr-nano', 'language': lang},
+                timeout=60,
+            )
+    except Exception as e:
+        return jsonify({"error": f"本地 Nano 服务不可达: {e}"}), 503
+    if resp.status_code == 200:
+        try:
+            return jsonify({"text": resp.json().get('text', ''), "model": "fun-asr-nano", "engine": "fun_asr_nano"})
+        except Exception:
+            return jsonify({"error": "Nano 返回非 JSON"}), 502
+    return jsonify({"error": f"Nano HTTP {resp.status_code}: {resp.text[:200]}"}), 502
 
 @app.route('/api/audio/<path:filepath>')
 @login_required
@@ -2051,7 +2312,7 @@ def serve_long_sentence_audio(filename):
 def mobile_monitor():
     if not check_auth():
         return redirect(url_for('login'))
-    return send_file('templates/mobile_monitor.html')
+    return render_template('mobile_monitor.html')
 
 @app.route('/daily')
 def daily_report_page():
@@ -2064,6 +2325,317 @@ def growth_dictionary_page():
     if not check_auth():
         return redirect(url_for('login'))
     return render_template('growth_dictionary.html')
+
+
+# ── 绘本日记 (英语启蒙) ──
+PICTUREBOOK_DIR = '/Users/mac/asr-server/english_enlightenment/picturebook'
+
+
+def _pb_normalize(p):
+    """v2 书直接返回; v1 单页旧条目归一化为一页书"""
+    if p.get('pages'):
+        return p
+    return {
+        'version': 1,
+        'date': p.get('date'),
+        'title': p.get('title'),
+        'pages': [{'seq': 1, 'text_en': p.get('story_en', ''),
+                   'text_zh': p.get('story_zh', ''), 'image': p.get('image')}],
+    }
+
+
+def _pb_load(date_str):
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_str or ''):
+        return None
+    path = os.path.join(PICTUREBOOK_DIR, f'{date_str}.json')
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as f:
+            return _pb_normalize(json.load(f))
+    except Exception:
+        return None
+
+
+@app.route('/picturebook')
+def picturebook_page():
+    if not check_auth():
+        return redirect(url_for('login'))
+    return render_template('picturebook.html')
+
+
+@app.route('/picturebook/tv')
+def picturebook_tv_page():
+    # TV 壳 App 免登录: ?token= 换 session cookie (cookie 会话对后续 API 生效)
+    tok = request.args.get('token', '')
+    if not check_auth() and tok:
+        pb_tv_token = os.getenv('PB_TV_TOKEN', '')
+        if pb_tv_token and hmac.compare_digest(tok, pb_tv_token):
+            session['logged_in'] = True
+            return redirect(url_for('picturebook_tv_page'))
+    if not check_auth():
+        return redirect(url_for('login'))
+    resp = make_response(render_template('picturebook_tv.html'))
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@app.route('/api/picturebook/status')
+def api_picturebook_status():
+    """生成任务状态: 进程探测 + 文件系统统计"""
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    running, run_cmd = False, ''
+    try:
+        out = subprocess.run(['pgrep', '-fl', 'english_picture_book.py'],
+                             capture_output=True, text=True, timeout=5)
+        lines = [l for l in out.stdout.strip().splitlines() if l.strip()]
+        running = bool(lines)
+        if lines:
+            run_cmd = lines[0].split(' ', 1)[-1][:140]
+    except Exception:
+        pass
+    try:
+        jsons = [os.path.join(PICTUREBOOK_DIR, f) for f in os.listdir(PICTUREBOOK_DIR)
+                 if f.endswith('.json')]
+    except OSError:
+        jsons = []
+    latest = None
+    if jsons:
+        fp = max(jsons, key=os.path.getmtime)
+        try:
+            with open(fp) as f:
+                d = json.load(f)
+            latest = {'date': d.get('date') or os.path.basename(fp)[:-5],
+                      'title': d.get('title'),
+                      'pages': len(d.get('pages') or []),
+                      'mtime': int(os.path.getmtime(fp))}
+        except Exception:
+            latest = {'date': os.path.basename(fp)[:-5], 'title': None,
+                      'pages': 0, 'mtime': int(os.path.getmtime(fp))}
+    def _count(sub):
+        try:
+            return len([f for f in os.listdir(os.path.join(PICTUREBOOK_DIR, sub)) if f.endswith(('.mp3', '.mp4'))])
+        except OSError:
+            return 0
+    return jsonify({'running': running, 'cmd': run_cmd, 'books': len(jsons),
+                    'audios': _count('audio'), 'videos': _count('video'),
+                    'latest': latest, 'now': int(time.time())})
+
+
+@app.route('/api/picturebook')
+def api_picturebook():
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    pages = []
+    if os.path.isdir(PICTUREBOOK_DIR):
+        video_dir = os.path.join(PICTUREBOOK_DIR, 'video')
+        clip_files = set(os.listdir(video_dir)) if os.path.isdir(video_dir) else set()
+        for fn in sorted(os.listdir(PICTUREBOOK_DIR), reverse=True):
+            if not fn.endswith('.json'):
+                continue
+            try:
+                with open(os.path.join(PICTUREBOOK_DIR, fn)) as f:
+                    p = _pb_normalize(json.load(f))
+            except Exception:
+                continue
+            book_pages = p.get('pages') or []
+            d = p.get('date') or fn[:-5]
+            has_video = f"{d}.mp4" in clip_files
+            # 视频进度: 有图有声的页数中, 片段已生成的比例
+            makeable = [pg for pg in book_pages if pg.get('image') and pg.get('audio')]
+            total = len(makeable)
+            done = sum(1 for pg in makeable if f"{d}_p{pg.get('seq')}.mp4" in clip_files)
+            pages.append({
+                'date': d,
+                'title': p.get('title') or 'Untitled',
+                'page_count': len(book_pages),
+                'has_image': any(pg.get('image') for pg in book_pages),
+                'has_audio': any(pg.get('audio') for pg in book_pages),
+                'has_video': has_video,
+                'video_done': done if (total and not has_video) else total if has_video else 0,
+                'video_total': total,
+                'story_zh': ((book_pages[0].get('text_zh') if book_pages else '') or '')[:80],
+            })
+    return jsonify({'pages': pages})
+
+
+@app.route('/api/picturebook/<date_str>/story')
+def api_picturebook_story(date_str):
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    book = _pb_load(date_str)
+    if book is None:
+        return jsonify({'error': 'not found'}), 404
+    book_pages = book.get('pages') or []
+    has_video = os.path.isfile(os.path.join(PICTUREBOOK_DIR, 'video', f'{date_str}.mp4'))
+    resp = jsonify({
+        'date': book.get('date'),
+        'title': book.get('title'),
+        'version': book.get('version', 1),
+        'has_video': has_video,
+        'pages': [{
+            'seq': pg.get('seq', i + 1),
+            'text_en': pg.get('text_en', ''),
+            'text_zh': pg.get('text_zh', ''),
+            'has_image': bool(pg.get('image')),
+            'has_audio': bool(pg.get('audio')),
+        } for i, pg in enumerate(book_pages)],
+    })
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@app.route('/api/picturebook/<date_str>/image')
+@app.route('/api/picturebook/<date_str>/image/<int:seq>')
+def api_picturebook_image(date_str, seq=1):
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    book = _pb_load(date_str)
+    if book is None:
+        return jsonify({'error': 'not found'}), 404
+    pg = next((x for x in (book.get('pages') or []) if x.get('seq') == seq), None)
+    if pg is None:
+        return jsonify({'error': 'no such page'}), 404
+    img = pg.get('image')
+    if not img:
+        return jsonify({'error': 'no image'}), 404
+    if img.startswith('http'):
+        return redirect(img, 302)
+    m = re.match(r'data:image/(\w+);base64,(.+)', img, re.S)
+    if m:
+        import base64 as _b64
+        import io as _io
+        data = _b64.b64decode(m.group(2))
+        resp = send_file(_io.BytesIO(data), mimetype=f'image/{m.group(1)}')
+    else:
+        # v2 相对路径 (images/<date>_pN.png)
+        fp = os.path.realpath(os.path.join(PICTUREBOOK_DIR, img))
+        if not fp.startswith(os.path.realpath(PICTUREBOOK_DIR) + os.sep) or not os.path.isfile(fp):
+            return jsonify({'error': 'no image'}), 404
+        resp = send_file(fp)
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+THUMB_DIR = os.path.join(PICTUREBOOK_DIR, 'thumbs')
+
+
+@app.route('/api/picturebook/<date_str>/thumb')
+def api_picturebook_thumb(date_str):
+    """封面缩略图 (512px JPEG, sips 现生成缓存)——书架大量封面避免整页大图解码卡顿"""
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    book = _pb_load(date_str)
+    if book is None:
+        return jsonify({'error': 'not found'}), 404
+    img = next((p.get('image') for p in (book.get('pages') or []) if p.get('image')), '')
+    if not img:
+        return jsonify({'error': 'no image'}), 404
+    if img.startswith(('http', 'data:')):   # 远程/内嵌图不缩略, 回退原图路由
+        return api_picturebook_image(date_str, 1)
+    src = os.path.realpath(os.path.join(PICTUREBOOK_DIR, img))
+    if not src.startswith(os.path.realpath(PICTUREBOOK_DIR) + os.sep) or not os.path.isfile(src):
+        return jsonify({'error': 'no image'}), 404
+    os.makedirs(THUMB_DIR, exist_ok=True)
+    tp = os.path.join(THUMB_DIR, f'{date_str}.jpg')
+    if not os.path.isfile(tp) or os.path.getmtime(tp) < os.path.getmtime(src):
+        try:
+            subprocess.run(['sips', '-s', 'format', 'jpeg', '-s', 'formatOptions', '72',
+                            '-Z', '512', src, '--out', tp], capture_output=True, timeout=20)
+        except Exception:
+            pass
+    if os.path.isfile(tp):
+        resp = send_file(tp, mimetype='image/jpeg')
+        resp.headers['Cache-Control'] = 'public, max-age=600'
+        return resp
+    return api_picturebook_image(date_str, 1)   # 缩略生成失败兜底原图
+
+
+@app.route('/api/picturebook/<date_str>/audio/<int:seq>')
+def api_picturebook_audio(date_str, seq):
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    book = _pb_load(date_str)
+    if book is None:
+        return jsonify({'error': 'not found'}), 404
+    pg = next((x for x in (book.get('pages') or []) if x.get('seq') == seq), None)
+    if pg is None or not pg.get('audio'):
+        return jsonify({'error': 'no audio'}), 404
+    fp = os.path.realpath(os.path.join(PICTUREBOOK_DIR, pg['audio']))
+    if not fp.startswith(os.path.realpath(PICTUREBOOK_DIR) + os.sep) or not os.path.isfile(fp):
+        return jsonify({'error': 'no audio'}), 404
+    resp = send_file(fp, mimetype='audio/mpeg')
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@app.route('/api/picturebook/<date_str>/video')
+def api_picturebook_video(date_str):
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    fp = os.path.realpath(os.path.join(PICTUREBOOK_DIR, 'video', f'{date_str}.mp4'))
+    if not fp.startswith(os.path.realpath(PICTUREBOOK_DIR) + os.sep) or not os.path.isfile(fp):
+        return jsonify({'error': 'no video'}), 404
+    resp = send_file(fp, mimetype='video/mp4')
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@app.route('/pbpub/<date_str>/<int:seq>.png')
+def pbpub_image(date_str, seq):
+    """公网首帧图（供 agnes video 服务器拉取）：token 校验同哭声预览，只读单图"""
+    if not _preview_auth_ok():
+        return jsonify({'error': 'unauthorized'}), 401
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_str):
+        return jsonify({'error': 'bad date'}), 400
+    fp = os.path.realpath(os.path.join(PICTUREBOOK_DIR, 'images', f'{date_str}_p{seq}.png'))
+    if not fp.startswith(os.path.realpath(PICTUREBOOK_DIR) + os.sep) or not os.path.isfile(fp):
+        return jsonify({'error': 'not found'}), 404
+    resp = send_file(fp, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@app.route('/pbpub/tv/version.json')
+def pbpub_tv_version():
+    """TV 壳 App 版本信息（供自动更新检查，读构建产物元数据）"""
+    if not _preview_auth_ok():
+        return jsonify({'error': 'unauthorized'}), 401
+    meta = '/Users/mac/picturebook-tv-apk/app/build/outputs/apk/debug/output-metadata.json'
+    apk = '/Users/mac/picturebook-tv-apk/picturebook-tv.apk'
+    try:
+        with open(meta) as f:
+            v = json.load(f)['elements'][0]
+    except Exception:
+        return jsonify({'error': 'unavailable'}), 404
+    return jsonify({'versionCode': int(v.get('versionCode', 0)),
+                    'versionName': v.get('versionName', ''),
+                    'size': os.path.getsize(apk) if os.path.isfile(apk) else 0})
+
+
+@app.route('/pbpub/picturebook-tv.apk')
+def pbpub_tv_apk():
+    """TV 壳 APK 下载（免 token：长 token URL 易被电视浏览器截断导致存下错误页装不上；
+    仅暴露签名安装包本身，无敏感信息）"""
+    apk = '/Users/mac/picturebook-tv-apk/picturebook-tv.apk'
+    if not os.path.isfile(apk):
+        return jsonify({'error': 'not found'}), 404
+    return send_file(apk, mimetype='application/vnd.android.package-archive',
+                     as_attachment=True, download_name='picturebook-tv.apk')
+
+
+@app.route('/pbpub/tmp/<name>')
+def pbpub_tmp(name):
+    """临时试听文件（音色样本等，仅允许字母数字下划线连字符 + .mp3）"""
+    import re as _re
+    if not _re.fullmatch(r'[A-Za-z0-9_\-]+\.mp3', name):
+        return jsonify({'error': 'bad name'}), 400
+    path = os.path.join('/Users/mac/asr-server/english_enlightenment/picturebook/pbpub', name)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'not found'}), 404
+    return send_file(path, mimetype='audio/mpeg')
+
 
 @app.route('/')
 def index():

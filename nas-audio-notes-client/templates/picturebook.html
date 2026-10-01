@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>绘本日记 | Audio Notes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        ink: '#07111f', panel: '#101827', line: '#223047',
+                        mint: '#22c55e', sky: '#38bdf8', amber: '#f59e0b'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #07111f; color: #e2e8f0; }
+        .cover-card { transition: transform .18s ease, box-shadow .18s ease; }
+        .cover-card:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+        .cover-img { background: linear-gradient(135deg, #1b2a44, #0e1a2e); }
+        #reader { backdrop-filter: blur(6px); }
+        .page-turn { animation: turn .22s ease; }
+        @keyframes turn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+        .story-en { font-size: clamp(.95rem, 2.2vw, 1.3rem); line-height: 1.7; }
+        .badge { font-size: .6rem; padding: 2px 6px; border-radius: 999px; border: 1px solid #223047; }
+        @media (max-width: 640px) {
+            .story-zh { font-size: .8rem; }
+            #reader-title { font-size: 1rem; }
+        }
+        .btn-dis { opacity: .35; pointer-events: none; }
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+
+<body class="min-h-screen font-sans">
+{% include 'nav.html' %}
+    <div class="max-w-6xl mx-auto px-4 py-6">
+        <header class="flex items-center justify-between mb-4">
+            <div>
+                <h1 class="text-2xl font-extrabold flex items-center gap-2">
+                    <i class="fa-solid fa-book-open text-amber"></i> 大可的绘本日记
+                </h1>
+                <p class="text-sm text-slate-400 mt-1">每天一册小绘本，用她自己的日子学英文，还有会讲故事的配音</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="/picturebook/tv" target="_blank" title="大屏放映模式"
+                   class="text-sm px-3 py-1.5 rounded-lg border border-line text-slate-400 hover:text-amber hover:border-amber/50 transition">
+                    <i class="fa-solid fa-tv mr-1"></i>大屏模式
+                </a>
+                <a href="/" class="text-sm text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-house mr-1"></i>主页
+                </a>
+            </div>
+        </header>
+
+        <div class="flex items-center gap-2 mb-4 flex-wrap">
+            <input id="pb-search" oninput="renderShelf()" placeholder="搜书名/日期…"
+                   class="bg-ink border border-line rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:border-mint outline-none w-44">
+            <div id="pb-years" class="flex items-center gap-1.5"></div>
+        </div>
+        <div id="pb-months" class="flex items-center gap-1.5 mb-4 flex-wrap"></div>
+
+        <div id="pb-status" class="mb-5 text-sm px-4 py-2.5 rounded-xl border border-line bg-panel text-slate-400 flex items-center gap-2">
+            <i class="fa-solid fa-circle-notch spin"></i> 状态加载中…
+        </div>
+
+        <div id="shelf" class="space-y-6"></div>
+        <div id="empty" class="hidden text-center text-slate-500 py-20">
+            <i class="fa-solid fa-book text-4xl mb-3 block"></i>
+            书架还是空的，等今晚 21:20 的第一册吧
+        </div>
+    </div>
+
+    <!-- 阅读视图 -->
+    <div id="reader" class="hidden fixed inset-0 z-50 bg-black/80 overflow-y-auto">
+        <div class="min-h-full flex items-start sm:items-center justify-center p-3 sm:p-6">
+            <div id="reader-card" class="page-turn w-full max-w-2xl bg-panel border border-line rounded-2xl overflow-hidden shadow-2xl">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-line">
+                    <h2 id="reader-title" class="font-bold text-lg truncate"></h2>
+                    <div class="flex items-center gap-3">
+                        <button id="btn-film" onclick="playFilm()" title="整本放映"
+                                class="hidden text-sm px-2.5 py-1 rounded-lg border border-line text-slate-400 hover:text-white transition">
+                            <i class="fa-solid fa-film mr-1"></i>放映
+                        </button>
+                        <button id="btn-auto" onclick="toggleAuto()" title="自动连播"
+                                class="text-sm px-2.5 py-1 rounded-lg border border-line text-slate-400 hover:text-white transition">
+                            <i class="fa-solid fa-play mr-1"></i>连播
+                        </button>
+                        <button onclick="closeReader()" class="text-slate-400 hover:text-white text-xl leading-none px-2">&times;</button>
+                    </div>
+                </div>
+                <div class="cover-img">
+                    <img id="reader-img" class="w-full max-h-[42vh] object-contain" alt="">
+                    <div id="img-loading" class="hidden absolute inset-0 flex items-center justify-center text-slate-500">
+                        <i class="fa-solid fa-circle-notch spin text-2xl"></i>
+                    </div>
+                </div>
+                <div class="px-5 py-4">
+                    <p id="reader-en" class="story-en font-semibold text-sky-100"></p>
+                    <p id="reader-zh" class="story-zh mt-3 text-slate-400 text-sm leading-relaxed"></p>
+                    <div class="mt-4 flex items-center justify-between gap-2 text-sm flex-wrap">
+                        <button onclick="flipBook(-1)" title="上一本" class="px-2.5 py-2 rounded-lg bg-ink border border-line hover:border-mint transition">
+                            <i class="fa-solid fa-backward-fast"></i>
+                        </button>
+                        <button id="btn-prev" onclick="flip(-1)" class="px-3 py-2 rounded-lg bg-ink border border-line hover:border-mint transition">
+                            <i class="fa-solid fa-chevron-left mr-1"></i>上一页
+                        </button>
+                        <div class="flex items-center gap-3">
+                            <span id="reader-pos" class="text-slate-500"></span>
+                            <button id="btn-play" onclick="togglePlay()" title="朗读这一页"
+                                    class="w-10 h-10 rounded-full bg-mint/15 border border-mint/40 text-mint hover:bg-mint/25 transition">
+                                <i id="play-icon" class="fa-solid fa-play"></i>
+                            </button>
+                        </div>
+                        <button id="btn-next" onclick="flip(1)" class="px-3 py-2 rounded-lg bg-ink border border-line hover:border-mint transition">
+                            下一页<i class="fa-solid fa-chevron-right ml-1"></i>
+                        </button>
+                        <button onclick="flipBook(1)" title="下一本" class="px-2.5 py-2 rounded-lg bg-ink border border-line hover:border-mint transition">
+                            <i class="fa-solid fa-forward-fast"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 整本放映 -->
+    <div id="film" class="hidden fixed inset-0 z-[60] bg-black/95 items-center justify-center" onclick="if(event.target===this)closeFilm()">
+        <video id="film-video" controls playsinline webkit-playsinline disablepictureinpicture x5-video-player-type="h5-page" class="max-w-full max-h-[88vh]"></video>
+        <button onclick="closeFilm()" class="absolute top-2 right-2 z-10 w-12 h-12 rounded-full bg-black/60 text-slate-200 text-3xl leading-none active:bg-black/80">&times;</button>
+        <button onclick="closeFilm()" class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-6 py-2.5 rounded-full bg-white/15 backdrop-blur text-white text-base font-semibold active:bg-white/25">✕ 关闭</button>
+    </div>
+
+<script>
+let books = [];          // 书架 [{date,title,page_count,has_audio,has_video,...}]
+let book = null;         // 当前书 {date,title,pages:[...]}
+let bookIdx = -1;        // 当前书在 books 里的下标
+let curYear = '全部';    // 年份筛选
+let curMonth = '全部';    // 月份筛选 (当年内)
+let bp = 0;              // 书内页索引
+let autoplay = false;    // 连播
+const audio = new Audio();
+audio.preload = 'none';
+
+async function loadShelf() {
+    try {
+        const r = await fetch('/api/picturebook');
+        if (r.status === 401) { location.href = '/login'; return; }
+        books = (await r.json()).pages || [];
+    } catch (e) { books = []; }
+    // 年份/月份两级筛选: 年份按钮恒定少量, 选中年后才展示该年的月份
+    const years = [...new Set(books.map(b => (b.date || '').slice(0, 4)))].sort().reverse();
+    document.getElementById('pb-years').innerHTML =
+        ['全部', ...years].map(y =>
+            `<button onclick="pickYear('${y}')" data-y="${y}"
+              class="pb-ychip px-3 py-1.5 rounded-full text-sm border transition font-semibold ${y === curYear ? 'bg-mint/15 border-mint/50 text-mint' : 'border-line text-slate-400 hover:text-white'}">${y}</button>`).join('');
+    const months = curYear === '全部' ? []
+        : [...new Set(books.map(b => (b.date || '').slice(0, 7)))].filter(m => m.startsWith(curYear)).sort().reverse();
+    document.getElementById('pb-months').innerHTML = !months.length ? '' :
+        ['全部', ...months].map(m =>
+            `<button onclick="pickMonth('${m}')" data-m="${m}"
+              class="pb-mchip px-2.5 py-1 rounded-full text-xs border transition ${m === curMonth ? 'bg-sky/15 border-sky/50 text-sky' : 'border-line text-slate-400 hover:text-white'}">${m === '全部' ? '全年' : m.slice(5)}月</button>`).join('');
+    renderShelf();
+}
+function pickYear(y) { curYear = y; curMonth = '全部'; loadShelf(); }
+function pickMonth(m) { curMonth = m; loadShelf(); }
+
+function renderShelf() {
+    const shelf = document.getElementById('shelf');
+    const q = (document.getElementById('pb-search')?.value || '').trim().toLowerCase();
+    let list = books.filter(b => (curYear === '全部' || (b.date || '').startsWith(curYear))
+                              && (curMonth === '全部' || (b.date || '').startsWith(curMonth)));
+    if (q) list = list.filter(b => (b.title || '').toLowerCase().includes(q) || (b.date || '').includes(q));
+    if (!list.length) {
+        shelf.innerHTML = `<div class="text-center text-slate-500 py-16"><i class="fa-solid fa-book text-3xl mb-3 block"></i>这个筛选下没有绘本</div>`;
+        return;
+    }
+    // 按月分组
+    const groups = {};
+    list.forEach(b => { const m = (b.date || '').slice(0, 7); (groups[m] = groups[m] || []).push(b); });
+    shelf.innerHTML = Object.keys(groups).sort().reverse().map(m => `
+        <section>
+            <h2 class="sticky top-0 z-10 text-sm font-semibold text-slate-400 bg-ink/90 backdrop-blur py-2 mb-2 border-b border-line/60">
+                <i class="fa-regular fa-calendar mr-1"></i>${m} · ${groups[m].length} 册
+            </h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                ${groups[m].map(b => {
+                    const i = books.indexOf(b);
+                    const pct = b.video_total ? Math.round(b.video_done / b.video_total * 100) : 0;
+                    let vb;
+                    if (b.has_video) vb = `<span class="badge bg-black/60 text-amber"><i class="fa-solid fa-film mr-0.5"></i>影片</span>`;
+                    else if (b.video_done >= b.video_total && b.video_total > 0) vb = `<span id="vb-${b.date}" class="badge bg-black/60 text-amber animate-pulse">合成中</span>`;
+                    else if (b.video_done > 0) vb = `<span id="vb-${b.date}" class="badge bg-black/60 text-amber">🎬${b.video_done}/${b.video_total}</span>`;
+                    else if (b.video_total > 0) vb = `<span id="vb-${b.date}" class="badge bg-black/60 text-slate-400">排队中</span>`;
+                    else vb = '';
+                    const bar = (b.video_total > 0 && !b.has_video)
+                        ? `<div class="absolute bottom-0 left-0 right-0 h-1 bg-black/50"><div id="vp-${b.date}" class="h-full bg-amber transition-all duration-500" style="width:${pct}%"></div></div>` : '';
+                    return `
+                    <div class="cover-card cursor-pointer rounded-xl overflow-hidden bg-panel border border-line" onclick="openReader(${i})">
+                        <div class="cover-img aspect-square relative">
+                            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" data-thumb="${b.date}" alt="">`
+                                          : `<div class="w-full h-full flex items-center justify-center text-4xl text-slate-600"><i class="fa-solid fa-feather"></i></div>`}
+                            <div class="absolute bottom-1.5 left-1.5 right-1.5 flex gap-1 flex-wrap">
+                                ${b.page_count > 1 ? `<span class="badge bg-black/60 text-slate-300">${b.page_count}页</span>` : ''}
+                                ${vb}
+                                ${b.has_audio ? `<span class="badge bg-black/60 text-mint"><i class="fa-solid fa-volume-high mr-0.5"></i>语音</span>` : ''}
+                            </div>
+                            ${bar}
+                        </div>
+                        <div class="px-3 py-2">
+                            <div class="text-sm font-semibold truncate">${b.title}</div>
+                            <div class="text-xs text-slate-500 mt-0.5">${b.date}</div>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        </section>`).join('');
+}
+
+async function openReader(i) {
+    bookIdx = i;
+    const item = books[i];
+    try {
+        const r = await fetch(`/api/picturebook/${item.date}/story`);
+        if (!r.ok) return;
+        book = await r.json();
+    } catch (e) { return; }
+    bp = 0;
+    document.getElementById('reader-title').textContent = `《${book.title}》`;
+    document.getElementById('btn-film').classList.toggle('hidden', !book.has_video);
+    document.getElementById('reader').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    renderPage();
+}
+function flipBook(dir) {  // 书间切换
+    const ni = bookIdx + dir;
+    if (ni < 0 || ni >= books.length) return;
+    closeFilm();
+    openReader(ni);
+}
+function closeReader() {
+    stopAudio();
+    setAuto(false);
+    closeFilm();
+    document.getElementById('reader').classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+/* ---- 整本放映 ---- */
+function playFilm() {
+    stopAudio(); setAuto(false);
+    const v = document.getElementById('film-video');
+    v.src = `/api/picturebook/${book.date}/video`;
+    const f = document.getElementById('film');
+    f.classList.remove('hidden'); f.classList.add('flex');
+    v.play().catch(() => {});
+}
+function closeFilm() {
+    const f = document.getElementById('film');
+    if (f.classList.contains('hidden')) return;
+    const v = document.getElementById('film-video');
+    v.pause(); v.removeAttribute('src'); v.load();
+    f.classList.add('hidden'); f.classList.remove('flex');
+}
+
+function flip(dir, fromAuto = false) {
+    const next = bp + dir;
+    if (next < 0 || next >= book.pages.length) return;
+    bp = next;
+    if (!fromAuto) stopAudio();
+    renderPage();
+    if (fromAuto) playCurrent();
+}
+
+function renderPage() {
+    const pg = book.pages[bp];
+    const card = document.getElementById('reader-card');
+    card.classList.remove('page-turn'); void card.offsetWidth; card.classList.add('page-turn');
+    document.getElementById('reader-pos').textContent = `${bp + 1} / ${book.pages.length}`;
+    document.getElementById('reader-en').textContent = pg.text_en || '';
+    document.getElementById('reader-zh').textContent = pg.text_zh || '';
+    const img = document.getElementById('reader-img');
+    const loading = document.getElementById('img-loading');
+    if (pg.has_image) {
+        loading.classList.remove('hidden');
+        img.style.display = '';
+        img.onload = () => loading.classList.add('hidden');
+        img.onerror = () => { loading.classList.add('hidden'); img.style.display = 'none'; };
+        img.src = `/api/picturebook/${book.date}/image/${pg.seq}`;
+    } else { img.removeAttribute('src'); img.style.display = 'none'; }
+    document.getElementById('btn-prev').classList.toggle('btn-dis', bp === 0);
+    document.getElementById('btn-next').classList.toggle('btn-dis', bp === book.pages.length - 1);
+    updatePlayBtn();
+}
+
+/* ---- 每页朗读 ---- */
+function togglePlay() {
+    if (!audio.paused) { stopAudio(); return; }
+    setAuto(false);
+    playCurrent();
+}
+function playCurrent() {
+    const pg = book.pages[bp];
+    if (!pg.has_audio) return;
+    audio.src = `/api/picturebook/${book.date}/audio/${pg.seq}`;
+    audio.play().catch(() => { stopAudio(); });
+    updatePlayBtn(true);
+}
+function stopAudio() {
+    audio.pause();
+    updatePlayBtn();
+}
+function updatePlayBtn(playing) {
+    const icon = document.getElementById('play-icon');
+    const btn = document.getElementById('btn-play');
+    const pg = book && book.pages[bp];
+    if (!pg || !pg.has_audio) { btn.classList.add('btn-dis'); icon.className = 'fa-solid fa-volume-xmark'; return; }
+    btn.classList.remove('btn-dis');
+    icon.className = playing && !audio.paused ? 'fa-solid fa-pause' : 'fa-solid fa-play';
+}
+audio.addEventListener('play', () => updatePlayBtn(true));
+audio.addEventListener('pause', () => updatePlayBtn());
+audio.addEventListener('ended', () => {
+    updatePlayBtn();
+    if (autoplay && bp < book.pages.length - 1) flip(1, true);
+    else setAuto(false);
+});
+
+/* ---- 连播 ---- */
+function setAuto(on) {
+    autoplay = on;
+    const btn = document.getElementById('btn-auto');
+    btn.classList.toggle('text-mint', on);
+    btn.classList.toggle('border-mint/50', on);
+}
+function toggleAuto() {
+    setAuto(!autoplay);
+    if (autoplay && audio.paused) playCurrent();
+}
+
+/* 手势翻页 */
+let touchX = null;
+document.getElementById('reader').addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, {passive: true});
+document.getElementById('reader').addEventListener('touchend', e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 60) flip(dx < 0 ? 1 : -1);
+    touchX = null;
+}, {passive: true});
+document.addEventListener('keydown', e => {
+    if (!document.getElementById('film').classList.contains('hidden')) {
+        if (e.key === 'Escape') closeFilm();
+        return;
+    }
+    if (document.getElementById('reader').classList.contains('hidden')) return;
+    if (e.key === 'Escape') closeReader();
+    if (e.key === 'ArrowRight') flip(1);
+    if (e.key === 'ArrowLeft') flip(-1);
+    if (e.key === ']' || (e.shiftKey && e.key === 'ArrowRight')) flipBook(1);
+    if (e.key === '[' || (e.shiftKey && e.key === 'ArrowLeft')) flipBook(-1);
+    if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+});
+
+/* ---- 生成任务状态 ---- */
+function ago(ts) {
+    const s = Math.max(0, Date.now() / 1000 - ts);
+    if (s < 60) return `${Math.floor(s)} 秒前`;
+    if (s < 3600) return `${Math.floor(s / 60)} 分钟前`;
+    if (s < 86400) return `${Math.floor(s / 3600)} 小时前`;
+    return `${Math.floor(s / 86400)} 天前`;
+}
+async function loadStatus() {
+    const el = document.getElementById('pb-status');
+    try {
+        const r = await fetch('/api/picturebook/status');
+        if (!r.ok) throw 0;
+        const s = await r.json();
+        const latest = s.latest ? `最近《${s.latest.title || s.latest.date}》${s.latest.pages}页 · ${ago(s.latest.mtime)}` : '还没有绘本';
+        if (s.running) {
+            el.className = 'mb-5 text-sm px-4 py-2.5 rounded-xl border border-amber/40 bg-amber/5 text-amber flex items-center gap-2';
+            el.innerHTML = `<i class="fa-solid fa-circle-notch spin"></i>
+                <b>生成任务进行中</b> · 已 ${s.books} 册 / ${s.audios} 段配音 / ${s.videos} 部影片 · ${latest}
+                <span class="text-amber/60 truncate hidden sm:inline">(${s.cmd})</span>`;
+        } else {
+            el.className = 'mb-5 text-sm px-4 py-2.5 rounded-xl border border-line bg-panel text-slate-400 flex items-center gap-2';
+            el.innerHTML = `<i class="fa-solid fa-circle-check text-mint"></i>
+                生成服务空闲 · 共 <b class="text-slate-200">${s.books}</b> 册 · 🔊 ${s.audios} 段配音 · 🎬 ${s.videos} 部影片 · ${latest}`;
+        }
+    } catch (e) {
+        el.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber"></i> 状态获取失败`;
+    }
+}
+/* 视频进度轻量轮询: 只更新徽章/进度条, 不重建书架 */
+async function refreshVideos() {
+    const readerOpen = !document.getElementById('reader').classList.contains('hidden');
+    if (readerOpen) return;
+    try {
+        const r = await fetch('/api/picturebook');
+        if (!r.ok) return;
+        ((await r.json()).pages || []).forEach(b => {
+            const badge = document.getElementById(`vb-${b.date}`);
+            const bar = document.getElementById(`vp-${b.date}`);
+            if (bar) {
+                bar.style.width = `${b.video_total ? Math.round(b.video_done / b.video_total * 100) : 0}%`;
+                if (b.has_video && bar.parentNode) bar.parentNode.remove();
+            }
+            if (badge) {
+                if (b.has_video) badge.outerHTML = `<span class="badge bg-black/60 text-amber"><i class="fa-solid fa-film mr-0.5"></i>影片</span>`;
+                else if (b.video_done >= b.video_total && b.video_total > 0) badge.textContent = '合成中';
+                else if (b.video_done > 0) badge.textContent = `🎬${b.video_done}/${b.video_total}`;
+            }
+        });
+    } catch (e) {}
+}
+setInterval(refreshVideos, 20000);
+
+loadStatus();
+setInterval(loadStatus, 10000);
+
+/* 封面缩略图分批懒加载(进入视口才请求), 防止书多时整页大图解码卡死 */
+const thumbIO = new IntersectionObserver((ents) => {
+    ents.forEach(en => {
+        if (!en.isIntersecting) return;
+        const im = en.target;
+        thumbIO.unobserve(im);
+        im.src = `/api/picturebook/${im.dataset.thumb}/thumb`;
+    });
+}, { rootMargin: '400px' });
+new MutationObserver(() => document.querySelectorAll('img[data-thumb]').forEach(im => thumbIO.observe(im)))
+    .observe(document.getElementById('shelf'), { childList: true, subtree: true });
+
+loadShelf();
+</script>
+</body>
+
+</html>

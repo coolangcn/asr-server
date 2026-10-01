@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.asr.english-daily</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/mac/asr_env/bin/python3</string>
+        <string>/Users/mac/asr-server/english_daily_report.py</string>
+        <string>--push</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/mac/asr-server</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>21</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/mac/asr-server/log/english_daily.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mac/asr-server/log/english_daily.log</string>
+</dict>
+</plist>

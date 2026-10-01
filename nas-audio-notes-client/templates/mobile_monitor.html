@@ -106,22 +106,28 @@
         /* 轨道切换 */
         .track-tabs {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             margin-bottom: 20px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            padding-bottom: 2px;
         }
+        .track-tabs::-webkit-scrollbar { display: none; }
 
         .track-tab {
-            flex: 1;
-            padding: 10px 10px;
+            flex: 1 0 auto;
+            padding: 9px 10px;
             border-radius: 10px;
             border: none;
             cursor: pointer;
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: 0.78rem;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 5px;
+            white-space: nowrap;
             transition: all 0.3s ease;
             background: var(--bg-card);
             color: var(--text-secondary);
@@ -144,7 +150,7 @@
             background: rgba(56, 189, 248, 0.1);
         }
 
-        .track-tab i { font-size: 1.1rem; }
+        .track-tab i { font-size: 0.95rem; }
 
         /* 状态卡片 */
         .status-card {
@@ -642,6 +648,81 @@
         .track-content { display: none; }
         .track-content.active { display: block; }
 
+        /* ============ 语音记录 Tab ============ */
+        .track-tab.track-rec.active {
+            background: rgba(52,211,153,.15); border-color: rgba(52,211,153,.5); color: #34d399;
+        }
+        .track-tab.track-sp.active {
+            background: rgba(245,158,11,.15); border-color: rgba(245,158,11,.5); color: #f59e0b;
+        }
+        .rec-dates {
+            display: flex; overflow-x: auto; gap: 8px; padding: 2px 0 12px;
+            -webkit-overflow-scrolling: touch; scrollbar-width: none;
+        }
+        .rec-dates::-webkit-scrollbar { display: none; }
+        .rec-date-chip {
+            flex: 0 0 auto; padding: 7px 12px; border-radius: 999px;
+            font-size: .8rem; font-weight: 600; color: var(--text-secondary);
+            background: var(--bg-card); border: 1px solid rgba(148,163,184,.2); cursor: pointer;
+        }
+        .rec-date-chip.active {
+            color: #34d399; border-color: rgba(52,211,153,.55); background: rgba(52,211,153,.12);
+        }
+        .rec-date-chip.sm { padding: 4px 10px; font-size: .72rem; }
+        .rec-count { font-size: .72rem; color: var(--text-secondary); margin: 0 2px 10px; }
+        .rec-card {
+            background: var(--bg-card); border: 1px solid rgba(148,163,184,.15);
+            border-radius: 14px; padding: 12px 12px 4px; margin-bottom: 10px;
+        }
+        .rec-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+        .rec-id { font-size: .6rem; color: var(--text-secondary); opacity: .75; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px; flex-shrink: 0; font-variant-numeric: tabular-nums; cursor: pointer; }
+        .rec-time { font-size: .95rem; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+        .rec-file { font-size: .68rem; color: var(--text-secondary); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rec-seg { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px dashed rgba(148,163,184,.12); }
+        /* 多模型结果: 模型 ID 徽章 + 文本各占一行, 文本折行不串行 */
+        .rec-mrow { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+        .rec-mtag { font-size: .62rem; font-weight: 600; padding: 1px 7px; border: 1px solid var(--border); border-radius: 6px; flex-shrink: 0; margin-top: 1px; white-space: nowrap; }
+        .rec-mtext { flex: 1; min-width: 0; font-size: .92rem; line-height: 1.5; color: var(--text-primary); overflow-wrap: anywhere; }
+        .rec-spk {
+            flex: 0 0 auto; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-size: .68rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; color: #fff;
+        }
+        .rec-text { flex: 1; font-size: .85rem; line-height: 1.55; color: var(--text-primary); overflow-wrap: anywhere; }
+        .rec-emo {
+            flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px;
+            font-size: .62rem; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+            background: rgba(192,132,252,.12); color: #c084fc; border: 1px solid rgba(192,132,252,.3);
+            white-space: nowrap;
+        }
+        .rec-alt {
+            flex: 1 1 100%; font-size: .68rem; line-height: 1.5; color: var(--text-secondary);
+            border-left: 2px solid rgba(148,163,184,.4); padding: 2px 0 2px 8px; margin-top: 3px;
+            overflow-wrap: anywhere;
+        }
+        .rec-alt b { font-weight: 700; margin-right: 5px; }
+        .rec-play {
+            flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+            border: 1px solid rgba(52,211,153,.4); background: rgba(52,211,153,.12);
+            color: #34d399; font-size: .8rem; cursor: pointer;
+        }
+        .rec-play.playing { background: #34d399; color: #052e21; }
+        .rec-smp {
+            flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+            border: 1px solid rgba(245,158,11,.4); background: rgba(245,158,11,.10);
+            color: #f59e0b; font-size: .8rem; cursor: pointer;
+        }
+        .rec-smp:active { background: #f59e0b; color: #1a1206; }
+        .rec-nano {
+            flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+            border: 1px solid rgba(45,212,191,.4); background: rgba(45,212,191,.10);
+            color: #2dd4bf; font-size: .8rem; cursor: pointer;
+        }
+        .rec-nano:active { background: #2dd4bf; color: #062b26; }
+        .rec-nano.loading { opacity: .5; pointer-events: none; }
+        .rec-empty { text-align: center; color: var(--text-secondary); font-size: .85rem; padding: 36px 0; }
+        .rec-loading { color: var(--text-secondary); font-size: .8rem; padding: 8px; white-space: nowrap; }
+
+
         /* ============ 哭声事件 Tab ============ */
         .track-tab.track-cry { }
         .track-tab.track-cry.active {
@@ -781,7 +862,11 @@
             padding: 20px 20px 40px;
             animation: slideUpPanel 0.3s ease;
             position: relative;
+            /* 横向溢出防护：拦截长文件名/长 token 撑破面板 */
+            overflow-x: hidden;
+            overflow-wrap: anywhere;
         }
+        .cry-detail-panel img { max-width: 100%; }
 
         .cry-detail-close {
             position: absolute;
@@ -976,6 +1061,7 @@
     </style>
 </head>
 <body>
+{% include 'nav.html' %}
     <div class="bg-animation"></div>
 
     <div class="container">
@@ -997,6 +1083,14 @@
             <button class="track-tab track-cry" onclick="switchTrack('cry')">
                 <i class="fa-solid fa-heart-crack"></i>
                 哭声
+            </button>
+            <button class="track-tab track-rec" onclick="switchTrack('rec')">
+                <i class="fa-solid fa-scroll"></i>
+                记录
+            </button>
+            <button class="track-tab track-sp" onclick="switchTrack('sp')">
+                <i class="fa-solid fa-wave-square"></i>
+                声纹
             </button>
         </div>
 
@@ -1150,6 +1244,24 @@
             </div>
         </div>
 
+        <!-- 语音记录 Tab -->
+        <div id="track-rec-content" class="track-content">
+            <div class="rec-dates" id="recYears"></div>
+            <div class="rec-dates" id="recMonths" style="display:none"></div>
+            <div class="rec-dates" id="recDates"><span class="rec-loading">日期加载中…</span></div>
+            <div id="recBody">
+                <div class="rec-empty">👈 选择一个日期查看当天的语音识别记录</div>
+            </div>
+        </div>
+
+        <!-- 声纹样本管理 -->
+        <div id="track-sp-content" class="track-content">
+            <div class="rec-count" style="margin:0 2px 10px">新增样本：到「记录」Tab 试听某句后，点旁边的 <i class="fa-solid fa-user-plus" style="color:#f59e0b"></i> 即可入库</div>
+            <div id="spBody">
+                <div class="rec-empty">声纹列表加载中…</div>
+            </div>
+        </div>
+
         <!-- 日志 -->
         <div class="log-card">
             <div class="log-header">
@@ -1208,6 +1320,7 @@
 
         function switchTrack(track) {
             currentTrack = track;
+            if (track !== 'sp') { spStopAudio(); }  // 离开声纹相关视图时停止试听播放
             document.querySelectorAll('.track-tab').forEach(t => t.classList.remove('active'));
             document.querySelector(`.track-tab.track-${track}`).classList.add('active');
             document.querySelectorAll('.track-content').forEach(c => c.classList.remove('active'));
@@ -1220,6 +1333,20 @@
                     loadCryEventsMobile();
                     cryEventsInterval = setInterval(loadCryEventsMobile, 30000);
                 }
+            } else if (track === 'rec') {
+                logCard.style.display = 'none';
+                if (cryEventsInterval) {
+                    clearInterval(cryEventsInterval);
+                    cryEventsInterval = null;
+                }
+                if (!recDatesLoaded) { recDatesLoaded = true; loadRecDates(); }
+            } else if (track === 'sp') {
+                logCard.style.display = 'none';
+                if (cryEventsInterval) {
+                    clearInterval(cryEventsInterval);
+                    cryEventsInterval = null;
+                }
+                if (!spLoaded) { spLoaded = true; loadSpSpeakers(); }
             } else {
                 logCard.style.display = 'block';
                 if (cryEventsInterval) {
@@ -1365,6 +1492,13 @@
             btn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止';
         }
 
+        function recCopyId(id, ev) {
+            ev.stopPropagation();
+            const done = () => showToast('已复制引用 ID: ' + id);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(id).then(done).catch(() => showToast('引用 ID: ' + id));
+            } else { showToast('引用 ID: ' + id); }
+        }
         function showToast(message, type) {
             const toast = document.createElement('div');
             toast.style.cssText = `
@@ -1850,6 +1984,485 @@
             return div.innerHTML;
         }
 
+        /* ============ 语音记录 Tab ============ */
+        let recDatesLoaded = false, recAudio = null, recPlayingBtn = null, recCurDate = null;
+        const REC_SPK_COLORS = ['#38bdf8','#34d399','#a78bfa','#f59e0b','#fb7185','#22d3ee','#f472b6','#4ade80'];   // 与 Web 端色系一致
+        let recSpkColorMap = {}, recNextColorIdx = 0;
+        function recSpkColor(spk) {   // 按出现顺序依次分配, 保证不同人颜色不同 (与 Web 端同策略)
+            const key = String(spk || '未知');
+            if (!recSpkColorMap[key]) {
+                recSpkColorMap[key] = REC_SPK_COLORS[recNextColorIdx % REC_SPK_COLORS.length];
+                recNextColorIdx++;
+            }
+            return recSpkColorMap[key];
+        }
+        function recCleanSpk(spk) {
+            return String(spk || '未知').replace('TermuxAudioRecording_', '').replace('recording-', '');
+        }
+
+        const REC_HIDE_SPK = ['unknown', 'baby'];   // 不展示: 未知 + Baby(哭声标记); 大可是宝宝真实语音, 保留
+        let recDatesData = [], recYear = '全部', recMonth = '全部';
+
+        async function loadRecDates() {
+            const box = document.getElementById('recDates');
+            try {
+                const r = await fetch('/api/transcript_dates');   // 直接查转写表, 不依赖刷盘缓存
+                const d = await r.json();
+                recDatesData = d.dates || [];                      // [{date, count}] 最近的在前
+                if (!recDatesData.length) {
+                    document.getElementById('recYears').innerHTML = '';
+                    document.getElementById('recMonths').style.display = 'none';
+                    box.innerHTML = '<span class="rec-loading">暂无记录日期</span>';
+                    return;
+                }
+                const last = recDatesData[0].date;                 // 默认聚焦最近年月
+                recYear = last.slice(0, 4);
+                recMonth = last.slice(0, 7);
+                renderRecFilters();
+                loadRecDay(last, box.querySelector(`.rec-date-chip[data-d="${last}"]`));
+            } catch (e) {
+                box.innerHTML = '<span class="rec-loading">日期加载失败</span>';
+            }
+        }
+
+        /* 年 → 月 → 日 三级联动: 年份/月份为小号 chip, 日期带记录数角标 */
+        function renderRecFilters() {
+            const yBox = document.getElementById('recYears');
+            const mBox = document.getElementById('recMonths');
+            const box = document.getElementById('recDates');
+            const years = [...new Set(recDatesData.map(x => x.date.slice(0, 4)))];   // 数据已按日期倒序
+            yBox.innerHTML = ['全部', ...years].map(y =>
+                `<button class="rec-date-chip sm ${y === recYear ? 'active' : ''}" onclick="pickRecYear('${y}')">${y === '全部' ? '全部' : y + '年'}</button>`).join('');
+            if (recYear === '全部') {
+                mBox.style.display = 'none'; mBox.innerHTML = '';
+            } else {
+                const months = [...new Set(recDatesData.map(x => x.date.slice(0, 7)).filter(m => m.startsWith(recYear)))];
+                mBox.style.display = 'flex';
+                mBox.innerHTML = ['全部', ...months].map(m =>
+                    `<button class="rec-date-chip sm ${m === recMonth ? 'active' : ''}" onclick="pickRecMonth('${m}')">${m === '全部' ? '全年' : parseInt(m.slice(5)) + '月'}</button>`).join('');
+            }
+            const days = recDatesData.filter(x =>
+                (recYear === '全部' || x.date.startsWith(recYear)) &&
+                (recMonth === '全部' || x.date.startsWith(recMonth)));
+            box.innerHTML = days.map(x =>
+                `<button class="rec-date-chip ${x.date === recCurDate ? 'active' : ''}" data-d="${x.date}" onclick="loadRecDay('${x.date}', this)">${x.date}<em style="font-style:normal;opacity:.55;margin-left:3px">${x.count}</em></button>`).join('')
+                || '<span class="rec-loading">该时段无记录</span>';
+        }
+        function pickRecYear(y) { recYear = y; recMonth = '全部'; stopRecAudio(); renderRecFilters(); }
+        function pickRecMonth(m) { recMonth = m; stopRecAudio(); renderRecFilters(); }
+
+        async function loadRecDay(dateStr, chip) {
+            document.querySelectorAll('.rec-date-chip').forEach(c => c.classList.remove('active'));
+            if (chip) chip.classList.add('active');
+            recCurDate = dateStr;
+            stopRecAudio();
+            const body = document.getElementById('recBody');
+            body.innerHTML = '<div class="rec-empty">加载中…</div>';
+            try {
+                const r = await fetch(`/api/data/range?start_date=${dateStr}&end_date=${dateStr}&limit=300`);
+                if (!r.ok) throw 0;
+                const d = await r.json();
+                const items = d.transcripts || [];
+                if (!items.length) { body.innerHTML = `<div class="rec-empty">${dateStr} 没有语音识别记录</div>`; return; }
+                let segCount = 0, cardCount = 0;
+                recSpkColorMap = {}; recNextColorIdx = 0;   // 每天重新分配, 当天内不同人不同色
+                const cards = items.map(item => {
+                    const segs = (item.segments || []).filter(s => s.spk && !REC_HIDE_SPK.includes(String(s.spk).toLowerCase()));   // Unknown/宝宝 不展示
+                    if (!segs.length) return '';
+                    cardCount++;
+                    segCount += segs.length;
+                    const t = item.time_simple || (item.recording_time || '').slice(11, 16) || '--:--';
+                    const segHtml = segs.map(seg => {
+                        const spk = recCleanSpk(seg.spk);
+                        const canPlay = seg.segment_audio_path && !seg.segment_audio_path.includes('temp')
+                                        && seg.segment_audio_path.startsWith('/');
+                        const emoIcon = { happy: '😊', laughter: '😂', sad: '😢', angry: '😠', surprised: '😮', fear: '😨', disgusted: '🤢', neutral: '😐' }[seg.emotion] || '';
+                        const emo = seg.emotion ? `<span class="rec-emo">${emoIcon}${escapeHtml(seg.emotion)}</span>` : '';
+                        const whisper = seg.whisper_text ? `<div class="rec-mrow"><span class="rec-mtag" style="color:#60a5fa;border-color:rgba(96,165,250,.45)">↪️ Whisper</span><span class="rec-mtext">${escapeHtml(seg.whisper_text)}</span></div>` : '';
+                        const sv = seg.sensevoice_text ? `<div class="rec-mrow"><span class="rec-mtag" style="color:#c084fc;border-color:rgba(192,132,252,.45)">🎭 SenseVoice</span><span class="rec-mtext">${escapeHtml(seg.sensevoice_text)}</span></div>` : '';
+                        const nanoDb = seg.nano_text ? `<div class="rec-mrow rec-nano-row"><span class="rec-mtag" style="color:#2dd4bf;border-color:rgba(45,212,191,.45)">🔬 Nano</span><span class="rec-mtext">${escapeHtml(seg.nano_text)}</span></div>` : '';
+                        const segId = (() => { const m = (seg.segment_audio_path || '').match(/(\d{4}-\d{2}-\d{2})\/TermuxAudioRecording_\d{4}-\d{2}-\d{2}_(\d{2})-(\d{2})-(\d{2})\/seg_(\d+)\.wav/); if (!m) return null; return `${m[1].replace(/-/g, '').slice(4)}_${m[2]}${m[3]}_${m[5]}`; })();
+                        const idBadge = segId ? `<span class="rec-id" title="点击复制引用 ID" onclick="recCopyId('${segId}', event)">${segId}</span>` : '';
+                        return `<div class="rec-seg" style="flex-direction:column;align-items:stretch">
+                            <div class="rec-mrow" style="flex-wrap:wrap">
+                                ${idBadge}<span class="rec-spk" style="background:${recSpkColor(seg.spk)}">${escapeHtml(spk)}</span>
+                                ${emo}
+                                ${canPlay ? `<button class="rec-play" onclick="recPlay('${seg.segment_audio_path}', this)"><i class="fa-solid fa-play"></i></button>
+                                    <button class="rec-smp" title="设为声纹样本" onclick="spkSheetOpen('${seg.segment_audio_path}', '${(seg.spk || '').replace(/'/g, '')}', this)"><i class="fa-solid fa-user-plus"></i></button>
+                                    <button class="rec-nano" title="用本地 Fun-ASR-Nano 识别这句" onclick="recNano('${seg.segment_audio_path}', this)"><i class="fa-solid fa-microchip"></i></button>` : ''}
+                            </div>
+                            <div class="rec-mrow"><span class="rec-mtag" style="color:#e2e8f0;border-color:rgba(148,163,184,.35)">🅿️ Paraformer</span><span class="rec-mtext">${escapeHtml(seg.text || '')}</span></div>
+                            ${sv}${whisper}${nanoDb}
+                        </div>`;
+                    }).join('');
+                    return `<div class="rec-card">
+                        <div class="rec-card-head">
+                            <span class="rec-time"><i class="fa-regular fa-clock" style="margin-right:4px;color:var(--text-secondary)"></i>${t}</span>
+                            <span class="rec-file">${escapeHtml(item.filename || '')}</span>
+                        </div>
+                        ${segHtml}
+                    </div>`;
+                }).join('');
+                if (!cardCount) { body.innerHTML = `<div class="rec-empty">${dateStr} 没有语音识别记录</div>`; return; }
+                body.innerHTML = `<div class="rec-count">${cardCount} 条录音 · ${segCount} 句</div>` + cards;
+            } catch (e) {
+                if (recCurDate === dateStr) body.innerHTML = '<div class="rec-empty">加载失败，请重试</div>';
+            }
+        }
+
+        /* 播放: 与 Web 端 playAudio 同款路径规则; 单例 Audio, 点同按钮可暂停/继续 */
+        function recPlay(path, btn) {
+            if (!path) return;
+            let url = path;
+            if (!path.startsWith('/') && !path.startsWith('http')) url = '/api/audio/' + path;
+            if (recAudio && recPlayingBtn === btn) {
+                if (recAudio.paused) { recAudio.play(); setRecBtn(btn, true); }
+                else { recAudio.pause(); setRecBtn(btn, false); }
+                return;
+            }
+            stopRecAudio();
+            recAudio = new Audio(url);
+            recPlayingBtn = btn;
+            recAudio.addEventListener('ended', stopRecAudio);
+            recAudio.addEventListener('error', () => { stopRecAudio(); showToast('音频加载失败', 'error'); });
+            setRecBtn(btn, true);
+            recAudio.play().catch(() => stopRecAudio());
+        }
+        function setRecBtn(btn, playing) {
+            if (!btn) return;
+            btn.classList.toggle('playing', playing);
+            btn.innerHTML = playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
+        }
+        function stopRecAudio() {
+            if (recAudio) { recAudio.pause(); recAudio = null; }
+            if (recPlayingBtn) { setRecBtn(recPlayingBtn, false); recPlayingBtn = null; }
+        }
+
+        /* ---- 设为声纹样本: 预览确认后把该句切片注册到指定说话人 ---- */
+        const SPK_CHOICES = ['大可', '妈妈', '爸爸', '婆婆', 'Baby'];
+
+        function spkSheetOpen(path, curSpk, btnEl) {
+            spkSheetClose();
+            const sheet = document.createElement('div');
+            sheet.id = 'spkSheet';
+            sheet.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end';
+            sheet.onclick = e => { if (e.target === sheet) spkSheetClose(); };
+            const card = document.createElement('div');
+            card.style.cssText = 'width:100%;background:#161d2b;border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom))';
+            card.innerHTML = `<div style="font-size:.82rem;color:#8b95a7;margin-bottom:10px">这句话是谁的声音？（切片将加入 TA 的声纹样本）</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+                    ${SPK_CHOICES.map(n => `<button data-n="${n}" style="flex:1 0 30%;padding:10px 0;border-radius:10px;border:1px solid #2a3547;background:${n === curSpk ? 'rgba(245,158,11,.15)' : '#0f1723'};color:${n === curSpk ? '#fbbf24' : '#c9d3e2'};font-size:.9rem;font-weight:600">${n}${n === curSpk ? ' ✓' : ''}</button>`).join('')}
+                </div>
+                <button data-n="__groq" style="width:100%;padding:10px 0;border-radius:10px;border:1px solid rgba(56,189,248,.4);background:rgba(56,189,248,.08);color:#7dd3fc;font-size:.88rem;margin-bottom:8px">🔄 用 Groq Whisper 重新识别这句</button>
+                <div id="spkGroqOut" style="display:none;font-size:.85rem;line-height:1.5;color:#c9d3e2;background:#0f1723;border:1px solid #2a3547;border-radius:10px;padding:10px;margin-bottom:8px;overflow-wrap:anywhere"></div>
+                <button data-n="__nano" style="width:100%;padding:10px 0;border-radius:10px;border:1px solid rgba(45,212,191,.4);background:rgba(45,212,191,.08);color:#2dd4bf;font-size:.88rem;margin-bottom:8px">🔬 用本地 Fun-ASR-Nano 重新识别这句</button>
+                <div id="spkNanoOut" style="display:none;font-size:.85rem;line-height:1.5;color:#c9d3e2;background:#0f1723;border:1px solid #2a3547;border-radius:10px;padding:10px;margin-bottom:8px;overflow-wrap:anywhere"></div>
+                <button data-n="__negative" style="width:100%;padding:10px 0;border-radius:10px;border:1px solid rgba(232,70,58,.35);background:rgba(232,70,58,.08);color:#f0847c;font-size:.88rem;margin-bottom:8px">🚫 都不是——电视/动画等声音，标记为负样本</button>
+                <button data-n="__cancel" style="width:100%;padding:10px 0;border-radius:10px;border:none;background:#0f1723;color:#8b95a7;font-size:.9rem">取消</button>`;
+            card.querySelectorAll('button').forEach(b => {
+                b.onclick = () => {
+                    const n = b.dataset.n;
+                    if (n === '__groq') { doGroqRetranscribe(path, document.getElementById('spkGroqOut')); return; }
+                    if (n === '__nano') { doNanoRetranscribe(path, document.getElementById('spkNanoOut')); return; }
+                    spkSheetClose();
+                    if (n === '__negative') doRegisterNegative(path, btnEl);
+                    else if (n !== '__cancel') doRegisterSample(path, n, b);
+                };
+            });
+            sheet.appendChild(card);
+            document.body.appendChild(sheet);
+        }
+        function spkSheetClose() { const s = document.getElementById('spkSheet'); if (s) s.remove(); }
+
+        /* 本地 Fun-ASR-Nano 重识别: 5009 代理 → audiocpp_server (手动触发, 不写库) */
+        async function fetchNanoText(path) {
+            const r = await fetch('/api/nano_transcribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            return await r.json();
+        }
+        async function recNano(path, btn) {
+            if (!btn) return;
+            const segEl = btn.closest('.rec-seg');
+            if (!segEl) return;
+            let row = segEl.querySelector('.rec-nano-row');
+            if (row) { row.querySelector('.rec-mtext').innerHTML = '<i style="color:#8b95a7">⏳ Nano 识别中…</i>'; }
+            else {
+                row = document.createElement('div');
+                row.className = 'rec-mrow rec-nano-row';
+                row.innerHTML = '<span class="rec-mtag" style="color:#2dd4bf;border-color:rgba(45,212,191,.45)">🔬 Nano</span><span class="rec-mtext"><i style="color:#8b95a7">⏳ 识别中…</i></span>';
+                segEl.appendChild(row);
+            }
+            btn.classList.add('loading');
+            try {
+                const d = await fetchNanoText(path);
+                if (d.text !== undefined) {
+                    row.querySelector('.rec-mtext').textContent = d.text || '（未识别出内容）';
+                } else {
+                    row.querySelector('.rec-mtext').innerHTML = '<i style="color:#f0847c">⚠ ' + escapeHtml(d.error || '识别失败') + '</i>';
+                }
+            } catch (e) {
+                row.querySelector('.rec-mtext').innerHTML = '<i style="color:#f0847c">⚠ 网络错误</i>';
+            } finally {
+                btn.classList.remove('loading');
+            }
+        }
+        async function doNanoRetranscribe(path, outEl) {
+            if (!outEl) return;
+            outEl.style.display = 'block';
+            outEl.style.color = '#8b95a7';
+            outEl.textContent = '⏳ 本地 Nano 识别中…';
+            try {
+                const d = await fetchNanoText(path);
+                if (d.text !== undefined) {
+                    outEl.style.color = '#c9d3e2';
+                    outEl.innerHTML = '<b style="color:#2dd4bf">Fun-ASR-Nano:</b> ' + (d.text || '<i style="color:#8b95a7">(未识别出内容)</i>');
+                } else {
+                    outEl.style.color = '#f0847c';
+                    outEl.textContent = '⚠ ' + (d.error || '识别失败');
+                }
+            } catch (e) {
+                outEl.style.color = '#f0847c';
+                outEl.textContent = '⚠ 网络错误: ' + e.message;
+            }
+        }
+        /* Groq Whisper 重识别: 与本地结果对比 (手动触发, 不写库) */
+        async function doGroqRetranscribe(path, outEl) {
+            if (!outEl) return;
+            outEl.style.display = 'block';
+            outEl.style.color = '#8b95a7';
+            outEl.textContent = '⏳ Groq Whisper 识别中…';
+            try {
+                const r = await fetch('/api/retranscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const d = await r.json();
+                if (d.text !== undefined) {
+                    outEl.style.color = '#c9d3e2';
+                    outEl.innerHTML = '<b style="color:#7dd3fc">Groq Whisper:</b> ' + (d.text || '<i style="color:#8b95a7">(未识别出内容)</i>');
+                } else {
+                    outEl.style.color = '#f0847c';
+                    outEl.textContent = '⚠ ' + (d.error || '识别失败');
+                }
+            } catch (e) {
+                outEl.style.color = '#f0847c';
+                outEl.textContent = '⚠ 网络错误: ' + e.message;
+            }
+        }
+
+        /* 负样本: 电视/动画等"不是家里任何人"的声音 → 进黑名单(仅拒绝用), 本句展示同步隐藏 */
+        async function doRegisterNegative(path, btnEl) {
+            try {
+                showToast('正在标记负样本…');
+                const r = await fetch(path);
+                if (!r.ok) throw new Error('切片音频获取失败 ' + r.status);
+                const blob = await r.blob();
+                const base = (path.split('/').pop() || 'seg.wav').split('?')[0];
+                const file = new File([blob], base.includes('.') ? base : base + '.wav', { type: blob.type || 'audio/wav' });
+                const fd = new FormData();
+                fd.append('audio_file', file);
+                fd.append('source_path', path);
+                const resp = await fetch('/api/spk_negative', { method: 'POST', body: fd });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                const data = await resp.json().catch(() => ({}));
+                if (resp.ok) {
+                    if (data.queued === false) {
+                        showToast('⚠ 该句已隐藏，但建模队列暂不可达，可稍后重标', 'error');
+                    } else if (data.duplicate) {
+                        showToast('✓ 该句已在负样本黑名单中，无需重复标记', 'success');
+                    } else {
+                        showToast('✓ 已标记负样本，后台建模中…新录音遇相似声音将不再归属家人', 'success');
+                    }
+                    if (btnEl) { const seg = btnEl.closest('.rec-seg'); if (seg) seg.remove(); }
+                } else {
+                    showToast('标记失败: ' + (data.error || resp.status), 'error');
+                }
+            } catch (e) {
+                showToast('标记失败: ' + e.message, 'error');
+            }
+        }
+
+        async function doRegisterSample(path, name, btnEl) {
+            try {
+                showToast(`正在把切片注册到「${name}」…`);
+                const r = await fetch(path);
+                if (!r.ok) throw new Error('切片音频获取失败 ' + r.status);
+                const blob = await r.blob();
+                const base = (path.split('/').pop() || 'seg.wav').split('?')[0];
+                const file = new File([blob], base.includes('.') ? base : base + '.wav', { type: blob.type || 'audio/wav' });
+                const fd = new FormData();
+                fd.append('speaker_name', name);
+                fd.append('audio_file', file);
+                const resp = await fetch('/speaker/register', { method: 'POST', body: fd });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                const data = await resp.json().catch(() => ({}));
+                if (resp.ok) {
+                    showToast(`✓ 已注册到「${name}」的声纹样本（${data.mode === 'enhance' ? '增强' : '新注册'}）`, 'success');
+                } else {
+                    showToast('注册失败: ' + (data.error || resp.status), 'error');
+                }
+            } catch (e) {
+                showToast('注册失败: ' + e.message, 'error');
+            }
+        }
+
+        /* ---- 声纹样本管理 Tab ---- */
+        let spLoaded = false, spAudio = null, spAudioBtn = null;
+        const spEsc = s => String(s).replace(/'/g, "\\'");
+
+        async function loadSpSpeakers() {
+            const body = document.getElementById('spBody');
+            try {
+                const r = await fetch('/speaker/list');
+                if (r.status === 401) { location.href = '/login'; return; }
+                const data = await r.json();
+                const list = data.speakers || [];
+                const negBlock = `
+                    <div class="rec-card" style="border-color:rgba(251,146,60,.35)">
+                        <div class="rec-card-head">
+                            <span class="rec-spk" style="background:rgba(251,146,60,.18);color:#fb923c">🚫 负样本黑名单</span>
+                            <span class="rec-file" id="sp-neg-count">…</span>
+                        </div>
+                        <div style="font-size:.66rem;color:var(--text-secondary);margin-top:4px">电视/动画等非家人声音，用于拦截误归属；<b>只做拒绝，不参与正向归属</b>，可随时单条移除回滚</div>
+                        <div id="sp-neg-list" style="margin-top:6px"><div class="rec-loading">加载中…</div></div>
+                    </div>`;
+                if (!list.length) {
+                    body.innerHTML = negBlock + '<div class="rec-empty">声纹库为空，去「记录」Tab 添加第一个样本吧</div>';
+                    loadSpNegatives();
+                    return;
+                }
+                body.innerHTML = negBlock + list.map(s => `
+                    <div class="rec-card">
+                        <div class="rec-card-head">
+                            <span class="rec-spk" style="background:${recSpkColor(s.name)}">${escapeHtml(s.name)}</span>
+                            <span class="rec-file">${s.sample_count} 个样本</span>
+                        </div>
+                        <div id="sp-samples-${spEsc(s.name)}" style="display:none;margin-top:6px"></div>
+                        <div style="display:flex;gap:8px;margin-top:8px">
+                            <button class="action-btn refresh" style="flex:1;margin:0" onclick="spToggleSamples('${spEsc(s.name)}')">查看样本</button>
+                            <button class="action-btn stop" style="flex:1;margin:0" onclick="spDeleteSpeaker('${spEsc(s.name)}')">删除说话人</button>
+                        </div>
+                    </div>`).join('');
+                loadSpNegatives();
+            } catch (e) { body.innerHTML = '<div class="rec-empty">加载失败，请重试</div>'; }
+        }
+
+        async function loadSpNegatives() {
+            const box = document.getElementById('sp-neg-list');
+            const cnt = document.getElementById('sp-neg-count');
+            if (!box) return;
+            try {
+                const r = await fetch('/speaker/negative/list');
+                if (r.status === 401) { location.href = '/login'; return; }
+                const data = await r.json().catch(() => ({}));
+                const items = data.samples || [];
+                if (cnt) cnt.textContent = `${items.length} 条`;
+                box.innerHTML = items.length ? items.map(n => `
+                    <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px dashed rgba(148,163,184,.12)">
+                        <div style="flex:1;min-width:0">
+                            <div style="font-size:.72rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(n.source || n.id)}</div>
+                            <div style="font-size:.62rem;color:var(--text-secondary)">${escapeHtml(n.ts || '')}${n.has_audio ? '' : ' · 音频缺失'}</div>
+                        </div>
+                        ${n.has_audio ? `<button class="rec-play" onclick="spNegPlay('${spEsc(n.id)}',this)"><i class="fa-solid fa-play"></i></button>` : ''}
+                        <button class="rec-smp" style="border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.1);color:#f87171" onclick="spNegDelete('${spEsc(n.id)}')"><i class="fa-solid fa-trash"></i></button>
+                    </div>`).join('')
+                    : '<div class="rec-loading" style="padding:8px 0">暂无。在「记录」Tab 点句子旁 👤⁺ 选「🚫 都不是」即可登记。</div>';
+            } catch (e) { box.innerHTML = `<div class="rec-loading">加载失败: ${escapeHtml(String(e.message))}</div>`; }
+        }
+
+        function spNegPlay(id, btn) {
+            const url = `/speaker/negative/${encodeURIComponent(id)}/audio`;
+            if (spAudio && spAudioBtn === btn) {
+                if (spAudio.paused) { spAudio.play(); setRecBtn(btn, true); }
+                else { spAudio.pause(); setRecBtn(btn, false); }
+                return;
+            }
+            spStopAudio();
+            spAudio = new Audio(url); spAudioBtn = btn;
+            spAudio.addEventListener('ended', spStopAudio);
+            spAudio.addEventListener('error', () => { spStopAudio(); showToast('音频副本缺失', 'error'); });
+            setRecBtn(btn, true);
+            spAudio.play().catch(() => spStopAudio());
+        }
+
+        async function spNegDelete(id) {
+            if (!confirm('从黑名单移除这条负样本吗？移除后它不再拦截归属（该句的展示隐藏会同时恢复）。')) return;
+            try {
+                const r = await fetch(`/speaker/negative/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                if (r.status === 401) { location.href = '/login'; return; }
+                if (r.ok) { showToast('✓ 已移除', 'success'); loadSpNegatives(); }
+                else showToast('移除失败: ' + r.status, 'error');
+            } catch (e) { showToast('移除失败: ' + e.message, 'error'); }
+        }
+
+        async function spToggleSamples(name) {
+            const box = document.getElementById(`sp-samples-${spEsc(name)}`);
+            if (!box) return;
+            if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            box.innerHTML = '<div class="rec-loading">样本加载中…</div>';
+            try {
+                const r = await fetch(`/speaker/${encodeURIComponent(name)}`);
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || r.status);
+                const samples = data.samples || [];
+                box.innerHTML = samples.length ? samples.map(s => `
+                    <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px dashed rgba(148,163,184,.12)">
+                        <div style="flex:1;min-width:0">
+                            <div style="font-size:.72rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.filename || s.id)}</div>
+                            <div style="font-size:.62rem;color:var(--text-secondary)">${escapeHtml(s.timestamp || '')}</div>
+                        </div>
+                        <button class="rec-play" onclick="spPlay('${spEsc(name)}','${spEsc(s.id)}',this)"><i class="fa-solid fa-play"></i></button>
+                        <button class="rec-smp" style="border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.1);color:#f87171" onclick="spDeleteSample('${spEsc(name)}','${spEsc(s.id)}')"><i class="fa-solid fa-trash"></i></button>
+                    </div>`).join('')
+                    : '<div class="rec-loading">暂无样本</div>';
+            } catch (e) { box.innerHTML = `<div class="rec-loading">加载失败: ${escapeHtml(String(e.message))}</div>`; }
+        }
+
+        function spPlay(name, id, btn) {
+            const url = `/speaker/${encodeURIComponent(name)}/sample/${encodeURIComponent(id)}/audio`;
+            if (spAudio && spAudioBtn === btn) {
+                if (spAudio.paused) { spAudio.play(); setRecBtn(btn, true); }
+                else { spAudio.pause(); setRecBtn(btn, false); }
+                return;
+            }
+            spStopAudio();
+            spAudio = new Audio(url); spAudioBtn = btn;
+            spAudio.addEventListener('ended', spStopAudio);
+            spAudio.addEventListener('error', () => { spStopAudio(); showToast('该样本音频文件缺失（历史迁移遗留），声纹特征仍在生效；如需清理请点红色删除钮', 'error'); });
+            setRecBtn(btn, true);
+            spAudio.play().catch(() => spStopAudio());
+        }
+        function spStopAudio() {
+            if (spAudio) { spAudio.pause(); spAudio = null; }
+            if (spAudioBtn) { setRecBtn(spAudioBtn, false); spAudioBtn = null; }
+        }
+
+        async function spDeleteSample(name, id) {
+            if (!confirm('确定删除这个声纹样本吗？删除后该样本不再参与声纹计算。')) return;
+            try {
+                const r = await fetch(`/speaker/${encodeURIComponent(name)}/sample/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                if (r.status === 401) { location.href = '/login'; return; }
+                if (r.ok) { showToast('✓ 样本已删除', 'success'); spToggleSamples(name); spToggleSamples(name); }
+                else showToast('删除失败: ' + r.status, 'error');
+            } catch (e) { showToast('删除失败: ' + e.message, 'error'); }
+        }
+
+        async function spDeleteSpeaker(name) {
+            if (!confirm(`确定删除说话人「${name}」的全部声纹数据吗？此操作不可恢复！`)) return;
+            try {
+                const r = await fetch(`/speaker/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                if (r.status === 401) { location.href = '/login'; return; }
+                if (r.ok) { showToast(`✓ 已删除说话人「${name}」`, 'success'); loadSpSpeakers(); }
+                else showToast('删除失败: ' + r.status, 'error');
+            } catch (e) { showToast('删除失败: ' + e.message, 'error'); }
+        }
+
+
         function toggleLogs() {
             logsExpanded = !logsExpanded;
             const container = document.getElementById('logContainer');
@@ -2175,7 +2788,7 @@
                     <div class="cry-detail-section">
                         <div class="cry-detail-section-title">🎵 哭声片段（自动定位可能不准，可换一段）</div>
                         <div style="display:flex;gap:8px">
-                            <button id="mSegBtn_${eventId}" onclick="mobilePlaySegment(${eventId})" style="flex:1.4;padding:12px;border-radius:12px;border:1px solid rgba(129,140,248,.4);background:rgba(129,140,248,.12);color:#a5b4fc;font-size:13px;font-weight:700;cursor:pointer">▶ 试听第 1 段</button>
+                            <button id="mSegBtn_${eventId}" onclick="mobilePlaySegment(${eventId})" style="flex:1.4;padding:12px;border-radius:12px;border:1px solid rgba(129,140,248,.4);background:rgba(129,140,248,.12);color:#a5b4fc;font-size:13px;font-weight:700;cursor:pointer">▶ 试听第 1 段${data.presliced ? ' ⚡' : ' <span style="font-weight:400;font-size:11px">(首次需定位)</span>'}</button>
                             <button onclick="mobileNextSegment(${eventId})" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#cbd5e1;font-size:13px;font-weight:700;cursor:pointer">🔄 换一段</button>
                         </div>
                     </div>
@@ -2250,7 +2863,8 @@
                 return;
             }
             btn.disabled = true; btn.textContent = '⏳ 定位片段中...';
-            const slowTip = setTimeout(() => { btn.textContent = '⏳ 定位中...（GPU 正被补跑/检测占用，首次可能需 1-2 分钟）'; }, 12000);
+            const _presliced = !(_mobileDetailCache[eventId] && _mobileDetailCache[eventId].presliced === false);
+            const slowTip = setTimeout(() => { btn.textContent = _presliced ? '⏳ 加载中...（比预期慢，仍在处理）' : '⏳ 首次定位中...（GPU 正被补跑/检测占用，可能需 1-2 分钟，仅此一次）'; }, 12000);
             // 150 秒硬超时：绝不无限转圈
             const ctrl = new AbortController();
             const kill = setTimeout(() => ctrl.abort(), 150000);

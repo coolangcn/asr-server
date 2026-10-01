@@ -147,3 +147,20 @@ temp_cry/
 # 补跑运行状态文件
 backfill_dates_snapshot.txt
 backfill_failed_dates.txt
+
+# Fun-ASR-Nano 本地模型与 audio.cpp 源码（外部仓库，不入 git）
+models/
+audio.cpp/
+
+# 负样本声纹数据与音频副本（个人语音数据，不入 git）
+negative_samples/
+
+# API 密钥文件
+groq_keys.txt
+
+# 英语启蒙生成内容（绘本/日报产物，个人数据不入 git）
+english_enlightenment/
+*.jsonl
+
+# 编辑器备份文件
+*.bak_*

@@ -49,10 +49,26 @@ else
     FAIL=1
 fi
 
-# 4) 清理 14 天前的旧备份
+# 4) 绘本日记 → NAS 持久化 (rsync 增量, 不用 --delete 防挂载病误删)
+NAS_PB=/Volumes/download/asr_backup/picturebook
+if [ -d /Volumes/download ] && [ -w /Volumes/download ]; then
+    if mkdir -p "$NAS_PB" 2>>"$LOG_FILE"; then
+        if rsync -a "$BASE/english_enlightenment/picturebook/" "$NAS_PB/" 2>>"$LOG_FILE"; then
+            log "OK  picturebook → NAS ($(du -sh "$NAS_PB" 2>/dev/null | cut -f1))"
+        else
+            FAIL=1; log "FAIL picturebook rsync 失败"
+        fi
+    else
+        FAIL=1; log "FAIL NAS asr_backup 目录不可写(挂载病态?)"
+    fi
+else
+    FAIL=1; log "WARN NAS 未挂载或只读, 跳过 picturebook 持久化"
+fi
+
+# 5) 清理 14 天前的旧备份
 find "$BACKUP_DIR" -maxdepth 1 -type d -name "20*" -mtime +${RETAIN_DAYS} -exec rm -rf {} + 2>/dev/null
 
-# 5) launchd 输出日志超过 50MB 时截断（app 自身日志已由 RotatingFileHandler 轮转）
+# 6) launchd 输出日志超过 50MB 时截断（app 自身日志已由 RotatingFileHandler 轮转）
 for f in "$BASE"/log/launchd-*; do
     [ -f "$f" ] || continue
     SIZE=$(stat -f%z "$f" 2>/dev/null || echo 0)

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.asr.picture-daily</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/mac/asr_env/bin/python3</string>
+        <string>/Users/mac/asr-server/english_picture_book.py</string>
+        <string>--push</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/mac/asr-server</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>21</integer>
+        <key>Minute</key>
+        <integer>20</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/mac/asr-server/log/english_picture.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mac/asr-server/log/english_picture.log</string>
+</dict>
+</plist>

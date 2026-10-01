@@ -480,6 +480,16 @@
                 <i class="fa-solid fa-book-open-reader text-lg group-hover:text-amber-400 transition-colors w-6 text-center"></i>
                 <span class="font-medium">成长词典</span>
             </button>
+            <button onclick="window.location.href='/picturebook'" id="nav-picturebook"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-book-open text-lg group-hover:text-yellow-400 transition-colors w-6 text-center"></i>
+                <span class="font-medium">绘本日记</span>
+            </button>
+            <button onclick="window.location.href='/mobile'" id="nav-mobile"
+                class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-mobile-screen text-lg group-hover:text-sky-400 transition-colors w-6 text-center"></i>
+                <span class="font-medium">手机端</span>
+            </button>
             <button onclick="switchTab('chat')" id="nav-chat"
                 class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <i class="fa-solid fa-clock-rotate-left text-lg group-hover:text-accent-400 transition-colors w-6 text-center"></i>
@@ -4378,7 +4388,7 @@
             _previewAudio = null;
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 定位中...';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 定位中...（未预切事件首次约 10-60 秒）';
             }
             try {
                 const resp = await fetch(`/api/cry_event/${eventId}/segment_preview`);

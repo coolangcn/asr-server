@@ -41,12 +41,17 @@ class DeviceConfig:
 
 
 ROOM_LABELS = {"living": "客厅", "bedroom": "卧室"}
+# 同一停滞的重复告警冷却（秒）——独立于停滞判定阈值(stall_timeout)。
+# 【2026-09-22 修复】此前 alert_due 误用 stall_timeout(3分钟) 导致持续停滞时每3分钟轰炸一封。
+STALL_ALERT_COOLDOWN = 7200
 
 
 class DeviceState:
     def __init__(self):
         self.last_new_file_time = time.time()
         self.last_stall_alert_time = 0.0
+        # 【2026-09-22】告警冷却独立于停滞判定阈值：此前 alert_due 复用 stall_timeout（3分钟），
+        # 导致持续停滞时每 3 分钟轰炸一封邮件。同一停滞每 2 小时提醒一次。
         self.last_stall_recovery_time = 0.0
         self.last_mount_alert_time = 0.0
         self.last_room_degrade_log_time = 0.0
@@ -302,6 +307,39 @@ def _attempt_ssh_recovery(device, elapsed_min, last_time_str):
         }
 
 
+def _probe_termux_api_wedged(device):
+    """探测手机端 Termux:API 是否疑似卡死。
+    【2026-09-30 新增】Sony-3 事件根因：termux-microphone-record 启动连续失败但循环活着，
+    SSH 自动恢复修不了（无 root 杀不了其他应用的进程），只能靠人重启手机。
+    判据：record_loop.log 末尾 12 行（约 6 次尝试）里"录音进程启动失败"≥5 次。
+    返回 True=疑似卡死 / False=未见连续失败 / None=探测失败（SSH 不通等）。"""
+    if not device.ssh_password or not shutil.which("sshpass") or not shutil.which("ssh"):
+        return None
+
+    cmd = [
+        shutil.which("sshpass"), "-e",
+        shutil.which("ssh"),
+        "-o", "PubkeyAuthentication=no",
+        "-o", "PreferredAuthentications=password,keyboard-interactive",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", f"UserKnownHostsFile=/tmp/asr_probe_{device.name}_known_hosts",
+        "-o", "ConnectTimeout=10",
+        "-p", str(device.ssh_port),
+        f"{device.ssh_user}@{device.ssh_host}",
+        "tail -12 ~/record_loop.log 2>/dev/null | grep -c '录音进程启动失败'",
+    ]
+    env = os.environ.copy()
+    env["SSHPASS"] = device.ssh_password
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=25, env=env)
+        if r.returncode != 0:
+            return None
+        return int((r.stdout or "0").strip() or 0) >= 5
+    except Exception as e:
+        logger.warning(f"[{device.name}] Termux:API 探测失败: {e}")
+        return None
+
+
 def _send_stall_alert_email(device, elapsed_min, last_time_str, recovery_result):
     try:
         from email_utils import send_email_sync
@@ -313,9 +351,23 @@ def _send_stall_alert_email(device, elapsed_min, last_time_str, recovery_result)
         elif recovery_result["attempted"]:
             recovery_state = "自动恢复命令失败"
 
-        subject = f"⚠️ {device.name} 录音上传停滞告警 - 已停止 {elapsed_min} 分钟（{recovery_state}）"
+        # 【2026-09-30 新增】停滞时探测 Termux:API 是否卡死，直达根因
+        api_wedged = _probe_termux_api_wedged(device)
+        wedged_hint = ""
+        if api_wedged is True:
+            subject_prefix = "🚨🚨"
+            wedged_hint = (
+                f"  🔴 根因判定: Termux:API 应用疑似卡死（录音启动连续失败，录音循环仍在运行）\n"
+                f"  ⚡ 处理方式: 自动恢复无法修复此问题，请【重启手机】——\n"
+                f"     Termux:Boot 会自动拉起 sshd 与录音循环，无需其他操作\n\n"
+            )
+            subject = f"🚨🚨 {device.name} Termux:API 卡死 - 需要重启手机（已停滞 {elapsed_min} 分钟）"
+        else:
+            subject_prefix = "⚠️"
+            wedged_hint = ""
+            subject = f"⚠️ {device.name} 录音上传停滞告警 - 已停止 {elapsed_min} 分钟（{recovery_state}）"
         content = (
-            f"⚠️  {device.name} 录音上传停滞告警\n"
+            f"{subject_prefix}  {device.name} 录音上传停滞告警\n"
             f"{'=' * 40}\n\n"
             f"检测时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"上次收到文件: {last_time_str}\n"
@@ -330,13 +382,14 @@ def _send_stall_alert_email(device, elapsed_min, last_time_str, recovery_result)
             f"恢复命令输出:\n"
             f"{recovery_result['output'] or '(无输出)'}\n\n"
             f"{'=' * 40}\n"
+            f"{wedged_hint}"
             f"可能原因:\n"
             f"  1. Termux 应用崩溃或被系统杀死\n"
             f"  2. 手机录音服务停止\n"
             f"  3. 网络/NAS 挂载异常\n\n"
             f"系统已按配置尝试自动恢复；若后续仍无新文件，请检查手机 Termux 状态。\n"
             f"{'=' * 40}\n"
-            f"此告警冷却期: {device.stall_timeout // 60} 分钟\n"
+            f"此告警冷却期: {STALL_ALERT_COOLDOWN // 60} 分钟\n"
             f"（同一问题不会在冷却期内重复发送）"
         )
         send_email_sync(subject, content)
@@ -412,6 +465,8 @@ def _device_watchdog(device):
                     if state.stall_active_since > 0:
                         stall_to_notify = state.stall_active_since
                         state.stall_active_since = 0.0
+                        # 停滞已结束，重置告警冷却——下次新停滞可立即告警
+                        state.last_stall_alert_time = 0.0
 
                 if stall_to_notify > 0:
                     _send_stall_recovered_email(device, stall_to_notify, last_file_time)
@@ -444,7 +499,10 @@ def _device_watchdog(device):
 
             with state.lock:
                 recovery_due = (time.time() - state.last_stall_recovery_time) >= device.recovery_cooldown
-                alert_due = (time.time() - state.last_stall_alert_time) >= device.stall_timeout
+                # 【2026-09-22 修复】此前这里误用 device.stall_timeout（3分钟停滞判定阈值）做告警冷却，
+                # 持续停滞时每轮扫描都满足 alert_due → 每 3 分钟一封轰炸。
+                # 现在告警冷却独立为 STALL_ALERT_COOLDOWN（2小时）：首次停滞立即告警，此后每 2 小时提醒一次。
+                alert_due = (time.time() - state.last_stall_alert_time) >= STALL_ALERT_COOLDOWN
 
             if not (recovery_due or alert_due):
                 # 恢复与告警都在冷却期内：仅记录日志，等待下一轮
@@ -531,34 +589,10 @@ def _device_watchdog(device):
 def _init_device_state(device):
     state = DeviceState()
     try:
-        source_dir = device.source_dir
-        latest_mtime = 0
-        if os.path.exists(source_dir):
-            supported_formats = ['.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc']
-            for item in os.listdir(source_dir):
-                if item in ["processed", "failed", "audio_segments", "logs"] or item.startswith('.'):
-                    continue
-                item_path = os.path.join(source_dir, item)
-
-                items_to_check = []
-                if os.path.isfile(item_path):
-                    items_to_check.append(item_path)
-                elif os.path.isdir(item_path):
-                    try:
-                        for subitem in os.listdir(item_path):
-                            if not subitem.startswith('.'):
-                                subp = os.path.join(item_path, subitem)
-                                if os.path.isfile(subp):
-                                    items_to_check.append(subp)
-                    except Exception as e:
-                        logger.error(f"[{device.name}] 读取子目录 {item_path} 失败: {e}")
-
-                for filepath in items_to_check:
-                    filename = os.path.basename(filepath)
-                    ext = os.path.splitext(filename)[1].lower()
-                    if ext in supported_formats:
-                        mtime = os.path.getmtime(filepath)
-                        latest_mtime = max(latest_mtime, mtime)
+        # 复用带超时的近期文件扫描（仅今日/昨日目录）：
+        # 此前是裸 listdir 扫全部历史日期目录，SMB 拥塞时会把初始化线程挂死，
+        # 导致 _device_states 永远注册不上、状态接口返回空
+        latest_mtime = _get_latest_file_mtime_with_timeout(device, timeout=45.0)
 
         if latest_mtime > 0:
             state.last_new_file_time = latest_mtime

@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>绘本放映厅 | Audio Notes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/pb_tv.css?v=2">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        body {
+            background:
+                radial-gradient(1200px 600px at 75% -10%, rgba(56,120,255,.14), transparent 60%),
+                radial-gradient(900px 500px at 10% 110%, rgba(245,158,11,.07), transparent 60%),
+                #070d18;
+            color: #e6edf7;
+        }
+        /* ---- 书架卡片 ---- */
+        .tv-card {
+            border-radius: 22px; overflow: hidden; position: relative;
+            width: 50vh;                         /* 卡宽≈可用高, 方形封面铺满卡宽 (16:9 下等价于 min(30vw,50vh); 老内核无 min()) */
+            background: linear-gradient(160deg, #13203a, #0c1526);
+            border: 2px solid rgba(255,255,255,.06);
+            box-shadow: 0 10px 34px rgba(0,0,0,.5);
+            transition: transform .18s cubic-bezier(.2,.8,.3,1.2), border-color .18s, box-shadow .18s;
+            outline: none; cursor: pointer;
+        }
+        .tv-card img, .tv-card .ph { transition: transform .35s ease; }
+        .tv-card.focused, .tv-card:hover {
+            transform: scale(1.055) translateY(-4px);
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 4px rgba(245,158,11,.22), 0 18px 50px rgba(0,0,0,.65), 0 0 60px rgba(245,158,11,.18);
+        }
+        .tv-card.focused .play-hint { opacity: 1; transform: translateY(0); }
+        .play-hint {
+            position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center;
+            opacity: 0; transform: translateY(8px); transition: all .2s ease;
+            background: radial-gradient(closest-side, rgba(0,0,0,.42), transparent);
+        }
+        .play-hint .pi {
+            width: 88px; height: 88px; border-radius: 999px;
+            background: rgba(245,158,11,.92); color: #1a1206;
+            display: flex; align-items: center; justify-content: center; font-size: 34px;
+            box-shadow: 0 8px 30px rgba(0,0,0,.5);
+        }
+        .cover-img { background: linear-gradient(135deg, #1b2a44, #0e1a2e); }
+        .badge { font-size: .95rem; padding: 4px 12px; border-radius: 999px; font-weight: 600; }
+        /* ---- 放映视图 ---- */
+        .tv-en { font-size: clamp(1.6rem, 4.2vh, 2.9rem); line-height: 1.45; font-weight: 800;
+                 text-shadow: 0 3px 24px rgba(0,0,0,.65); }
+        .tv-zh { font-size: clamp(.95rem, 2.2vh, 1.4rem); line-height: 1.65;
+                 text-shadow: 0 2px 14px rgba(0,0,0,.6); }
+        .fade-in { animation: fade .5s ease; }
+        @keyframes fade { from { opacity: 0; transform: scale(.988); } to { opacity: 1; transform: none; } }
+        .text-in { animation: tin .55s ease; }
+        @keyframes tin { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+        #prog { transition: width .45s ease; }
+        .hint { transition: opacity 1.4s ease; }
+        .hint-hide { opacity: 0 !important; }
+        /* 过场卡 */
+        #chain-card { animation: fade .4s ease; }
+        #chain-bar { animation: shrink 3.5s linear forwards; }
+        @keyframes shrink { from { width: 100%; } to { width: 0%; } }
+        /* 时钟 */
+        #clock { font-variant-numeric: tabular-nums; }
+        .spin { animation: sp 1s linear infinite; }
+        @keyframes sp { to { transform: rotate(360deg); } }
+        /* ---- 筛选 chips ---- */
+        .pb-chip {
+            background: rgba(15,26,46,.7); backdrop-filter: blur(4px);
+            transition: all .16s ease; outline: none;
+        }
+        .pb-chip.focused {
+            border-color: #f59e0b !important; color: #fbbf24 !important;
+            box-shadow: 0 0 0 3px rgba(245,158,11,.3);
+            background: rgba(245,158,11,.12);
+        }
+        /* ---- 详情面板(焦点卡片联动) ---- */
+        #pb-detail { transition: opacity .25s ease; }
+        #pb-detail .bd-cover { box-shadow: 0 10px 34px rgba(0,0,0,.55); }
+        .bd-title { font-size: clamp(1.6rem, 4vh, 2.6rem); }
+        .bd-zh { font-size: clamp(1rem, 2.6vh, 1.5rem); line-height: 1.6; }
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        /* 分页指示 */
+        .pager-cur { color: #fbbf24; font-weight: 800; }
+        /* ---- 老内核兼容: 无 flex-gap, 用子元素 margin 补间距 ---- */
+        #pb-years .pb-chip + .pb-chip { margin-top: 6px; }
+        #pb-months .pb-chip + .pb-chip { margin-top: 4px; }
+        #tv-grid .tv-card + .tv-card { margin-left: 20px; }
+    </style>
+</head>
+
+<body class="min-h-screen font-sans overflow-hidden">
+
+<!-- 书架(封面墙) -->
+<div id="tv-shelf" class="px-8 py-4 overflow-hidden flex flex-col" style="height:100vh">
+    <header class="flex items-center justify-between mb-3 shrink-0">
+        <div class="flex items-center">
+            <h1 class="text-[2rem] leading-none font-black flex items-center tracking-tight">
+                <span class="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber to-amber/70 flex items-center justify-center text-ink shadow-lg shadow-amber/20 mr-2">
+                    <i class="fa-solid fa-book-open text-xl"></i>
+                </span>
+                <span class="bg-gradient-to-r from-amber via-amber/90 to-amber/60 bg-clip-text text-transparent">大可的绘本放映厅</span>
+            </h1>
+            <span id="pb-stat" class="text-lg text-slate-500 ml-4"></span>
+        </div>
+        <div class="flex items-center">
+            <div id="clock" class="text-3xl font-bold text-slate-300"></div>
+            <a href="/picturebook" class="text-slate-600 hover:text-white text-lg transition ml-4"><i class="fa-solid fa-house"></i></a>
+        </div>
+    </header>
+    <div class="flex-1 min-h-0 flex">
+        <!-- 左栏: 日期筛选 -->
+        <aside class="w-[84px] shrink-0 flex flex-col items-stretch min-h-0 mr-5">
+            <div class="text-slate-500 text-xs tracking-widest mb-2 px-1">年份</div>
+            <div id="pb-years" class="flex flex-col shrink-0"></div>
+            <div id="pb-mgroup" class="hidden flex-col min-h-0 flex-1 mt-3">
+                <div class="text-slate-500 text-xs tracking-widest mb-2 px-1">月份</div>
+                <div id="pb-months" class="flex flex-col overflow-y-auto min-h-0"></div>
+            </div>
+            <div id="pb-pager" class="mt-2 text-xs text-slate-500 shrink-0"></div>
+        </aside>
+        <!-- 右主区: 详情 + 卡片 -->
+        <main class="flex-1 min-w-0 flex flex-col">
+            <div id="pb-detail" class="shrink-0 mb-4" style="height:38vh"></div>
+            <div id="tv-grid" class="flex-1 min-h-0 flex justify-center items-stretch"></div>
+        </main>
+    </div>
+</div>
+
+<!-- 放映视图 -->
+<div id="tv-play" class="hidden fixed top-0 right-0 bottom-0 left-0 z-50 bg-[#04070d] flex flex-col">
+    <!-- 顶部进度条 -->
+    <div class="absolute top-0 left-0 right-0 h-[5px] bg-white/5 z-20">
+        <div id="prog" class="h-full bg-gradient-to-r from-amber to-amber/60" style="width:0%"></div>
+    </div>
+    <img id="tv-img" class="fade-in w-full object-contain" style="height:76vh" alt="">
+    <div class="flex-1 relative flex flex-col items-center justify-center px-[9vw] pb-[1vh] text-center
+                bg-gradient-to-b from-transparent via-[#04070d] to-[#04070d] -mt-[6vh] pt-[6vh]">
+        <p id="tv-en" class="tv-en font-extrabold text-sky-50"></p>
+        <p id="tv-zh" class="tv-zh mt-[1.6vh] text-slate-400 max-w-[66vw]"></p>
+        <div id="dots" class="absolute bottom-[3vh] flex items-center"></div>
+    </div>
+    <div class="absolute top-6 right-9 flex items-center z-20">
+        <span id="tv-hint" class="hint text-slate-600 text-lg"></span>
+        <span id="tv-pos" class="text-slate-500 text-xl font-medium ml-4"></span>
+        <button onclick="pbBack()" class="text-slate-500 hover:text-white text-4xl leading-none ml-4">&times;</button>
+    </div>
+</div>
+
+<script>
+let books = [], book = null, bookIdx = -1, bp = 0, paused = false, filmMode = false;
+let chainTimer = null;
+const audio = new Audio(); audio.preload = 'none';
+const video = document.createElement('video');
+video.className = 'fade-in'; video.controls = false; video.playsInline = true;
+video.style.cssText = 'height:100vh;width:100vw;object-fit:contain;outline:none;background:#000';
+
+function stopPageMedia() { audio.pause(); clearTimeout(audio._t); }
+
+/* ---------- 书架 ---------- */
+let view = [], yearSel = '全部', monthSel = '全部';
+let chips = [], cards = [], fZone = 0, fChip = 0, fCard = 0, page = 0;
+const PER = 3, COLS = 3;
+
+function applyFilter() {
+    view = books.filter(b => (yearSel === '全部' || (b.date || '').startsWith(yearSel))
+                          && (monthSel === '全部' || (b.date || '').startsWith(monthSel)));
+}
+function chipCls(on) { return on ? 'bg-amber/15 border-amber/60 text-amber' : 'border-line text-slate-400'; }
+
+/* 焦点高亮: WebView 里 :focus 样式不可靠, 用 .focused 类显式控制光标落点 */
+function setFocused(el) {
+    document.querySelectorAll('.pb-chip.focused, .tv-card.focused').forEach(x => x.classList.remove('focused'));
+    if (el) el.classList.add('focused');
+}
+
+function vbFor(b, withId, small) {
+    const id = withId ? `id="vb-${b.date}"` : '';
+    const st = small ? ' style="font-size:.72rem;padding:2px 9px"' : '';
+    if (b.has_video) return `<span class="badge bg-amber/90 text-ink backdrop-blur"${st}><i class="fa-solid fa-film mr-1"></i>影片</span>`;
+    if (b.video_done >= b.video_total && b.video_total > 0) return `<span ${id} class="badge bg-amber/25 text-amber backdrop-blur animate-pulse"${st}><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>合成中</span>`;
+    if (b.video_done > 0) return `<span ${id} class="badge bg-black/65 text-amber backdrop-blur"${st}><i class="fa-solid fa-film mr-1"></i>${b.video_done}/${b.video_total}</span>`;
+    if (b.video_total > 0) return `<span ${id} class="badge bg-black/65 text-slate-400 backdrop-blur"${st}>排队中</span>`;
+    return '';
+}
+function barFor(b) {
+    if (!(b.video_total > 0) || b.has_video) return '';
+    const pct = Math.round(b.video_done / b.video_total * 100);
+    return `<div class="absolute bottom-0 left-0 right-0 h-[5px] bg-black/55"><div id="vp-${b.date}" class="h-full bg-gradient-to-r from-amber to-amber/70 transition-all duration-500" style="width:${pct}%"></div></div>`;
+}
+
+async function loadShelf() {
+    try {
+        const r = await fetch('/api/picturebook');
+        if (r.status === 401) { location.href = '/login'; return; }
+        books = (await r.json()).pages || [];
+    } catch (e) { books = []; }
+    applyFilter();
+    renderFilter();
+    gotoPage(0, 0);          // 首页 6 本, 焦点落第一张
+    const nv = books.filter(b => b.has_video).length;
+    document.getElementById('pb-stat').innerHTML =
+        `<i class="fa-solid fa-book mr-1.5 text-amber"></i>${books.length} 册<span class="mx-2 text-slate-700">·</span><i class="fa-solid fa-film mr-1.5 text-amber"></i>${nv} 影片`;
+}
+
+function renderFilter() {
+    const years = [...new Set(books.map(b => (b.date || '').slice(0, 4)))].sort().reverse();
+    document.getElementById('pb-years').innerHTML = ['全部', ...years].map(y =>
+        `<button class="pb-chip w-full text-center px-1 py-1.5 rounded-lg text-sm border font-semibold ${chipCls(y === yearSel)}" data-val="${y}">${y === '全部' ? '全部' : y}</button>`).join('');
+    const months = yearSel === '全部' ? [] :
+        [...new Set(books.map(b => (b.date || '').slice(0, 7)))].filter(m => m.startsWith(yearSel)).sort().reverse();
+    const grp = document.getElementById('pb-mgroup');
+    grp.classList.toggle('hidden', !months.length);
+    grp.classList.toggle('flex', !!months.length);
+    document.getElementById('pb-months').innerHTML = months.length ? ['全部', ...months].map(m =>
+        `<button class="pb-chip w-full text-center px-1 py-[2px] rounded text-[11px] leading-tight border ${chipCls(m === monthSel)}" data-val="${m}">${m === '全部' ? '全年' : parseInt(m.slice(5)) + '月'}</button>`).join('') : '';
+    chips = [...document.querySelectorAll('.pb-chip')];
+    chips.forEach(c => {
+        c.addEventListener('focus', () => { fZone = 0; fChip = chips.indexOf(c); setFocused(c); });
+        c.addEventListener('click', () => activateChip(c.dataset.val));
+    });
+}
+function activateChip(v) {
+    if (v === '全部' || v.length === 4) { yearSel = v; monthSel = '全部'; }
+    else monthSel = v;
+    applyFilter();
+    renderFilter();
+    gotoPage(0, 0);
+    const again = [...document.querySelectorAll('.pb-chip')].find(c => c.dataset.val === v);
+    if (again) { again.focus(); fZone = 0; fChip = chips.indexOf(again); setFocused(again); }
+}
+
+function renderPager() {
+    const pages = Math.ceil(view.length / PER);
+    document.getElementById('pb-pager').innerHTML = pages > 1
+        ? `<span class="pager-cur">${page + 1}</span><span class="text-slate-600"> / ${pages} 页 · 边缘←→翻页</span>` : '';
+}
+
+/* 焦点详情面板: 与当前焦点卡片联动 */
+function renderDetail(b) {
+    const el = document.getElementById('pb-detail');
+    if (!b) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="h-full flex rounded-3xl border-2 border-line bg-gradient-to-r from-[#16243c] via-[#101c30] to-[#0c1526] shadow-2xl overflow-hidden">
+        <div class="cover-img h-full shrink-0 bd-cover" style="width:38vh">
+            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" src="/api/picturebook/${b.date}/thumb" alt="">`
+                          : `<div class="w-full h-full flex items-center justify-center text-6xl text-slate-700"><i class="fa-solid fa-feather"></i></div>`}
+        </div>
+        <div class="flex-1 min-w-0 py-4 pr-6 pl-6 flex flex-col justify-center overflow-hidden">
+            <div class="flex items-center min-w-0">
+                <span class="bd-title font-black truncate">${b.title}</span>
+                <span class="ml-3 shrink-0">${vbFor(b)}</span>
+            </div>
+            <div class="flex items-center mt-1.5 text-base text-slate-400">
+                <span class="mr-4"><i class="fa-regular fa-calendar mr-1 text-amber/80"></i>${b.date}</span>
+                <span class="mr-4"><i class="fa-solid fa-images mr-1 text-amber/80"></i>${b.page_count} 页</span>
+                ${b.has_audio ? `<span class="mr-4"><i class="fa-solid fa-volume-high mr-1 text-amber/80"></i>配音</span>` : ''}
+                <span class="text-slate-600 ml-auto text-sm shrink-0">OK 播放 · 放映中 ↑ 影片</span>
+            </div>
+            <p class="bd-zh text-slate-500 mt-2 line-clamp-2">${(b.story_zh || '').replace(/</g, '&lt;')}</p>
+        </div>
+      </div>`;
+}
+
+/* 分页网格: 每页 6 本(3×2), focusIdx>=0 时聚焦指定位置 */
+function gotoPage(p, focusIdx) {
+    const pages = Math.max(1, Math.ceil(view.length / PER));
+    page = Math.max(0, Math.min(pages - 1, p));
+    const grid = document.getElementById('tv-grid');
+    const slice = view.slice(page * PER, page * PER + PER);
+    grid.innerHTML = slice.map((b, i) => `
+        <div class="tv-card h-full flex flex-col" data-i="${i}" tabindex="0" role="button" aria-label="${b.title}">
+            <!-- 封面铺满整卡 -->
+            <div class="absolute top-0 right-0 bottom-0 left-0">
+                ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" data-thumb="${b.date}" alt="">`
+                              : `<div class="ph absolute top-0 right-0 bottom-0 left-0 flex items-center justify-center text-6xl text-slate-700"><i class="fa-solid fa-feather"></i></div>`}
+            </div>
+            <!-- 悬浮层: 顶部徽章 + 底部信息遮罩 -->
+            <div class="absolute top-2.5 left-2.5 flex">
+                ${b.page_count > 1 ? `<span class="badge bg-black/65 text-slate-200 backdrop-blur" style="font-size:.72rem;padding:2px 9px">${b.page_count} 页</span>` : ''}
+            </div>
+            <div class="absolute top-2.5 right-2.5">${vbFor(b, true, true)}</div>
+            <div class="absolute left-0 right-0 bottom-0 pt-12 pb-3 px-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                <div class="text-[1.1rem] font-bold truncate text-white">${b.title}</div>
+                <div class="mt-0.5 flex items-center justify-between text-xs text-slate-300">
+                    <span><i class="fa-regular fa-calendar mr-1"></i>${b.date}</span>
+                    <span class="text-slate-400">${b.page_count} 页</span>
+                </div>
+            </div>
+            <div class="play-hint"><div class="pi"><i class="fa-solid fa-play ml-1"></i></div></div>
+            ${barFor(b)}
+        </div>`).join('') ||
+        `<div class="col-span-full row-span-full text-center text-slate-600 py-24 text-2xl"><i class="fa-solid fa-book text-5xl mb-4 block"></i>这个时间段还没有绘本</div>`;
+    cards = [...grid.querySelectorAll('.tv-card')];
+    cards.forEach((el, i) => {
+        el.addEventListener('focus', () => {
+            fZone = 2; fCard = i; setFocused(el);
+            renderDetail(view[page * PER + i]);
+        });
+        el.addEventListener('click', () => tvOpen(page * PER + i));
+    });
+    // 分批懒加载缩略图 (老内核无 IntersectionObserver 时直接全部加载)
+    if ('IntersectionObserver' in window) {
+        const io = new IntersectionObserver((ents) => {
+            ents.forEach(en => {
+                if (!en.isIntersecting) return;
+                const im = en.target;
+                io.unobserve(im);
+                im.src = `/api/picturebook/${im.dataset.thumb}/thumb`;
+            });
+        }, { rootMargin: '200px' });
+        grid.querySelectorAll('img[data-thumb]').forEach(im => io.observe(im));
+    } else {
+        grid.querySelectorAll('img[data-thumb]').forEach(im => { im.src = `/api/picturebook/${im.dataset.thumb}/thumb`; });
+    }
+    renderPager();
+    if (focusIdx >= 0 && cards.length) {
+        fCard = Math.min(focusIdx, cards.length - 1);
+        fZone = 2;
+        cards[fCard].focus();
+        setFocused(cards[fCard]);
+        renderDetail(view[page * PER + fCard]);
+    } else if (!focusIdx) {
+        // 不聚焦时详情显示本页第一本
+        renderDetail(view[page * PER]);
+    }
+}
+
+/* 视频进度轻量轮询: 只更新徽章/进度条/详情面板/统计, 不重建网格(保留焦点) */
+async function refreshVideos() {
+    if (!document.getElementById('tv-play').classList.contains('hidden')) return;
+    try {
+        const r = await fetch('/api/picturebook');
+        if (!r.ok) return;
+        books = (await r.json()).pages || [];
+        applyFilter();
+        const nv = books.filter(b => b.has_video).length;
+        const stat = document.getElementById('pb-stat');
+        if (stat) stat.innerHTML =
+            `<i class="fa-solid fa-book mr-1.5 text-amber"></i>${books.length} 册<span class="mx-3 text-slate-700">|</span><i class="fa-solid fa-film mr-1.5 text-amber"></i>${nv} 影片`;
+        view.forEach(b => {
+            const badge = document.getElementById(`vb-${b.date}`);
+            const bar = document.getElementById(`vp-${b.date}`);
+            if (bar) {
+                bar.style.width = `${b.video_total ? Math.round(b.video_done / b.video_total * 100) : 0}%`;
+                if (b.has_video && bar.parentNode) bar.parentNode.remove();
+            }
+            if (badge) {
+                if (b.has_video) { badge.outerHTML = `<span class="badge bg-amber/90 text-ink backdrop-blur"><i class="fa-solid fa-film mr-1"></i>影片</span>`; }
+                else if (b.video_done >= b.video_total && b.video_total > 0) badge.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>合成中`;
+                else if (b.video_done > 0) badge.innerHTML = `<i class="fa-solid fa-film mr-1"></i>${b.video_done}/${b.video_total}`;
+            }
+        });
+        // 详情面板显示的书若在当前页, 联动刷新
+        const cur = view[page * PER + fCard];
+        if (cur && fZone === 2) renderDetail(cur);
+    } catch (e) {}
+}
+setInterval(refreshVideos, 15000);
+
+/* 时钟 */
+function tickClock() {
+    const d = new Date();
+    document.getElementById('clock').textContent =
+        `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+tickClock(); setInterval(tickClock, 15000);
+
+/* DPAD 焦点引擎 v4: 左侧竖排筛选栏 / 单行卡片, ←→切换卡片(边缘翻页), ↑↓在栏与卡片间移动 */
+function focusMove(dr, dc) {
+    if (fZone === 0) {                      /* 左侧筛选栏(竖排) */
+        if (dr) { const t = chips[Math.min(chips.length - 1, Math.max(0, fChip + dr))]; if (t) t.focus(); return; }
+        if (dc) { gotoPage(page, fCard); }   /* → 回到卡片区 */
+        return;
+    }
+    /* 卡片行 (单行 3 张) */
+    if (!cards.length) return;
+    let c = fCard % COLS;
+    if (dc > 0) {
+        if (c < COLS - 1) c++;
+        else if (page < Math.ceil(view.length / PER) - 1) { gotoPage(page + 1, 0); return; }   // 右缘 → 下一页
+    }
+    if (dc < 0) {
+        if (c > 0) c--;
+        else if (page > 0) { gotoPage(page - 1, COLS - 1); return; }                            // 左缘 → 上一页
+    }
+    if (dr < 0) { fZone = 0; const t = chips[Math.max(0, fChip)]; if (t) t.focus(); return; }    /* ↑ → 筛选栏 */
+    fCard = c; if (cards[c]) cards[c].focus();
+}
+
+/* ---------- 打开/放映 ---------- */
+async function tvOpen(i) {
+    document.getElementById('tv-pos').innerHTML = '<i class="fa-solid fa-circle-notch spin"></i>';
+    try {
+        const r = await fetch(`/api/picturebook/${view[i].date}/story`);
+        if (!r.ok) throw 0;
+        book = await r.json();
+    } catch (e) { return; }
+    bookIdx = i;
+    bp = 0; paused = false; filmMode = false;
+    clearTimeout(chainTimer);
+    stopPageMedia(); video.pause(); video.remove();
+    document.getElementById('tv-shelf').classList.add('hidden');
+    document.getElementById('tv-play').classList.remove('hidden');
+    const h = document.getElementById('tv-hint');
+    h.textContent = book.has_video ? '←/→ 翻页 · OK/空格 暂停 · ↑ 整本影片 · 返回键 退出连播'
+                                   : '←/→ 翻页 · OK/空格 暂停 · 返回键 退出连播';
+    h.classList.remove('hint-hide');
+    setTimeout(() => h.classList.add('hint-hide'), 3000);
+    tvPage();
+}
+function tvExit() {
+    stopPageMedia(); filmMode = false;
+    clearTimeout(chainTimer);
+    video.pause(); video.remove();
+    document.getElementById('tv-play').classList.add('hidden');
+    document.getElementById('tv-shelf').classList.remove('hidden');
+    gotoPage(Math.floor((bookIdx >= 0 ? bookIdx : 0) / PER), (bookIdx >= 0 ? bookIdx : 0) % PER);
+}
+
+/** 壳 App 返回键/物理 Esc 统一入口: 影片→放映→书架 */
+function pbBack() {
+    if (filmMode) { exitFilm(); return 'film'; }
+    if (!document.getElementById('tv-play').classList.contains('hidden')) { tvExit(); return 'exit'; }
+    return 'shelf';
+}
+
+/** 一本书播完 → 过场 3.5 秒 → 自动播下一本; 全部播完回书架 */
+function chainNext() {
+    const ni = bookIdx + 1;
+    if (ni >= view.length) { tvExit(); return; }
+    stopPageMedia();
+    document.getElementById('tv-img').style.display = 'none';
+    document.getElementById('tv-en').innerHTML =
+        `<span id="chain-card" class="inline-block">
+           <span class="block text-amber text-[1.4rem] tracking-[.3em] mb-3">下一本</span>
+           <span class="block">《${view[ni].title}》</span>
+           <span class="block text-slate-500 text-[1.2rem] mt-2 font-normal">${view[ni].date}</span>
+         </span>`;
+    document.getElementById('tv-zh').innerHTML =
+        `<div class="w-[38vw] h-[6px] bg-white/10 rounded-full overflow-hidden mx-auto">
+           <div id="chain-bar" class="h-full bg-amber/70 rounded-full"></div>
+         </div>`;
+    document.getElementById('tv-pos').textContent = '自动连播';
+    chainTimer = setTimeout(() => tvOpen(ni), 3500);
+}
+
+function renderDots() {
+    const d = document.getElementById('dots');
+    if (!book || book.pages.length > 14) { d.innerHTML = ''; return; }
+    d.innerHTML = book.pages.map((_, k) =>
+        `<span class="rounded-full transition-all mr-1.5 ${k === bp ? 'w-7 h-2.5 bg-amber' : 'w-2.5 h-2.5 bg-white/20'}"></span>`).join('');
+}
+
+function tvPage() {
+    if (!book) return;
+    const pg = book.pages[bp];
+    if (!pg) { chainNext(); return; }
+    const img = document.getElementById('tv-img');
+    img.classList.remove('fade-in'); void img.offsetWidth; img.classList.add('fade-in');
+    img.style.display = '';
+    img.onerror = () => img.style.display = 'none';
+    img.src = `/api/picturebook/${book.date}/image/${pg.seq}?t=${Date.now()}`;
+    const en = document.getElementById('tv-en'), zh = document.getElementById('tv-zh');
+    en.classList.remove('text-in'); zh.classList.remove('text-in');
+    void en.offsetWidth;
+    en.classList.add('text-in'); zh.classList.add('text-in');
+    en.textContent = pg.text_en || '';
+    zh.textContent = pg.text_zh || '';
+    document.getElementById('tv-pos').textContent = `📖 绘本 ${bp + 1} / ${book.pages.length}`;
+    document.getElementById('prog').style.width = `${((bp + 1) / book.pages.length) * 100}%`;
+    renderDots();
+    if (pg.has_audio) {
+        audio.src = `/api/picturebook/${book.date}/audio/${pg.seq}`;
+        audio.play().catch(() => {});
+    } else {
+        clearTimeout(audio._t);
+        audio._t = setTimeout(() => tvNext(), 6000);
+    }
+}
+function tvNext(auto = true) {
+    if (auto && paused) return;
+    if (bp < book.pages.length - 1) { bp += 1; tvPage(); }
+    else chainTimer = setTimeout(chainNext, 4000);
+}
+audio.addEventListener('ended', () => { clearTimeout(audio._t); audio._t = setTimeout(() => tvNext(), 2500); });
+
+/* ---------- 整本影片 ---------- */
+function playFilm() {
+    if (!book || !book.has_video || filmMode) return;
+    stopPageMedia();
+    filmMode = true;
+    document.getElementById('tv-img').style.display = 'none';
+    document.getElementById('tv-en').textContent = '';
+    document.getElementById('tv-zh').textContent = '';
+    document.getElementById('dots').innerHTML = '';
+    document.getElementById('prog').style.width = '100%';
+    document.getElementById('tv-pos').textContent = '🎬 影片';
+    video.src = `/api/picturebook/${book.date}/video?v=${Date.now()}`;
+    if (!video.parentNode) document.getElementById('tv-play').prepend(video);
+    video.play().catch(() => {});
+}
+function exitFilm() {
+    if (!filmMode) return;
+    filmMode = false;
+    video.pause(); video.removeAttribute('src'); video.load(); video.remove();
+    tvPage();
+}
+video.addEventListener('ended', () => { if (filmMode) chainNext(); });
+
+/* ---------- 键盘/遥控器 ---------- */
+document.addEventListener('keydown', e => {
+    const k = e.key;
+    const playing = !document.getElementById('tv-play').classList.contains('hidden');
+    if (!playing) {   /* 书架: 三区 DPAD 导航 + OK 激活 */
+        if (k === 'ArrowRight') { focusMove(0, 1); e.preventDefault(); }
+        else if (k === 'ArrowLeft') { focusMove(0, -1); e.preventDefault(); }
+        else if (k === 'ArrowDown') { focusMove(1, 0); e.preventDefault(); }
+        else if (k === 'ArrowUp') { focusMove(-1, 0); e.preventDefault(); }
+        else if (k === 'Enter') {
+            e.preventDefault();
+            if (fZone === 0) { const t = chips[fChip]; if (t) t.click(); }
+            else tvOpen(page * PER + fCard);
+        }
+        return;
+    }
+    if (filmMode) {
+        if (k === 'Escape' || k === 'ArrowDown') exitFilm();
+        else if (k === ' ') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+        else if (k === 'ArrowLeft') video.currentTime = Math.max(0, video.currentTime - 10);
+        else if (k === 'ArrowRight') video.currentTime = Math.min(video.duration || 0, video.currentTime + 10);
+        return;
+    }
+    if (k === 'Escape') pbBack();
+    else if (k === 'ArrowUp' && book && book.has_video) playFilm();
+    else if (k === 'ArrowRight') { paused = false; stopPageMedia(); tvNext(false); }
+    else if (k === 'ArrowLeft') { paused = false; stopPageMedia(); if (bp > 0) { bp -= 1; tvPage(); } }
+    else if (k === ' ' || k === 'Enter') {
+        e.preventDefault();
+        if (audio.paused && audio.src) { paused = false; audio.play(); }
+        else { paused = true; audio.pause(); }
+    }
+});
+
+loadShelf();
+</script>
+</body>
+
+</html>

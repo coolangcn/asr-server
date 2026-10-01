@@ -14,8 +14,8 @@
 # ==============================================
 
 MOUNT_POINT="/Volumes/download"
-SMB_URL="smb://admin:cncncncn@192.168.1.188/download"
-SMB_URL_CLI="//admin:cncncncn@192.168.1.188/download"
+SMB_URL="smb://admin:74123698cN@192.168.1.188/download"
+SMB_URL_CLI="//admin:74123698cN@192.168.1.188/download"
 CHECK_PATH="/Volumes/download/records"
 PROBE_TIMEOUT=60
 UNMOUNT_TIMEOUT=30

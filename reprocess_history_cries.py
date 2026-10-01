@@ -40,7 +40,8 @@ def _admin_headers():
 
 
 _ADMIN_HEADERS = _admin_headers()
-SOURCE_DIR = "/Volumes/download/records/Sony-2"
+# 【2026-09-26】支持环境变量指定源设备（如补跑 Sony-1 的积压文件），默认仍为 Sony-2
+SOURCE_DIR = os.getenv("REPROCESS_SOURCE_DIR", "/Volumes/download/records/Sony-2")
 PROCESSED_DIR = os.path.join(SOURCE_DIR, "processed")
 
 # 配置详细日志记录器（只输出到 asr-a.log）
@@ -603,7 +604,10 @@ if __name__ == "__main__":
     
     log_detail(f"[*] DB 缓存中有 {cached_count} 个文件，新鲜度: {'✅ 新鲜' if cache_fresh else '⚠️ 过期/无TTL'}", 'info')
 
-    if cached_count > 0 and cache_fresh:
+    # 【2026-09-26 修复】--replace 定向单日模式必须跳过缓存快捷路径：
+    # 否则一旦缓存被某次单日受限刷盘覆盖（只含一天的文件），
+    # 后续所有日期都会"缓存命中→日期过滤后 0 个文件→守卫秒退"，整批空转
+    if cached_count > 0 and cache_fresh and not (filter_date and force_replace):
         # DB 缓存命中！直接从 Redis 获取文件列表
         log_detail(f"[*] ✅ Redis 缓存命中，使用缓存文件列表（极速模式）", 'info')
         all_files = get_file_cache_from_redis()  # 返回 [{filepath, filename}, ...]
@@ -642,8 +646,19 @@ if __name__ == "__main__":
         else:
             completed_dates_set = set()
 
+        # 【2026-09-26】定向单日(--replace)模式下只扫当天目录：全量扫 25.8 万文件
+        # 既慢(8分钟)又会被 SMB 挂起目录卡死，单日扫描 3 秒完成且互不影响
+        _scan_root = PROCESSED_DIR
+        if filter_date and force_replace:
+            _d = os.path.join(PROCESSED_DIR, filter_date)
+            _s = os.path.join(SOURCE_DIR, filter_date)
+            if os.path.isdir(_d):
+                _scan_root = _d
+            elif os.path.isdir(_s):
+                _scan_root = _s
+            log_detail(f"    📂 定向扫描根目录: {_scan_root}", 'info')
         cache_count = refresh_file_cache(
-            PROCESSED_DIR,
+            _scan_root,
             audio_exts=AUDIO_EXTS,
             progress_callback=on_cache_progress,
             log_callback=lambda msg: log_detail(f"    {msg}", 'info'),
