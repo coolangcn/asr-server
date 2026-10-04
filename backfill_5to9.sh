@@ -14,18 +14,26 @@ LOG=backfill_5to9.log
 SNAP=/Users/mac/asr-server/backfill_dates_snapshot.txt
 FAILED=/Users/mac/asr-server/backfill_failed_dates.txt
 
-# 带超时的 ls（SMB 挂载假死时 ls 会无限期挂起，卡死整个补跑）
-# 注意：探测用 ls 的 stdout 必须丢弃（只要退出码），否则在 $() 里运行时
-# 212 行目录名会混进返回值，数字比较永远失败（2026-09-20 v2 启动卡死根因）
+# 带超时的目录计数
+# v3 (2026-10-04) TCC 修复：launchd 环境下 /bin/ls 访问 /Volumes 被 macOS 磁盘权限拦截
+#   (EPERM，退出码非 0 → 旧版误判 TIMEOUT)，连续 10 天凌晨补跑失败的真因即此；
+#   只有 asr_env python3 已获 TCC 授权（mirror_sync pull 同款验证）。
+#   改用 python listdir + daemon 线程硬超时（SMB 假死 50s 放弃，进程不吊死）。
 safe_ls_count() {
-    ls "$1" > /dev/null 2>&1 &
-    local pid=$!
-    ( sleep 50; kill -9 $pid 2>/dev/null ) & local killer=$!
-    wait $pid 2>/dev/null
-    local rc=$?
-    kill $killer 2>/dev/null; wait $killer 2>/dev/null
-    [ $rc -ne 0 ] && { echo "TIMEOUT"; return; }
-    ls "$1" 2>/dev/null | wc -l | tr -d ' '
+    "$PY" - "$1" <<'PYEOF'
+import os, sys, threading
+path = sys.argv[1]
+out = ["TIMEOUT"]
+def scan():
+    try:
+        out[0] = str(len([n for n in os.listdir(path) if not n.startswith(".")]))
+    except OSError:
+        pass
+t = threading.Thread(target=scan, daemon=True)
+t.start()
+t.join(50)
+print(out[0])
+PYEOF
 }
 
 # ====== 启动：挂载健康验证 + 日期快照 ======
@@ -44,7 +52,24 @@ if [ "$total_dates" -lt 130 ]; then
     echo "[$(date '+%m-%d %H:%M:%S')] ❌ 挂载日期列表持续不完整，放弃启动（防止假完成）" | tee -a "$LOG"
     exit 4
 fi
-ls "$PROC" 2>/dev/null | grep -E '^2026-(0[5-9])-' | sort > "$SNAP"
+# v3：裸 ls 在 launchd 下被 TCC 拦截，改用 python 生成快照（仅列 2026-05~09 日期目录）
+"$PY" - "$PROC" "$SNAP" <<'PYEOF'
+import os, sys, threading
+proc, snap = sys.argv[1], sys.argv[2]
+names = []
+def scan():
+    try:
+        names.extend(n for n in os.listdir(proc)
+                     if n[:5] == "2026-" and n[5:7] in ("05", "06", "07", "08", "09"))
+    except OSError:
+        pass
+t = threading.Thread(target=scan, daemon=True)
+t.start()
+t.join(50)
+if names:
+    with open(snap, "w") as f:
+        f.write("\n".join(sorted(names)) + "\n")
+PYEOF
 snap_n=$(wc -l < "$SNAP" | tr -d ' ')
 echo "[$(date '+%m-%d %H:%M:%S')] ✅ 挂载健康（processed 可见 $total_dates 个目录），日期快照 $snap_n 天 (5-9月) 已存 $SNAP"
 
