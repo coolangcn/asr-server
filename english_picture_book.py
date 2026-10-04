@@ -28,6 +28,7 @@ import asyncio
 import argparse
 import tempfile
 import subprocess
+import threading
 from datetime import datetime, date, timedelta
 
 try:
@@ -48,7 +49,7 @@ IMG_DIR = os.path.join(BOOK_DIR, 'images')
 AUDIO_DIR = os.path.join(BOOK_DIR, 'audio')
 
 BIRTHDAY = date(2023, 8, 9)
-PAGE_MIN, PAGE_MAX = 3, 10  # 页数由素材量动态决定
+PAGE_MIN, PAGE_MAX = 4, 20  # 页数由素材量动态决定(2026-10-02: 素材 28→86 条/天, 上限 14→20 配合放宽)
 
 # 固定角色设定: 每页插画 prompt 都带上, 保证全书形象一致
 CHAR_SHEET = (
@@ -65,7 +66,9 @@ STORY_PROMPT = """你是一位儿童英语启蒙绘本作家。下面是一个{a
 (可能有识别噪声、中英混杂、无意义碎语，说话人在方括号里)。
 
 请根据这些真实素材，把大可的今天温柔地改编成一册连续绘本小故事。
-页数由素材决定：素材丰富、当天做的事情多，就多分几页（最多 {pmax} 页）；素材单薄就紧凑一些（最少 {pmin} 页）。今日共 {n_moments} 条有效片段。
+页数由素材决定：今日共 {n_moments} 条有效片段。若片段较多（{n_moments} ≥ 40 条），
+   页数至少要 {prich} 页（上限 {pmax} 页），把当天不同时段的多个事件都编进故事，不要只提炼一条主线；
+   片段少就紧凑一些（最少 {pmin} 页）。
 1. 不是逐字复述，而是把当天真实发生的小事串联成有起承转合的小故事，允许适当加入一点点想象力
 2. 每页 1-2 句极简英文（{age}岁孩子能听懂的词汇，现在简单时为主），每页配中文翻译
 3. 页与页之间要连贯，像翻页讲故事；最后一页给一个温暖收尾
@@ -90,21 +93,84 @@ def age_of(day: date) -> int:
     return day.year - BIRTHDAY.year - ((day.month, day.day) < (BIRTHDAY.month, BIRTHDAY.day))
 
 
+# ---------------- 故事主笔 (NAS CPA gemini-3.8-flash-high, 失败回退 Google API) ----------------
+
+def story_llm_generate(prompt):
+    """用 CPA 网关的 gemini-3.8-flash-high(high 思考档)写故事; 复用 IMAGE_CPA 连接配置"""
+    base = os.getenv('IMAGE_CPA_BASE_URL', '').strip('"').rstrip('/')
+    key = os.getenv('IMAGE_CPA_API_KEY', '').strip('"')
+    model = os.getenv('PB_STORY_CPA_MODEL', 'gemini-3.8-flash-high').strip('"')
+    if not (base and key):
+        return None
+    try:
+        resp = requests.post(
+            f"{base}/chat/completions",
+            headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+            json={
+                'model': model,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': 0.7,
+                'max_tokens': 12000,  # 思考模型: 预算需覆盖思考+正文
+            },
+            timeout=180,
+        )
+        resp.raise_for_status()
+        return resp.json()['choices'][0]['message']['content']
+    except Exception as e:
+        logger.warning("CPA 故事生成失败(%s): %s", model, e)
+        return None
+
+
+def _oa_story_llm(env_prefix, default_model, prompt):
+    """OpenAI 兼容网关通用故事主笔 (PB_*_BASE_URL/_API_KEY/_MODEL), 思考模型需足额 max_tokens"""
+    base = os.getenv(f'{env_prefix}_BASE_URL', '').strip('"').rstrip('/')
+    key = os.getenv(f'{env_prefix}_API_KEY', '').strip('"')
+    model = os.getenv(f'{env_prefix}_MODEL', default_model).strip('"')
+    if not (base and key):
+        logger.warning("%s 主笔未配置(%s_*), 跳过", env_prefix, env_prefix)
+        return None
+    try:
+        resp = requests.post(
+            f"{base}/chat/completions",
+            headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+            json={
+                'model': model,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': 0.7,
+                'max_tokens': 12000,
+            },
+            timeout=240,
+        )
+        resp.raise_for_status()
+        return resp.json()['choices'][0]['message']['content']
+    except Exception as e:
+        logger.warning("%s(%s) 故事生成失败: %s", env_prefix, model, e)
+        return None
+
+
+# 变体对照册 → 主笔函数 (失败不回退: 两册同故事无对照意义)
+VARIANT_LLMS = {
+    'grok': lambda p: _oa_story_llm('PB_GROK', 'grok-chat-fast', p),
+    'agnes': lambda p: _oa_story_llm('PB_AGNES', 'agnes-2.5-pro-alpha', p),
+}
+
+
 # ---------------- 片段挑选 ----------------
 
-def pick_moments(segs, max_lines=28):
-    """从当天语音段里挑有信息量的片段: 每小时取最长的 2-3 条, 按时间排序"""
+def pick_moments(segs, max_lines=90):
+    """从当天语音段里挑有信息量的片段: 每小时自适应(稀疏时段全取, 密集时段取最长15条), 按时间排序。
+    2026-10-02: 上限 28→90 条、截断 80→120 字、过滤 <8 字碎语 (9-30 实测覆盖率 23%→~75%)"""
     by_hour = {}
     for s in segs:
-        if len(s['text']) < 4:
+        if len(s['text']) < 8:
             continue
         hour = (s['recording_time'] or '00:00')[:2]
         by_hour.setdefault(hour, []).append(s)
     moments = []
     for hour in sorted(by_hour):
-        lines = sorted(by_hour[hour], key=lambda s: -len(s['text']))[:3]
+        lines = sorted(by_hour[hour], key=lambda s: -len(s['text']))[:15]
         for s in lines:
-            moments.append(f"[{s['spk']} {s['recording_time']}] {s['text'][:80]}")
+            moments.append(f"[{s['spk']} {s['recording_time']}] {s['text'][:120]}")
     return moments[:max_lines]
 
 
@@ -197,17 +263,28 @@ def _img_grok(prompt):
     return None
 
 
-def gen_page_image(scene: str, char_sheet: str):
-    """按三通道顺序生成一页插画, 返回 bytes 或 None"""
+# 每册专属生图通道 (对照实验: 三个模型家族各自包办一册的插画); 首选失败按序回退
+_IMG_CPA = ('CPA', _img_cpa)
+_IMG_NEWAPI = ('new-api', _img_newapi)
+_IMG_GROK = ('Grok', _img_grok)
+IMG_CHANNELS = {
+    'cpa':   (_IMG_CPA, _IMG_NEWAPI, _IMG_GROK),
+    'grok':  (_IMG_GROK, _IMG_CPA, _IMG_NEWAPI),
+    'agnes': (_IMG_NEWAPI, _IMG_CPA, _IMG_GROK),  # agnes-image-2.5-flash 在 new-api 网关
+}
+
+
+def gen_page_image(scene: str, char_sheet: str, engine: str = 'cpa'):
+    """生成一页插画: engine 对应的专属通道优先, 失败按序回退。返回 (bytes, 通道名) 或 (None, '')"""
     prompt = (
         f"Children's picture book page, warm watercolor style, consistent character design. "
         f"{char_sheet}. Scene: {scene}. Cozy family home, soft pastel colors, no text."
     )
-    for fn in (_img_newapi, _img_cpa, _img_grok):
+    for ch, fn in IMG_CHANNELS.get(engine, IMG_CHANNELS['cpa']):
         data = fn(prompt)
         if data:
-            return data
-    return None
+            return data, ch
+    return None, ''
 
 
 # ---------------- TTS (Fish Audio 多角色优先, edge-tts 兜底; ffmpeg 拼接) ----------------
@@ -405,22 +482,39 @@ def tts_page(text_en: str, text_zh: str, out_path: str):
 
 # ---------------- 生成一册书 ----------------
 
-def write_book(day: date):
-    """生成 v2 多页绘本, 返回 book dict 或 None"""
+def write_book(day: date, engine: str = 'cpa', tag: str = ''):
+    """生成 v2 多页绘本, 返回 book dict 或 None。
+    engine: 故事主笔 ('cpa'=gemini-3.8-flash-high / 'grok'=grok-4.7 / 'agnes'=agnes-2.5-flash)
+    tag:    文件名变体后缀 (''=主册, 'grok'/'agnes'=对照版) → {date}_grok_pN.png 等"""
     segs = fetch_day_segments(day)
     moments = pick_moments(segs)
     if len(moments) < 3:
-        logger.info("[%s] 有效片段不足(%d), 跳过绘本", day, len(moments))
+        logger.info("[%s%s] 有效片段不足(%d), 跳过绘本", day, f"/{tag}" if tag else "", len(moments))
         return None
 
     age = age_of(day)
-    text = gemini_generate(
-        STORY_PROMPT.format(age=age, pmin=PAGE_MIN, pmax=PAGE_MAX,
-                            n_moments=len(moments), moments="\n".join(moments)),
-        max_output=6000, temperature=0.7,
-    )
+    prich = max(PAGE_MIN + 1, PAGE_MAX * 2 // 3)  # 素材丰富时的最低页数(20 上限 → 13)
+    full_prompt = STORY_PROMPT.format(age=age, pmin=PAGE_MIN, pmax=PAGE_MAX, prich=prich,
+                                      n_moments=len(moments), moments="\n".join(moments))
+    # 主笔选择: 变体册(grok/agnes)失败不回退(两册同故事无对照意义), 直接跳过等下次重试
+    text = None
+    if engine in VARIANT_LLMS:
+        text = VARIANT_LLMS[engine](full_prompt)
+        if text:
+            logger.info("[%s%s] 故事主笔: %s", day, f"/{tag}" if tag else "", engine)
+        else:
+            logger.warning("[%s%s] %s 主笔不可用, 跳过本次对照册", day, f"/{tag}" if tag else "", engine)
+            return None
     if not text:
-        logger.warning("[%s] 故事生成失败(LLM 无响应)", day)
+        text = story_llm_generate(full_prompt)
+        if text:
+            logger.info("[%s%s] 故事主笔: CPA gemini-3.8-flash-high", day, f"/{tag}" if tag else "")
+    if not text:
+        text = gemini_generate(full_prompt, max_output=6000, temperature=0.7)
+        if text:
+            logger.info("[%s%s] 故事主笔: 回退 Google API", day, f"/{tag}" if tag else "")
+    if not text:
+        logger.warning("[%s%s] 故事生成失败(LLM 无响应)", day, f"/{tag}" if tag else "")
         return None
     m = re.search(r'\{.*\}', text, re.S)
     if not m:
@@ -438,6 +532,7 @@ def write_book(day: date):
         return None
     raw_pages = raw_pages[:PAGE_MAX]
 
+    sfx = f"_{tag}" if tag else ""
     char_sheet = CHAR_SHEET.replace('3-year-old', f'{age}-year-old')
     os.makedirs(IMG_DIR, exist_ok=True)
     os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -460,20 +555,21 @@ def write_book(day: date):
 
         # 逐页插画 → 落盘, JSON 里存相对路径
         if scene:
-            img_path = os.path.join(IMG_DIR, f"{day.isoformat()}_p{page['seq']}.png")
+            img_path = os.path.join(IMG_DIR, f"{day.isoformat()}{sfx}_p{page['seq']}.png")
             try:
-                data = gen_page_image(scene, char_sheet)
+                data, ch = gen_page_image(scene, char_sheet, engine)
                 if data:
                     with open(img_path, 'wb') as f:
                         f.write(data)
-                    page['image'] = f"images/{day.isoformat()}_p{page['seq']}.png"
-                    logger.info("[%s] p%d 插画完成 (%.0fKB)", day, page['seq'], len(data) / 1024)
+                    page['image'] = f"images/{day.isoformat()}{sfx}_p{page['seq']}.png"
+                    page['image_engine'] = ch
+                    logger.info("[%s%s] p%d 插画完成 (%.0fKB, %s)", day, sfx, page['seq'], len(data) / 1024, ch)
             except Exception as e:
-                logger.warning("[%s] p%d 插画失败: %s", day, page['seq'], e)
+                logger.warning("[%s%s] p%d 插画失败: %s", day, sfx, page['seq'], e)
 
         # 逐页 TTS: Fish Audio 多角色优先, edge-tts 单声线兜底
-        audio_rel = f"audio/{day.isoformat()}_p{page['seq']}.mp3"
-        audio_path = os.path.join(AUDIO_DIR, f"{day.isoformat()}_p{page['seq']}.mp3")
+        audio_rel = f"audio/{day.isoformat()}{sfx}_p{page['seq']}.mp3"
+        audio_path = os.path.join(AUDIO_DIR, f"{day.isoformat()}{sfx}_p{page['seq']}.mp3")
         try:
             done = fish_tts_page(lines, audio_path) if lines else None
             if done:
@@ -485,9 +581,9 @@ def write_book(day: date):
                     page['audio'] = audio_rel
                     page['audio_engine'] = 'edge-tts'
             if done:
-                logger.info("[%s] p%d 语音完成 (%s)", day, page['seq'], page['audio_engine'])
+                logger.info("[%s%s] p%d 语音完成 (%s)", day, sfx, page['seq'], page['audio_engine'])
         except Exception as e:
-            logger.warning("[%s] p%d 语音失败: %s", day, page['seq'], e)
+            logger.warning("[%s%s] p%d 语音失败: %s", day, sfx, page['seq'], e)
 
         pages.append(page)
 
@@ -500,7 +596,9 @@ def write_book(day: date):
         'pages': pages,
         'moments_used': len(moments),
     }
-    logger.info("[%s] 绘本 v2 生成完成: 《%s》 %d 页", day, book['title'], len(pages))
+    if tag:
+        book['engine'] = engine  # 变体册标记主笔模型
+    logger.info("[%s%s] 绘本 v2 生成完成: 《%s》 %d 页", day, sfx, book['title'], len(pages))
     return book
 
 
@@ -513,13 +611,15 @@ def render_email_text(book):
     return '\n'.join(lines)
 
 
-def process_day(day: date, push: bool = False, force: bool = False, make_video: bool = True):
+def process_day(day: date, push: bool = False, force: bool = False, make_video: bool = True,
+                variant: str = ''):
+    """生成一天绘本并落盘。variant='' 主册(CPA主笔+邮件+视频); variant='grok'/'agnes' 对照册(对应主笔, 无视频/邮件)"""
     os.makedirs(BOOK_DIR, exist_ok=True)
-    out = os.path.join(BOOK_DIR, f"{day.isoformat()}.json")
+    out = os.path.join(BOOK_DIR, f"{day.isoformat()}{('.' + variant) if variant else ''}.json")
     if os.path.exists(out) and not force:
         page = load_json(out, None)
         if page:
-            logger.info("[%s] 已有绘本页, 跳过生成 (--force 可重生成)", day)
+            logger.info("[%s%s] 已有绘本页, 跳过生成 (--force 可重生成)", day, f"/{variant}" if variant else "")
             book = page if page.get('pages') else {
                 'version': 1, 'date': page.get('date'), 'title': page.get('title'),
                 'pages': [{'seq': 1, 'text_en': page.get('story_en', ''),
@@ -528,10 +628,12 @@ def process_day(day: date, push: bool = False, force: bool = False, make_video: 
         else:
             return
     else:
-        book = write_book(day)
+        book = write_book(day, engine=variant or 'cpa', tag=variant)
         if not book:
             return
         save_json(out, book)
+        if variant:
+            return book  # 变体册: 不做视频/邮件
         if make_video:
             try:
                 final = make_book_video(day.isoformat(), book)
@@ -805,12 +907,15 @@ def main():
     ap.add_argument('--video', action='store_true', help='只为已有绘本补做视频(不重新生成故事)')
     ap.add_argument('--revoice', action='store_true', help='用当前音色为已有绘本重新配音(不改故事/插画)')
     ap.add_argument('--all-history', action='store_true', help='按 DB 全部有转写日期补跑(跳过已有, 不做视频)')
+    ap.add_argument('--grok', action='store_true', help='只生成 Grok 对照册(与 --date/--force 配合)')
+    ap.add_argument('--agnes', action='store_true', help='只生成 Agnes 对照册(与 --date/--force 配合)')
     args = ap.parse_args()
 
     if args.revoice:
         if args.all_history:
-            books = sorted((f[:-5] for f in os.listdir(BOOK_DIR) if f.endswith('.json')),
-                           reverse=True)  # 最新日期优先, 旧的慢慢补
+            books = sorted((f[:-5] for f in os.listdir(BOOK_DIR)
+                            if f.endswith('.json') and not re.search(r'\.[a-z0-9_-]{1,20}\.json$', f)),
+                           reverse=True)  # 最新日期优先, 旧的慢慢补 (排除 .grok.json/.agnes.json 等变体册)
             logger.info("revoice 全部 %d 册 (最新优先)...", len(books))
             for i, d in enumerate(books, 1):
                 try:
@@ -871,7 +976,33 @@ def main():
         logger.info("补写完成, 书架共 %d 本", len([f for f in os.listdir(BOOK_DIR) if f.endswith('.json')]))
     else:
         day = datetime.strptime(args.date, '%Y-%m-%d').date() if args.date else date.today()
+        single = [('grok', args.grok), ('agnes', args.agnes)]
+        for v, flag in single:
+            if flag:
+                # 只生成该变体对照册 (可 --force 重生成)
+                process_day(day, push=False, force=args.force, variant=v)
+                return
+        # 每日主流程: 主册(CPA) 与 Grok/Agnes 对照册并行生成, 全部完成后进程才退出
+        variants = ['grok', 'agnes']
+        variant_errs = {}
+
+        def _variant_worker(v):
+            try:
+                process_day(day, push=False, force=args.force, variant=v)
+            except Exception as e:
+                variant_errs[v] = e
+                logger.warning("[%s] %s 对照册失败(不影响主册): %s", day, v, e)
+
+        threads = []
+        for v in variants:
+            t = threading.Thread(target=_variant_worker, args=(v,), name=f'{v}-book', daemon=True)
+            t.start()
+            threads.append(t)
         process_day(day, push=args.push, force=args.force)
+        for t in threads:
+            t.join(timeout=3600)  # 等并行册收尾(launchd one-shot 进程不能提前退出)
+        for v in variant_errs:
+            logger.warning("[%s] %s 对照册本次未完成, 明天自动重试", day, v)
 
 
 if __name__ == '__main__':

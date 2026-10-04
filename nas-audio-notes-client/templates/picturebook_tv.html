@@ -166,6 +166,13 @@ let view = [], yearSel = '全部', monthSel = '全部';
 let chips = [], cards = [], fZone = 0, fChip = 0, fCard = 0, page = 0;
 const PER = 3, COLS = 3;
 
+/* 模型变体徽章: 变体册(对照版)右下角显示主笔模型 */
+const VB_META = {
+    grok:  { icon: 'fa-robot', label: 'Grok',  bg: 'rgba(56,189,248,.2)', fg: '#7dd3fc', bd: 'rgba(56,189,248,.5)' },
+    agnes: { icon: 'fa-wand-magic-sparkles', label: 'Agnes', bg: 'rgba(232,121,249,.2)', fg: '#f0abfc', bd: 'rgba(232,121,249,.5)' },
+};
+const qv = b => (b && b.variant) ? `?variant=${b.variant}` : '';
+
 function applyFilter() {
     view = books.filter(b => (yearSel === '全部' || (b.date || '').startsWith(yearSel))
                           && (monthSel === '全部' || (b.date || '').startsWith(monthSel)));
@@ -178,14 +185,23 @@ function setFocused(el) {
     if (el) el.classList.add('focused');
 }
 
-function vbFor(b, withId, small) {
+/* 右上角视频状态徽章 (Tailwind 原版样式) */
+function videoBadge(b, withId) {
     const id = withId ? `id="vb-${b.date}"` : '';
-    const st = small ? ' style="font-size:.72rem;padding:2px 9px"' : '';
-    if (b.has_video) return `<span class="badge bg-amber/90 text-ink backdrop-blur"${st}><i class="fa-solid fa-film mr-1"></i>影片</span>`;
-    if (b.video_done >= b.video_total && b.video_total > 0) return `<span ${id} class="badge bg-amber/25 text-amber backdrop-blur animate-pulse"${st}><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>合成中</span>`;
-    if (b.video_done > 0) return `<span ${id} class="badge bg-black/65 text-amber backdrop-blur"${st}><i class="fa-solid fa-film mr-1"></i>${b.video_done}/${b.video_total}</span>`;
-    if (b.video_total > 0) return `<span ${id} class="badge bg-black/65 text-slate-400 backdrop-blur"${st}>排队中</span>`;
+    if (b.has_video) return `<span class="badge bg-amber/90 text-ink backdrop-blur"><i class="fa-solid fa-film mr-1"></i>影片</span>`;
+    if (b.video_done >= b.video_total && b.video_total > 0) return `<span ${id} class="badge bg-amber/25 text-amber backdrop-blur animate-pulse"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>合成中</span>`;
+    if (b.video_done > 0) return `<span ${id} class="badge bg-black/65 text-amber backdrop-blur"><i class="fa-solid fa-film mr-1"></i>${b.video_done}/${b.video_total}</span>`;
+    if (b.video_total > 0) return `<span ${id} class="badge bg-black/65 text-slate-400 backdrop-blur">排队中</span>`;
     return '';
+}
+/* 右下角模型徽章 (仅变体册, 内联样式保证电视老内核显色) */
+function vbChip(b, big) {
+    const vb = VB_META[b.variant];
+    if (!vb) return '';
+    const st = big
+        ? `display:inline-flex;align-items:center;gap:.5vh;padding:.7vh 1.8vh;border-radius:99px;font-size:2.2vh;font-weight:700;background:${vb.bg};color:${vb.fg};border:1px solid ${vb.bd}`
+        : `display:inline-flex;align-items:center;gap:.4vh;padding:2px 9px;border-radius:99px;font-size:.72rem;font-weight:700;background:${vb.bg};color:${vb.fg};border:1px solid ${vb.bd}`;
+    return `<span style="${st}"><i class="fa-solid ${vb.icon}"></i>${vb.label}</span>`;
 }
 function barFor(b) {
     if (!(b.video_total > 0) || b.has_video) return '';
@@ -244,16 +260,17 @@ function renderPager() {
 function renderDetail(b) {
     const el = document.getElementById('pb-detail');
     if (!b) { el.innerHTML = ''; return; }
+    const badge = b.variant ? vbChip(b, true) : videoBadge(b);
     el.innerHTML = `
       <div class="h-full flex rounded-3xl border-2 border-line bg-gradient-to-r from-[#16243c] via-[#101c30] to-[#0c1526] shadow-2xl overflow-hidden">
         <div class="cover-img h-full shrink-0 bd-cover" style="width:38vh">
-            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" src="/api/picturebook/${b.date}/thumb" alt="">`
+            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" src="/api/picturebook/${b.date}/thumb${qv(b)}" alt=""`
                           : `<div class="w-full h-full flex items-center justify-center text-6xl text-slate-700"><i class="fa-solid fa-feather"></i></div>`}
         </div>
         <div class="flex-1 min-w-0 py-4 pr-6 pl-6 flex flex-col justify-center overflow-hidden">
             <div class="flex items-center min-w-0">
                 <span class="bd-title font-black truncate">${b.title}</span>
-                <span class="ml-3 shrink-0">${vbFor(b)}</span>
+                <span class="ml-3 shrink-0">${badge}</span>
             </div>
             <div class="flex items-center mt-1.5 text-base text-slate-400">
                 <span class="mr-4"><i class="fa-regular fa-calendar mr-1 text-amber/80"></i>${b.date}</span>
@@ -276,19 +293,19 @@ function gotoPage(p, focusIdx) {
         <div class="tv-card h-full flex flex-col" data-i="${i}" tabindex="0" role="button" aria-label="${b.title}">
             <!-- 封面铺满整卡 -->
             <div class="absolute top-0 right-0 bottom-0 left-0">
-                ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" data-thumb="${b.date}" alt="">`
+                ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" data-thumb="${b.date}" data-vb="${b.variant || ''}" alt="">`
                               : `<div class="ph absolute top-0 right-0 bottom-0 left-0 flex items-center justify-center text-6xl text-slate-700"><i class="fa-solid fa-feather"></i></div>`}
             </div>
             <!-- 悬浮层: 顶部徽章 + 底部信息遮罩 -->
             <div class="absolute top-2.5 left-2.5 flex">
                 ${b.page_count > 1 ? `<span class="badge bg-black/65 text-slate-200 backdrop-blur" style="font-size:.72rem;padding:2px 9px">${b.page_count} 页</span>` : ''}
             </div>
-            <div class="absolute top-2.5 right-2.5">${vbFor(b, true, true)}</div>
+            <div class="absolute top-2.5 right-2.5">${videoBadge(b, true)}</div>
             <div class="absolute left-0 right-0 bottom-0 pt-12 pb-3 px-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
                 <div class="text-[1.1rem] font-bold truncate text-white">${b.title}</div>
                 <div class="mt-0.5 flex items-center justify-between text-xs text-slate-300">
                     <span><i class="fa-regular fa-calendar mr-1"></i>${b.date}</span>
-                    <span class="text-slate-400">${b.page_count} 页</span>
+                    ${b.variant ? vbChip(b) : `<span class="text-slate-400">${b.page_count} 页</span>`}
                 </div>
             </div>
             <div class="play-hint"><div class="pi"><i class="fa-solid fa-play ml-1"></i></div></div>
@@ -310,12 +327,12 @@ function gotoPage(p, focusIdx) {
                 if (!en.isIntersecting) return;
                 const im = en.target;
                 io.unobserve(im);
-                im.src = `/api/picturebook/${im.dataset.thumb}/thumb`;
+                im.src = `/api/picturebook/${im.dataset.thumb}/thumb${im.dataset.vb ? '?variant=' + im.dataset.vb : ''}`;
             });
         }, { rootMargin: '200px' });
         grid.querySelectorAll('img[data-thumb]').forEach(im => io.observe(im));
     } else {
-        grid.querySelectorAll('img[data-thumb]').forEach(im => { im.src = `/api/picturebook/${im.dataset.thumb}/thumb`; });
+        grid.querySelectorAll('img[data-thumb]').forEach(im => { im.src = `/api/picturebook/${im.dataset.thumb}/thumb${im.dataset.vb ? '?variant=' + im.dataset.vb : ''}`; });
     }
     renderPager();
     if (focusIdx >= 0 && cards.length) {
@@ -396,9 +413,10 @@ function focusMove(dr, dc) {
 async function tvOpen(i) {
     document.getElementById('tv-pos').innerHTML = '<i class="fa-solid fa-circle-notch spin"></i>';
     try {
-        const r = await fetch(`/api/picturebook/${view[i].date}/story`);
+        const r = await fetch(`/api/picturebook/${view[i].date}/story${qv(view[i])}`);
         if (!r.ok) throw 0;
         book = await r.json();
+        book.variant = view[i].variant || '';   /* 放映时逐页媒体走对应变体 */
     } catch (e) { return; }
     bookIdx = i;
     bp = 0; paused = false; filmMode = false;
@@ -435,10 +453,12 @@ function chainNext() {
     if (ni >= view.length) { tvExit(); return; }
     stopPageMedia();
     document.getElementById('tv-img').style.display = 'none';
+    const vb = VB_META[view[ni].variant];
     document.getElementById('tv-en').innerHTML =
         `<span id="chain-card" class="inline-block">
            <span class="block text-amber text-[1.4rem] tracking-[.3em] mb-3">下一本</span>
            <span class="block">《${view[ni].title}》</span>
+           ${vb ? `<span class="inline-block mt-2 badge backdrop-blur ${vb.cls}"><i class="fa-solid ${vb.icon} mr-1"></i>${vb.label}</span>` : ''}
            <span class="block text-slate-500 text-[1.2rem] mt-2 font-normal">${view[ni].date}</span>
          </span>`;
     document.getElementById('tv-zh').innerHTML =
@@ -464,18 +484,21 @@ function tvPage() {
     img.classList.remove('fade-in'); void img.offsetWidth; img.classList.add('fade-in');
     img.style.display = '';
     img.onerror = () => img.style.display = 'none';
-    img.src = `/api/picturebook/${book.date}/image/${pg.seq}?t=${Date.now()}`;
+    const vq = qv(book);
+    img.src = `/api/picturebook/${book.date}/image/${pg.seq}${vq}${vq ? '&' : '?'}t=${Date.now()}`;
     const en = document.getElementById('tv-en'), zh = document.getElementById('tv-zh');
     en.classList.remove('text-in'); zh.classList.remove('text-in');
     void en.offsetWidth;
     en.classList.add('text-in'); zh.classList.add('text-in');
     en.textContent = pg.text_en || '';
     zh.textContent = pg.text_zh || '';
-    document.getElementById('tv-pos').textContent = `📖 绘本 ${bp + 1} / ${book.pages.length}`;
+    const vbNow = VB_META[book.variant];
+    document.getElementById('tv-pos').textContent =
+        `${vbNow ? vbNow.label + ' · ' : ''}📖 绘本 ${bp + 1} / ${book.pages.length}`;
     document.getElementById('prog').style.width = `${((bp + 1) / book.pages.length) * 100}%`;
     renderDots();
     if (pg.has_audio) {
-        audio.src = `/api/picturebook/${book.date}/audio/${pg.seq}`;
+        audio.src = `/api/picturebook/${book.date}/audio/${pg.seq}${qv(book)}`;
         audio.play().catch(() => {});
     } else {
         clearTimeout(audio._t);

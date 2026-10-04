@@ -403,8 +403,8 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
         cursor.execute(count_query, tuple(params))
         total_count = cursor.fetchone()[0]
         
-        # 查询分页数据
-        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, LEFT(reason, 80) as reason_preview, reason_category, LEFT(advice, 120) as suggestion_preview, jsonb_array_length(event_files_json::jsonb) as file_count, CASE WHEN illustration_url IS NOT NULL THEN true ELSE FALSE END as has_illustration FROM baby_cry_events"
+        # 查询分页数据（device: 从 event_files_json 首个文件路径提取 records/<设备名>/，裸路径历史数据显示 NULL）
+        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, LEFT(reason, 80) as reason_preview, reason_category, LEFT(advice, 120) as suggestion_preview, jsonb_array_length(event_files_json::jsonb) as file_count, CASE WHEN illustration_url IS NOT NULL THEN true ELSE FALSE END as has_illustration, substring(event_files_json::jsonb->>0 from '/records/([^/]+)/') as device FROM baby_cry_events"
         query += where_sql + " ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
         
@@ -427,6 +427,7 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
                 'suggestion_preview': row[8] or '',
                 'file_count': int(row[9]) if row[9] else 0,
                 'has_illustration': bool(row[10]) if len(row) > 10 else False,
+                'device': row[11] if len(row) > 11 else None,
             })
         
         return (results, total_count)
@@ -807,13 +808,21 @@ def test_connection() -> bool:
         print(f"[DB Error] 连接测试失败: {e}")
         return False
 
-def is_file_processed_a(filename: str) -> bool:
-    """检查文件是否已由 A 轨历史扫描处理过"""
+def is_file_processed_a(filename: str, device: str = None) -> bool:
+    """检查文件是否已由 A 轨历史扫描处理过。
+    device 提供时（双 Pixel 双源架构）优先查 "device/filename" 标记——
+    两台设备同秒录音文件名相同时互不冲突；再查裸文件名以兼容旧 Sony 时代的统一标记。"""
     conn = None
     try:
         conn = get_connection()
         if not conn: return False
         cursor = conn.cursor()
+        if device:
+            cursor.execute("SELECT 1 FROM processed_files_a WHERE filename = %s",
+                           (f"{device}/{filename}",))
+            if cursor.fetchone() is not None:
+                cursor.close()
+                return True
         cursor.execute("SELECT 1 FROM processed_files_a WHERE filename = %s", (filename,))
         exists = cursor.fetchone() is not None
         cursor.close()
@@ -824,10 +833,13 @@ def is_file_processed_a(filename: str) -> bool:
     finally:
         if conn: return_connection(conn)
 
-def mark_file_processed_a(filename: str, status: str = "success") -> bool:
-    """标记文件为 A 轨已处理（统一用纯文件名，避免路径不一致导致重复记录）"""
+def mark_file_processed_a(filename: str, status: str = "success", device: str = None) -> bool:
+    """标记文件为 A 轨已处理。
+    device 提供时写 "device/filename"（按设备隔离，双 Pixel 同秒撞名互不影响）；
+    未提供时保持旧行为（统一纯文件名，兼容旧 Sony 标记）。"""
     import os
-    filename = os.path.basename(filename)  # 统一用纯文件名
+    filename = os.path.basename(filename)  # 统一用纯文件名，设备名由 device 参数显式提供
+    stored = f"{device}/{filename}" if device else filename
     conn = None
     try:
         conn = get_connection()
@@ -836,7 +848,7 @@ def mark_file_processed_a(filename: str, status: str = "success") -> bool:
         # 冲突时更新处理时间
         cursor.execute(
             "INSERT INTO processed_files_a (filename, processed_at, status) VALUES (%s, %s, %s) ON CONFLICT (filename) DO UPDATE SET processed_at = EXCLUDED.processed_at, status = EXCLUDED.status",
-            (filename, datetime.now(UTC_PLUS_8), status)
+            (stored, datetime.now(UTC_PLUS_8), status)
         )
         conn.commit()
         cursor.close()

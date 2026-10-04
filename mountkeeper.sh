@@ -20,11 +20,11 @@ ifconfig en0 2>/dev/null | grep -q "inet 192.168.1." || exit 0
 GW=$(route -n get 192.168.1.188 2>/dev/null | awk '/gateway:/{print $2}')
 if [ "$GW" != "192.168.1.1" ]; then
     fixed=0
-    for ip in 188 192 193 195; do
+    for ip in 188 186 191; do
         route -n delete -host 192.168.1.$ip >/dev/null 2>&1
         if route -n add -host 192.168.1.$ip 192.168.1.1 >/dev/null 2>&1; then
             fixed=$((fixed+1))
         fi
     done
-    log "检测到到NAS路由异常(gateway=${GW:-无})，已补 /32 主机路由 $fixed/4 条 (188=NAS 192/193/195=Sony)"
+    log "检测到到NAS路由异常(gateway=${GW:-无})，已补 /32 主机路由 $fixed/3 条 (188=NAS 186=Pixel-6 191=Pixel-5)"
 fi

@@ -141,9 +141,14 @@ def gemini_generate(prompt, max_output=1024, temperature=0.2):
                     params={'key': key},
                     json={
                         'contents': [{'parts': [{'text': prompt}]}],
-                        'generationConfig': {'temperature': temperature, 'maxOutputTokens': max_output},
+                        'generationConfig': {
+                            'temperature': temperature,
+                            'maxOutputTokens': max_output,
+                            # Gemini 3.x 是思考模型: 低档位控制思考开销, 防止吃光 maxOutputTokens
+                            'thinkingConfig': {'thinkingLevel': 'low'},
+                        },
                     },
-                    timeout=60,
+                    timeout=90,
                 )
                 if resp.status_code == 429:
                     continue  # 换下一个 key

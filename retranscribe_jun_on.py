@@ -39,7 +39,7 @@ MOUNT_FAIL_LIMIT = 5            # 连续 N 段读不到文件则中止
 DB_URL = os.getenv('DATABASE_URL', '')
 HOTWORD = os.getenv('ASR_HOTWORD', '大可') or '大可'
 NANO_URL = os.getenv('NANO_ASR_URL', 'http://127.0.0.1:8123/v1/audio/transcriptions')
-NANO_WORKERS = 4
+NANO_WORKERS = 2   # audiocpp_server 内部串行处理, 多线程仅用于上传/下载流水线重叠
 LOG_PREFIX = '[retrans]'
 
 
@@ -201,8 +201,9 @@ def main():
         batch, next_ri, abort = collect_batch(rows, ri)
         ri = next_ri
         if abort:
-            log(f"❌ 连续 {MOUNT_FAIL_LIMIT} 段音频缺失, 疑似挂载病态, 中止")
-            break
+            log(f"❌ 连续 {MOUNT_FAIL_LIMIT} 段音频缺失, 疑似挂载病态, 中止(非0退出交 launchd 重试)")
+            conn.commit()
+            sys.exit(3)
         if not batch:
             continue
 
@@ -215,9 +216,9 @@ def main():
         if asr_items:
             try:
                 paths = [b[2] for b in asr_items]
-                r_asr = asr.generate(input=paths, hotword=HOTWORD, batch_size_s=60)
+                r_asr = asr.generate(input=paths, hotword=HOTWORD, batch_size_s=120)
                 r_sv = sv.generate(input=paths, cache={}, language="auto",
-                                   use_itn=True, batch_size_s=60)
+                                   use_itn=True, batch_size_s=120)
             except Exception as e:
                 log(f"⚠️ 批推理失败({len(asr_items)}段): {str(e)[:120]}")
                 seg_err += len(asr_items)

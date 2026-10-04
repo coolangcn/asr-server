@@ -7,7 +7,7 @@
     <title>AI Audio Notes | 智能语音笔记</title>
     <!-- Mobile Redirect -->
     <script>
-        if (window.innerWidth <= 768 && window.location.pathname === '/') {
+        if (window.innerWidth <= 768 && window.location.pathname === '/' && !window.location.search.includes('desktop=1')) {
             window.location.href = '/mobile';
         }
     </script>
@@ -526,13 +526,17 @@
                     </div>
                 </div>
 
+                <!-- 并行任务信号灯 -->
+                <div id="parallel-lights" class="flex flex-wrap gap-x-3 gap-y-1.5 mt-2" title="并行后台任务存活状态">
+                </div>
+
                 <div class="h-px bg-gradient-to-r from-transparent via-gray-700/50 to-transparent my-2"></div>
 
                 <!-- 日志 Tab 切换与 LIVE 指示器 -->
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex gap-1 bg-black/40 p-1 rounded-lg border border-white/5 flex-1 mr-2">
-                        <button onclick="setLogTab('a')" id="log-tab-a" class="flex-1 text-[9px] py-1 rounded-md transition-all font-bold text-gray-500 hover:text-white flex items-center justify-center gap-1" title="A轨: 独立哭声检测日志"><i class="fa-solid fa-baby scale-90"></i>A轨</button>
-                        <button onclick="setLogTab('b')" id="log-tab-b" class="flex-1 text-[9px] py-1 rounded-md transition-all font-bold text-gray-500 hover:text-white flex items-center justify-center gap-1" title="B轨: 语音转录与声纹匹配日志"><i class="fa-solid fa-waveform scale-90"></i>B轨</button>
+                        <button onclick="setLogTab('a')" id="log-tab-a" class="flex-1 text-[9px] py-1 rounded-md transition-all font-bold text-gray-500 hover:text-white flex items-center justify-center gap-1" title="补跑: 哭声检测批量补跑（GPU，限凌晨窗口）"><i class="fa-solid fa-baby scale-90"></i>补跑</button>
+                        <button onclick="setLogTab('b')" id="log-tab-b" class="flex-1 text-[9px] py-1 rounded-md transition-all font-bold text-gray-500 hover:text-white flex items-center justify-center gap-1" title="转写: 实时监听新录音自动转写与声纹入库"><i class="fa-solid fa-waveform scale-90"></i>转写</button>
                         <button onclick="setLogTab('web')" id="log-tab-web" class="flex-1 text-[9px] py-1 rounded-md transition-all font-bold text-gray-500 hover:text-white flex items-center justify-center gap-1" title="Web: 后端服务与配置日志"><i class="fa-solid fa-server scale-90"></i>Web</button>
                     </div>
                     <div class="flex flex-col items-center gap-1">
@@ -599,6 +603,34 @@
                         class="fa-solid fa-rotate-right mr-2 group-hover:rotate-180 transition-transform duration-500"></i>刷新数据
                 </button>
             </header>
+
+            <!-- 系统总览 -->
+            <div id="overview-card" class="glass-card rounded-2xl border border-white/5 p-5 mb-6 hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-gauge-high text-accent-400"></i>系统总览
+                    </h2>
+                    <span id="overview-summary" class="text-xs font-medium px-3 py-1 rounded-full border"></span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 text-xs">
+                    <div class="bg-gray-900/40 rounded-xl border border-white/5 p-3 min-w-0">
+                        <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">📱 录音设备</div>
+                        <div id="overview-devices" class="space-y-1.5 text-gray-500">加载中…</div>
+                    </div>
+                    <div class="bg-gray-900/40 rounded-xl border border-white/5 p-3 min-w-0">
+                        <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">🎙️ 实时转写 · B轨</div>
+                        <div id="overview-btrack" class="space-y-1.5 text-gray-500">加载中…</div>
+                    </div>
+                    <div class="bg-gray-900/40 rounded-xl border border-white/5 p-3 min-w-0">
+                        <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">😢 检测补跑 · A轨</div>
+                        <div id="overview-atrack" class="space-y-1.5 text-gray-500">加载中…</div>
+                    </div>
+                    <div class="bg-gray-900/40 rounded-xl border border-white/5 p-3 min-w-0">
+                        <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">🖥️ 基础设施</div>
+                        <div id="overview-infra" class="space-y-1.5 text-gray-500">加载中…</div>
+                    </div>
+                </div>
+            </div>
 
             <div id="dashboard-content" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-10">
                 <!-- 卡片将通过JS插入 -->
@@ -2289,15 +2321,169 @@
 
         // 请求锁，防止请求堆积
         let isUpdateLoopRunning = false;
-        
+
+        // 并行任务信号灯: 拉取各后台任务存活状态并渲染
+        let _lightsCache = null;
+        async function refreshParallelLights() {
+            try {
+                const r = await fetch('/api/parallel_lights');
+                const d = await r.json();
+                if (!d.lights) return;
+                _lightsCache = d.lights;
+                const box = document.getElementById('parallel-lights');
+                if (!box) return;
+                box.innerHTML = d.lights.map(l => `
+                    <span class="flex items-center gap-1" title="${l.label}: ${l.on ? '运行中' : '未运行'}">
+                        <span class="inline-block h-1.5 w-1.5 rounded-full ${l.on ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)] animate-pulse' : 'bg-gray-600'}"></span>
+                        <span class="text-[8px] font-bold ${l.on ? 'text-gray-300' : 'text-gray-600'}">${l.label}</span>
+                    </span>`).join('');
+            } catch (e) { /* 网络抖动时保留上次渲染 */ }
+        }
+
+        // 系统总览: 拉取 /api/overview 并渲染四块面板(设备/B轨/A轨/基础设施)
+        const _ovDot = s => s === 'bad'
+            ? '<span class="inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 bg-red-500"></span>'
+            : (s === 'warn'
+                ? '<span class="inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 bg-amber-400"></span>'
+                : '<span class="inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]"></span>');
+        async function refreshOverview() {
+            try {
+                const r = await fetch('/api/overview');
+                if (!r.ok) return;
+                const d = await r.json();
+                const card = document.getElementById('overview-card');
+                if (!card || !d.devices) return;
+                card.classList.remove('hidden');
+
+                // 顶部结论徽章: 设备故障数 + B轨心跳/积压异常
+                const bad = d.devices.filter(x => x.status === 'bad').length;
+                let warn = d.devices.filter(x => x.status === 'warn').length;
+                const b = d.b_track || {};
+                if (b.running && (b.heartbeat_age_sec == null || b.heartbeat_age_sec > 240)) warn++;
+                if ((b.backlog || 0) > 10) warn++;
+                const badge = document.getElementById('overview-summary');
+                if (bad > 0) {
+                    badge.className = 'text-xs font-medium px-3 py-1 rounded-full border bg-red-500/15 text-red-400 border-red-500/40';
+                    badge.textContent = `${bad} 项故障`;
+                } else if (warn > 0) {
+                    badge.className = 'text-xs font-medium px-3 py-1 rounded-full border bg-amber-400/15 text-amber-400 border-amber-400/40';
+                    badge.textContent = `${warn} 项留意`;
+                } else {
+                    badge.className = 'text-xs font-medium px-3 py-1 rounded-full border bg-green-500/15 text-green-400 border-green-500/40';
+                    badge.textContent = '整体正常';
+                }
+
+                // 录音设备: 每行 名称+状态点+精简详情(悬停title看全文)+时间·段数
+                const _ovShort = x => {
+                    const v = x.max_volume != null ? x.max_volume.toFixed(1) : null;
+                    const dt = x.detail || '';
+                    if (x.status === 'ok') return v != null ? `${v}dB` : '';
+                    if (v != null && x.max_volume <= -80) return `静音 ${v}dB`;
+                    if (!x.today_count) return '无录音';
+                    if (dt.includes('无新录音')) return `${dt.split(' ')[0]}分未更新`;
+                    if (dt.includes('间隔偏长')) return `${dt.split(' ')[1] || ''}分未更新`;
+                    if (dt.includes('响度偏低')) return `偏低 ${v}dB`;
+                    if (dt.includes('超时')) return '扫描超时';
+                    if (dt.includes('目录读取异常')) return '目录异常';
+                    return dt.slice(0, 12);
+                };
+                document.getElementById('overview-devices').innerHTML = d.devices.map(x => `
+                    <div class="flex items-center justify-between gap-2 min-w-0" title="${(x.detail || '').replace(/"/g, '&quot;')}">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            ${_ovDot(x.status)}
+                            <span class="text-gray-200 flex-shrink-0">${x.name}</span>
+                            <span class="text-gray-500 truncate">${_ovShort(x)}</span>
+                        </div>
+                        <span class="flex-shrink-0 text-gray-400">${x.latest_time || '--:--'} · ${x.today_count ?? '-'}</span>
+                    </div>`).join('');
+
+                // B轨: 运行态/心跳/积压+趋势/转写速率/今日入库
+                const hbTxt = b.heartbeat_age_sec == null ? '无心跳' : `${Math.round(b.heartbeat_age_sec)}s 前`;
+                const hbCls = !b.running ? 'text-gray-500' : ((b.heartbeat_age_sec == null || b.heartbeat_age_sec > 240) ? 'text-red-400' : 'text-gray-400');
+                const backlog = b.backlog || 0;
+                const trend = b.backlog_trend_per_hour;
+                let trendTxt = '—', trendCls = 'text-gray-500';
+                if (trend != null) {
+                    if (trend > 0) { trendTxt = `+${trend} 段/时`; trendCls = 'text-red-400'; }
+                    else if (trend < 0) { trendTxt = `${trend} 段/时`; trendCls = 'text-green-400'; }
+                    else { trendTxt = '持平'; trendCls = 'text-gray-400'; }
+                }
+                let chaseTxt = '';
+                if (trend != null && trend < 0 && backlog > 0) {
+                    const hrs = backlog / (-trend);
+                    chaseTxt = hrs <= 48 ? ` ≈${hrs.toFixed(1)}小时追平` : '';
+                }
+                const rate = b.hour_rate;
+                document.getElementById('overview-btrack').innerHTML = `
+                    <div class="flex items-center gap-1.5">
+                        ${_ovDot(b.running ? 'ok' : 'off')}
+                        <span class="text-gray-200">${b.running ? '运行中' : '已停止'}</span>
+                        <span class="text-gray-500">${b.runtime ? '· ' + b.runtime : ''}</span>
+                    </div>
+                    <div class="flex justify-between"><span class="text-gray-500">心跳</span><span class="${hbCls}">${hbTxt}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-500">积压</span><span class="${backlog > 10 ? 'text-amber-400' : 'text-gray-400'}">${backlog} 段 <span class="${trendCls}">${trendTxt}${chaseTxt}</span></span></div>
+                    <div class="flex justify-between"><span class="text-gray-500">转写吞吐</span><span class="text-gray-300">${rate != null ? rate + ' 段/时' : '—'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-500">入库</span><span class="text-gray-300">今日 ${b.today_transcribed ?? 0} 条 · 近1时 ${b.ingest_rate_per_hour ?? '—'} · 哭声 ${b.today_cry_count ?? 0}</span></div>`;
+
+                // A轨: 补跑中显示进度条+效率, 否则显示待窗口+上次战绩
+                const a = d.a_track || {};
+                const p = a.progress;
+                if (a.running) {
+                    const pct = p ? (p.percent != null ? Math.round(p.percent) : (p.total ? Math.round((p.processed || 0) / p.total * 100) : 0)) : 0;
+                    document.getElementById('overview-atrack').innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            ${_ovDot('ok')}
+                            <span class="text-gray-200">补跑中</span>
+                            <span class="text-gray-500">${pct}%</span>
+                        </div>
+                        <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden my-1">
+                            <div class="h-full bg-green-500 rounded-full transition-all duration-500" style="width:${pct}%"></div>
+                        </div>
+                        <div class="flex justify-between"><span class="text-gray-500">进度</span><span class="text-gray-300">${p ? `${p.processed || 0}/${p.total || 0}` : '--'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">速度</span><span class="text-gray-300">${p && p.avg_time != null ? p.avg_time.toFixed(1) + 's/段 ≈' + Math.round(3600 / p.avg_time) + '段/时' : '--'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">预计还需</span><span class="text-gray-300">${p && p.eta_hours != null ? p.eta_hours.toFixed(1) + ' 小时' : '--'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">成功/跳过/失败</span><span class="text-gray-300">${p ? `${p.success_count || 0} / ${p.skip_count || 0} / ${p.error_count || 0}` : '--'}</span></div>`;
+                } else {
+                    const lastRun = p && p.success_count != null
+                        ? `<div class="flex justify-between"><span class="text-gray-500">上次补跑</span><span class="text-gray-400">✅${p.success_count || 0} ⏭${p.skip_count || 0} ❌${p.error_count || 0}</span></div>` : '';
+                    document.getElementById('overview-atrack').innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            <span class="inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 bg-gray-600"></span>
+                            <span class="text-gray-300">待窗口</span>
+                        </div>
+                        <div class="flex justify-between"><span class="text-gray-500">窗口</span><span class="text-gray-400">${a.window || '--'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">下次运行</span><span class="text-gray-400">${a.next_run || '--'}</span></div>
+                        ${lastRun}`;
+                }
+
+                // 基础设施: SMB/5009面板/静音巡检/GPU 胶囊灯
+                const inf = d.infra || {};
+                const pill = (label, ok, extra = '') => `
+                    <div class="flex items-center justify-between gap-2 min-w-0">
+                        <span class="flex items-center gap-1.5 min-w-0">
+                            ${_ovDot(ok ? 'ok' : 'bad')}
+                            <span class="text-gray-300">${label}</span>
+                        </span>
+                        ${extra ? `<span class="text-gray-500 truncate">${extra}</span>` : ''}
+                    </div>`;
+                document.getElementById('overview-infra').innerHTML =
+                    pill('SMB 存储', !!(inf.smb && inf.smb.ok), (inf.smb && inf.smb.detail) || '') +
+                    pill('面板 5009', !!(inf.panel_5009 && inf.panel_5009.ok)) +
+                    pill('静音巡检', !!(inf.silence_check && inf.silence_check.ok), (inf.silence_check && inf.silence_check.last_alert) ? `告警 ${inf.silence_check.last_alert}` : '无告警') +
+                    `<div class="flex justify-between"><span class="text-gray-500">GPU</span><span class="text-gray-300">${inf.gpu_state || '--'}</span></div>`;
+            } catch (e) { /* 网络抖动时保留上次渲染 */ }
+        }
+
         async function updateLoop() {
             // 如果上一次请求还没完成，跳过本次
             if (isUpdateLoopRunning) {
                 console.log('[updateLoop] 上一次请求未完成，跳过本次');
                 return;
             }
-            
+
             isUpdateLoopRunning = true;
+            refreshParallelLights();  // 并行任务信号灯随主循环刷新(10秒, 异步不阻塞)
+            refreshOverview();        // 系统总览随主循环刷新(异步不阻塞)
             
             try {
                 const statusRes = await fetch('/api/status');
@@ -2462,10 +2648,10 @@
             let colorClass = "text-gray-400";
             
             if (currentLogTab === 'a') {
-                content = statusData.logs_a || "等待 A 轨信号...";
+                content = statusData.logs_a || "等待补跑信号...";
                 colorClass = "text-blue-300/90";
             } else if (currentLogTab === 'b') {
-                content = statusData.logs_b || "等待 B 轨信号...";
+                content = statusData.logs_b || "等待转写信号...";
                 colorClass = "text-emerald-300/90";
             } else {
                 content = statusData.logs_web || "等待系统信号...";
@@ -3434,7 +3620,7 @@
             const reason = document.getElementById('shiguangPausedReason');
             if (!badge || !reason) return;
 
-            let pauseReason = bReason || "A轨分析中";
+            let pauseReason = bReason || "补跑分析中";
             if (isPaused) {
                 badge.classList.remove('hidden');
                 reason.classList.remove('hidden');

@@ -142,9 +142,15 @@
     </div>
 
 <script>
-let books = [];          // 书架 [{date,title,page_count,has_audio,has_video,...}]
+let books = [];          // 书架 [{date,title,page_count,has_audio,has_video,variant,...}]
 let book = null;         // 当前书 {date,title,pages:[...]}
 let bookIdx = -1;        // 当前书在 books 里的下标
+let curVariant = '';     // 当前书变体 (''主册 / 'grok'/'agnes'对照册)
+const qsV = () => curVariant ? `?variant=${curVariant}` : '';  // 媒体接口变体参数
+const VB_META = {        // 变体册徽章样式
+    grok:  { tag: '🤖Grok',  text: 'text-sky',         border: 'border-sky/40' },
+    agnes: { tag: '✨Agnes', text: 'text-fuchsia-400',  border: 'border-fuchsia-400/40' },
+};
 let curYear = '全部';    // 年份筛选
 let curMonth = '全部';    // 月份筛选 (当年内)
 let bp = 0;              // 书内页索引
@@ -195,10 +201,12 @@ function renderShelf() {
             </h2>
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 ${groups[m].map(b => {
+                    const vm = VB_META[b.variant] || null;
                     const i = books.indexOf(b);
                     const pct = b.video_total ? Math.round(b.video_done / b.video_total * 100) : 0;
                     let vb;
-                    if (b.has_video) vb = `<span class="badge bg-black/60 text-amber"><i class="fa-solid fa-film mr-0.5"></i>影片</span>`;
+                    if (vm) vb = `<span class="badge bg-black/60 ${vm.text}">${vm.tag}</span>`;
+                    else if (b.has_video) vb = `<span class="badge bg-black/60 text-amber"><i class="fa-solid fa-film mr-0.5"></i>影片</span>`;
                     else if (b.video_done >= b.video_total && b.video_total > 0) vb = `<span id="vb-${b.date}" class="badge bg-black/60 text-amber animate-pulse">合成中</span>`;
                     else if (b.video_done > 0) vb = `<span id="vb-${b.date}" class="badge bg-black/60 text-amber">🎬${b.video_done}/${b.video_total}</span>`;
                     else if (b.video_total > 0) vb = `<span id="vb-${b.date}" class="badge bg-black/60 text-slate-400">排队中</span>`;
@@ -206,9 +214,9 @@ function renderShelf() {
                     const bar = (b.video_total > 0 && !b.has_video)
                         ? `<div class="absolute bottom-0 left-0 right-0 h-1 bg-black/50"><div id="vp-${b.date}" class="h-full bg-amber transition-all duration-500" style="width:${pct}%"></div></div>` : '';
                     return `
-                    <div class="cover-card cursor-pointer rounded-xl overflow-hidden bg-panel border border-line" onclick="openReader(${i})">
+                    <div class="cover-card cursor-pointer rounded-xl overflow-hidden bg-panel border ${vm ? vm.border : 'border-line'}" onclick="openReader(${i})">
                         <div class="cover-img aspect-square relative">
-                            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" data-thumb="${b.date}" alt="">`
+                            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" data-thumb="${b.date}" ${vm ? `data-vb="${b.variant}"` : ''} alt="">`
                                           : `<div class="w-full h-full flex items-center justify-center text-4xl text-slate-600"><i class="fa-solid fa-feather"></i></div>`}
                             <div class="absolute bottom-1.5 left-1.5 right-1.5 flex gap-1 flex-wrap">
                                 ${b.page_count > 1 ? `<span class="badge bg-black/60 text-slate-300">${b.page_count}页</span>` : ''}
@@ -230,13 +238,16 @@ function renderShelf() {
 async function openReader(i) {
     bookIdx = i;
     const item = books[i];
+    curVariant = item.variant || '';
     try {
-        const r = await fetch(`/api/picturebook/${item.date}/story`);
+        const r = await fetch(`/api/picturebook/${item.date}/story${qsV()}`);
         if (!r.ok) return;
         book = await r.json();
     } catch (e) { return; }
     bp = 0;
-    document.getElementById('reader-title').textContent = `《${book.title}》`;
+    const vm = VB_META[curVariant] || null;
+    const engTag = vm ? ` <span class="text-[10px] font-bold ${vm.text} align-middle">${vm.tag}</span>` : '';
+    document.getElementById('reader-title').innerHTML = `《${book.title}》${engTag}`;
     document.getElementById('btn-film').classList.toggle('hidden', !book.has_video);
     document.getElementById('reader').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
@@ -296,7 +307,7 @@ function renderPage() {
         img.style.display = '';
         img.onload = () => loading.classList.add('hidden');
         img.onerror = () => { loading.classList.add('hidden'); img.style.display = 'none'; };
-        img.src = `/api/picturebook/${book.date}/image/${pg.seq}`;
+        img.src = `/api/picturebook/${book.date}/image/${pg.seq}${qsV()}`;
     } else { img.removeAttribute('src'); img.style.display = 'none'; }
     document.getElementById('btn-prev').classList.toggle('btn-dis', bp === 0);
     document.getElementById('btn-next').classList.toggle('btn-dis', bp === book.pages.length - 1);
@@ -312,7 +323,7 @@ function togglePlay() {
 function playCurrent() {
     const pg = book.pages[bp];
     if (!pg.has_audio) return;
-    audio.src = `/api/picturebook/${book.date}/audio/${pg.seq}`;
+    audio.src = `/api/picturebook/${book.date}/audio/${pg.seq}${qsV()}`;
     audio.play().catch(() => { stopAudio(); });
     updatePlayBtn(true);
 }
@@ -433,7 +444,7 @@ const thumbIO = new IntersectionObserver((ents) => {
         if (!en.isIntersecting) return;
         const im = en.target;
         thumbIO.unobserve(im);
-        im.src = `/api/picturebook/${im.dataset.thumb}/thumb`;
+        im.src = `/api/picturebook/${im.dataset.thumb}/thumb${im.dataset.vb ? '?variant=' + im.dataset.vb : ''}`;
     });
 }, { rootMargin: '400px' });
 new MutationObserver(() => document.querySelectorAll('img[data-thumb]').forEach(im => thumbIO.observe(im)))

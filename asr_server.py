@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import functools
+import hashlib
 import os, sys, logging, json, threading, subprocess, time, traceback, tempfile, argparse, uuid, glob
 from dotenv import load_dotenv
 
@@ -21,7 +22,6 @@ import re
 from collections import Counter, OrderedDict
 from db_manager import save_to_db, update_topics, parse_recording_time, init_pool, init_db
 from logging.handlers import RotatingFileHandler
-import whisper
 import requests
 import hashlib
 from datetime import datetime, timezone, timedelta
@@ -51,21 +51,9 @@ def get_modelscope_device():
     else:
         return "cpu"
 
-def get_whisper_model():
-    """根据设备选择合适的 Whisper 模型大小
-
-    - CUDA: large-v3 (~10GB VRAM)
-    - MPS/CPU: medium (~5GB RAM) 避免内存溢出
-    """
-    if torch.cuda.is_available():
-        return "large-v3"
-    else:
-        return "medium"
-
 class Config:
     DEVICE = get_device()
     MODELSCOPE_DEVICE = get_modelscope_device()
-    WHISPER_MODEL = get_whisper_model()
     HOST = os.getenv('ASR_SERVER_HOST', '0.0.0.0')
     PORT = int(os.getenv('ASR_SERVER_PORT', '5008'))
     SPEAKER_DB_FILE = "speaker_db_multi.json"
@@ -75,7 +63,7 @@ class Config:
     LONG_SENTENCES_DIR = "long_sentences"  # 保存目录
     TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")  # 临时文件目录（绝对路径，防 cwd 歧义）
 
-    ONLY_REGISTERED_SPEAKERS = True  # 只保留已注册说话人,丢弃Unknown
+    ONLY_REGISTERED_SPEAKERS = False  # 只保留已注册说话人,丢弃Unknown（2026-10-04 True→False：清库重注册期间库为空，True 会把所有切片连文字一起丢弃导致记录页全空；注册完成后想过滤陌生人噪声可再开回 True）
     # ASR模型配置 - Paraformer (支持VAD分段和说话人分离)
     ASR_MODEL = "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"  # 从 SenseVoiceSmall 切换到 Paraformer
     ASR_HOTWORD = os.getenv('ASR_HOTWORD', '大可').strip()  # SeACo 热词定制: 提升人名/专有词识别(空格分隔多个词, 置空禁用)
@@ -85,9 +73,21 @@ class Config:
 
     # VAD参数配置(为Paraformer优化)
     VAD_MAX_SINGLE_SEGMENT = 15000  # ms - 单段最长时间
-    VAD_MAX_END_SILENCE = 300       # ms - 段尾静音阈值
+    VAD_MAX_END_SILENCE = 1000      # ms - 段尾静音阈值（2026-10-03 300→800→1000：家人快节奏对话间隙常 <1s，放宽减少碎切片）
     VAD_SIL_TO_SPEECH = 50          # ms - 静音到语音阈值
     VAD_SPEECH_TO_SIL = 80          # ms - 语音到静音阈值
+
+    # ---- VAD 切分引擎（2026-10-03 起默认 Silero v5，fsmn 一键回退）----
+    # silero: 婴儿声泛化更好、段间静音阈值放宽（宝宝停顿不再切碎）、CPU ONNX 推理不占 GPU；
+    #         段级转写仍由 Paraformer 完成（管线去内嵌 vad_model）
+    VAD_ENGINE = os.getenv("VAD_ENGINE", "silero").lower()          # silero | fsmn
+    VAD_MIN_SILENCE_MS = int(os.getenv("VAD_MIN_SILENCE_MS", "800"))  # 段间静音阈值（fsmn 为 300ms，宝宝停顿常被切碎）
+    VAD_MIN_SPEECH_MS = int(os.getenv("VAD_MIN_SPEECH_MS", "250"))    # 最短语音段
+    VAD_MAX_SPEECH_S = int(os.getenv("VAD_MAX_SPEECH_S", "15"))       # 单段上限（与原 fsmn 上限对齐）
+    VAD_SPEECH_PAD_MS = int(os.getenv("VAD_SPEECH_PAD_MS", "30"))     # 段两端留白防截字
+    # Silero 语音判定阈值（0~1）。默认 0.5 对轻声哄睡讲故事过严——实测妈妈轻声整段被漏切
+    # （10-03 21:31 讲故事 1 分钟仅 1 段 vs fsmn 23 段）。降到 0.35 增强轻声/远场灵敏度。
+    VAD_SPEECH_THRESHOLD = float(os.getenv("VAD_SPEECH_THRESHOLD", "0.35"))
 
     SV_MODELS = {
         "eres2net_large": {
@@ -116,7 +116,8 @@ class Config:
 
     # 可选功能开关
     ENABLE_EMOTION_DETECTION = True  # 是否启用情感检测(需要SenseVoice模型)
-    ENABLE_WHISPER_COMPARISON = True  # 是否启用Whisper对比(需要Whisper模型)
+    # Whisper 对比转写已移除（2026-10-04 用户确认效果不佳：远场家庭录音识别质量差，
+    # 且每段多一次 Groq API/本地推理拖慢处理；whisper_text 字段保留恒为 null 以兼容历史数据）
 
     # SenseVoice配置 (情感检测)
     SENSEVOICE_MODEL = "iic/SenseVoiceSmall"
@@ -124,6 +125,50 @@ class Config:
 
 # 文件监控配置 (已迁移至 audio_processor)
 FileMonitorConfig = audio_processor.FileMonitorConfig
+
+# =================【 多源路径工具（双 Pixel 双源架构）】=================
+RECORDS_ROOT = "/Volumes/download/records"
+SOURCE_DEVICES = [os.path.basename(s.rstrip("/")) for s in FileMonitorConfig.SOURCES]
+# Sony 设备保留在兼容候选尾部：历史录音/旧标记仍可能落到 Sony 的 processed/
+_LEGACY_DEVICES = [d for d in ("Sony-2", "Sony-1", "Sony-3") if d not in SOURCE_DEVICES]
+_DEVICE_PATH_RE = re.compile(r"records/([^/]+)/")
+
+
+def _device_from_path(p):
+    """从 NAS 路径推导设备名（.../records/Pixel-6/2026-10-02/x.m4a → Pixel-6）"""
+    m = _DEVICE_PATH_RE.search(str(p).replace("\\", "/"))
+    return m.group(1) if m else ""
+
+
+def _rel_to_records(p):
+    """绝对路径 → 相对 records 根的路径（Pixel-6/2026-10-02/x.m4a，含设备级）；
+    无法识别时退化为纯文件名"""
+    p = str(p).replace("\\", "/")
+    i = p.find("/records/")
+    if i >= 0:
+        return p[i + len("/records/"):]
+    return os.path.basename(p)
+
+
+def _resolve_under_records(p):
+    """records 相对路径 → 绝对路径。
+    新式（带设备前缀 Pixel-6/...）直接拼；旧式（裸文件名等）先查新源再查 Sony 兼容源。
+    找不到返回 None。"""
+    p = str(p).lstrip("/").replace("\\", "/")
+    if not p or p.startswith(".."):
+        return None
+    direct = os.path.join(RECORDS_ROOT, p)
+    if os.path.exists(direct):
+        return direct
+    first = p.split("/", 1)[0]
+    # 旧式相对路径（audio_segments/<日期>/... 或纯文件名）逐设备尝试
+    if first not in SOURCE_DEVICES and first not in _LEGACY_DEVICES:
+        for dev in SOURCE_DEVICES + _LEGACY_DEVICES:
+            cand = os.path.join(RECORDS_ROOT, dev, p)
+            if os.path.exists(cand):
+                return cand
+    return None
+
 
 # LLM 配置
 class LLMConfig:
@@ -313,7 +358,6 @@ asr_pipeline = None
 sv_pipelines = {}
 speaker_db = {}
 emotion_pipeline = None  # 可选: 情感检测模型
-whisper_model = None     # 可选: Whisper对比模型
 sensevoice_pipeline = None  # 可选: SenseVoice模型(情感+转录)
 gpu_lock = threading.Lock()
 db_lock = threading.Lock()
@@ -340,8 +384,176 @@ _b_stats = {
     "today_cry_count": 0,     # 今日哭声数
     "last_event_time": None,  # 最近事件时间 HH:MM:SS
     "last_cry_time": None,    # 最近哭声时间
+    "done_window": [],        # 最近 1 小时各段接收时刻(time.time())——转写速率滑动窗口
 }
 _b_stats_lock = threading.Lock()
+
+# =================【 系统总览：录音设备健康缓存（后台线程 5 分钟刷新）】=================
+# 设计：ffmpeg volumedetect 较重（每台解码最新文件）+ NAS IO 可能挂起，
+# 不能跟随前端 30 秒轮询——后台线程每 5 分钟扫一轮，API 只读缓存快照。
+# 状态判定对齐 silence_check.sh：全零(<-80dB)红 / 6分钟无新文件红 / 响度偏低(<-50dB)黄 / 间隔偏长(>4分钟)黄
+OVERVIEW_DEVICES = ["Pixel-6", "Pixel-5"]  # 2026-10-03 起全面转向双 Pixel，Sony 停录移出总览（历史数据保留可回放）
+OVERVIEW_RECORDS_ROOT = "/Volumes/download/records"
+_overview_cache = {"devices": [], "infra": {}, "updated_at": None,
+                   "total_today": None, "prev_total_today": None,  # 今日现存总数及上一轮值→积压趋势
+                   "db_stats": None}  # DB 真实入库/哭声统计（进程计数会因重启清零，以此为准）
+
+
+def _query_db_stats():
+    """查 DB 真实统计：近1小时入库、今日入库、今日哭声事件。失败返回 None（沿用上次值）
+    注意：created_at 由应用端以 UTC+8 本地时间写入，时间边界必须在 Python 端算好传入，
+    不能用 DB 的 NOW()/CURRENT_DATE（连接池会话时区与之不一致，会漂移 8 小时）"""
+    try:
+        from db_manager import get_connection
+        now = datetime.now()
+        hour_ago = now - timedelta(hours=1)
+        today_zero = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM transcriptions WHERE created_at >= %s", (hour_ago,))
+        ingest_1h = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM transcriptions WHERE created_at >= %s", (today_zero,))
+        ingest_today = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM baby_cry_events WHERE created_at >= %s", (today_zero,))
+        cry_today = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return {"ingest_1h": ingest_1h, "ingest_today": ingest_today, "cry_today": cry_today}
+    except Exception as e:
+        logger_sys.warning(f"⚠️ 总览 DB 统计查询失败: {e}")
+        return None
+_overview_cache_lock = threading.Lock()
+
+
+def _ffmpeg_max_volume(path, timeout=25):
+    """返回最新文件的 max_volume（dB，float），失败/超时返回 None"""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-i", path, "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=timeout
+        )
+        m = re.search(r"max_volume:\s*(-?[\d.]+)\s*dB", r.stderr)
+        return float(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
+def _scan_overview_device(dev, today_str):
+    """扫描单台设备今日目录（含 NAS IO + ffmpeg，必须在带超时的子线程中调用）"""
+    info = {"name": dev, "latest_file": None, "latest_time": None, "age_sec": None,
+            "max_volume": None, "today_count": 0, "status": "bad", "detail": "今日无录音"}
+    ddir = os.path.join(OVERVIEW_RECORDS_ROOT, dev, today_str)
+    entries = audio_processor._safe_listdir(ddir, timeout=8) or []
+    m4as = [e for e in entries if e.endswith(".m4a")]
+    if not m4as:
+        return info
+    info["today_count"] = len(m4as)
+    try:
+        latest = max(m4as, key=lambda n: os.path.getmtime(os.path.join(ddir, n)))
+    except Exception:
+        info["detail"] = "目录读取异常（挂载病态？）"
+        return info
+    info["latest_file"] = latest
+    try:
+        mt = os.path.getmtime(os.path.join(ddir, latest))
+        info["age_sec"] = int(time.time() - mt)
+        info["latest_time"] = datetime.fromtimestamp(mt).strftime("%H:%M")
+    except Exception:
+        pass
+    vol = _ffmpeg_max_volume(os.path.join(ddir, latest))
+    info["max_volume"] = vol
+    age = info["age_sec"]
+    if vol is not None and vol < -80:
+        info["status"], info["detail"] = "bad", f"全零静音 {vol:.1f}dB（疑未点开 App）"
+    elif age is not None and age >= 360:
+        info["status"], info["detail"] = "bad", f"{age // 60} 分钟无新录音"
+    elif vol is not None and vol < -50:
+        info["status"], info["detail"] = "warn", f"响度偏低 {vol:.1f}dB"
+    elif age is not None and age >= 240:
+        info["status"], info["detail"] = "warn", f"间隔偏长 {age // 60} 分钟"
+    else:
+        info["status"] = "ok"
+        info["detail"] = f"正常 {vol:.1f}dB" if vol is not None else "正常（响度未检出）"
+    return info
+
+
+def _scan_overview_infra():
+    """基础设施快照（子线程内执行，全部带硬超时）"""
+    infra = {}
+    # SMB 挂载：ls 根目录 + 截断检测（<3 项视为异常，对齐 watchdog 规则）
+    smb_ok, smb_detail = False, "不可达"
+    try:
+        r = subprocess.run(["/bin/ls", OVERVIEW_RECORDS_ROOT],
+                           capture_output=True, text=True, timeout=8)
+        n = len([x for x in r.stdout.splitlines() if x.strip()])
+        if r.returncode == 0 and n >= 3:
+            smb_ok, smb_detail = True, f"正常（{n} 个设备目录）"
+        elif r.returncode == 0:
+            smb_detail = f"目录列表异常（仅 {n} 项，疑似截断）"
+    except subprocess.TimeoutExpired:
+        smb_detail = "目录无响应（挂载假死？）"
+    except Exception:
+        pass
+    infra["smb"] = {"ok": smb_ok, "detail": smb_detail}
+    # 5009 面板端口
+    try:
+        import socket
+        with socket.create_connection(("127.0.0.1", 5009), timeout=1):
+            infra["panel_5009"] = {"ok": True}
+    except Exception:
+        infra["panel_5009"] = {"ok": False}
+    # 静音巡检：最近一次告警时间（launchd 每 30 分钟跑一次，/tmp 状态文件记录告警时刻）
+    last_alert = None
+    try:
+        last_alert = datetime.fromtimestamp(
+            os.path.getmtime("/tmp/silence_check_alert_ts")).strftime("%m-%d %H:%M")
+    except Exception:
+        pass
+    infra["silence_check"] = {"ok": True, "last_alert": last_alert}
+    return infra
+
+
+def _run_overview_scan():
+    """完整扫一轮设备 + 基础设施（后台线程调用；单设备套 40s 超时防 NAS 挂起拖死整轮）"""
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    devices = []
+    for dev in OVERVIEW_DEVICES:
+        box = {"v": None}
+
+        def _work(dev=dev):
+            box["v"] = _scan_overview_device(dev, today_str)
+
+        t = threading.Thread(target=_work, daemon=True)
+        t.start()
+        t.join(40)
+        if t.is_alive() or not isinstance(box["v"], dict):
+            logger_sys.warning(f"⚠️ 总览扫描 {dev} 超时，标记扫描超时")
+            devices.append({"name": dev, "status": "bad", "detail": "扫描超时（NAS 无响应？）",
+                            "latest_file": None, "latest_time": None, "age_sec": None,
+                            "max_volume": None, "today_count": 0})
+        else:
+            devices.append(box["v"])
+    infra = _scan_overview_infra()
+    db_stats = _query_db_stats() or _overview_cache.get("db_stats")
+    total_today = sum(d.get("today_count", 0) for d in devices)
+    with _overview_cache_lock:
+        _overview_cache["prev_total_today"] = _overview_cache.get("total_today")
+        _overview_cache["total_today"] = total_today
+        _overview_cache["devices"] = devices
+        _overview_cache["infra"] = infra
+        _overview_cache["db_stats"] = db_stats
+        _overview_cache["updated_at"] = time.time()
+
+
+def _overview_cache_loop():
+    """总览缓存刷新循环：启动缓 15s（让主初始化的 NAS 重活先跑），此后每 300s 一轮"""
+    time.sleep(15)
+    while True:
+        try:
+            _run_overview_scan()
+        except Exception as e:
+            logger_sys.error(f"❌ 系统总览扫描异常: {e}")
+        time.sleep(300)
 
 # =================【 轨道A: 独立哭声检测配置 】=================
 # 与语音识别参数完全隔离，仅用于原始音频的哭声声纹匹配
@@ -382,7 +594,7 @@ _cry_cooldown_lock = threading.Lock()
 
 # =================== 模型加载 ===================
 def load_models():
-    global asr_pipeline, sv_pipelines, whisper_model, sensevoice_pipeline
+    global asr_pipeline, sv_pipelines, sensevoice_pipeline
     print("\n====== 🚀 启动 SOTA 融合服务 ======")
 
     load_speaker_db()
@@ -393,21 +605,44 @@ def load_models():
     print(f"🧠 加载 ASR: {Config.ASR_MODEL} ...")
     # 2. 加载 ASR (FunASR Paraformer + VAD + 说话人分离)
     print(f"🧠 加载 ASR: {Config.ASR_MODEL} (支持VAD分段和说话人分离) ...")
-    asr_pipeline = AutoModel(
-        model=Config.ASR_MODEL,       # paraformer-zh
-        vad_model=Config.VAD_MODEL,   # fsmn-vad
-        punc_model=Config.PUNC_MODEL, # ct-punc (标点恢复)
-        spk_model=Config.SPK_MODEL,   # cam++ (说话人分离)
-        vad_kwargs={
-            "max_single_segment_time": Config.VAD_MAX_SINGLE_SEGMENT,
-            "max_end_silence_time": Config.VAD_MAX_END_SILENCE,
-            "sil_to_speech_time_thres": Config.VAD_SIL_TO_SPEECH,
-            "speech_to_sil_time_thres": Config.VAD_SPEECH_TO_SIL
-        },
-        device=Config.DEVICE,
-        disable_update=True
-    )
-    print("✅ Paraformer模型加载完成，已启用VAD分段和说话人分离功能")
+    _vad_engine = os.getenv("VAD_ENGINE", "silero").lower()
+    if _vad_engine == "silero":
+        # Silero 模式：管线不带内嵌 VAD，切段由 _generate_with_silero 完成（逐段送转写）
+        asr_pipeline = AutoModel(
+            model=Config.ASR_MODEL,       # paraformer-zh
+            punc_model=Config.PUNC_MODEL, # ct-punc (标点恢复)
+            spk_model=Config.SPK_MODEL,   # cam++ (说话人分离)
+            device=Config.DEVICE,
+            disable_update=True
+        )
+        print("✅ Paraformer加载完成（VAD引擎=Silero v5，切段在管线外完成）")
+    else:
+        asr_pipeline = AutoModel(
+            model=Config.ASR_MODEL,       # paraformer-zh
+            vad_model=Config.VAD_MODEL,   # fsmn-vad
+            punc_model=Config.PUNC_MODEL, # ct-punc (标点恢复)
+            spk_model=Config.SPK_MODEL,   # cam++ (说话人分离)
+            vad_kwargs={
+                "max_single_segment_time": Config.VAD_MAX_SINGLE_SEGMENT,
+                "max_end_silence_time": Config.VAD_MAX_END_SILENCE,
+                "sil_to_speech_time_thres": Config.VAD_SIL_TO_SPEECH,
+                "speech_to_sil_time_thres": Config.VAD_SPEECH_TO_SIL
+            },
+            device=Config.DEVICE,
+            disable_update=True
+        )
+        print("✅ Paraformer模型加载完成，已启用VAD分段和说话人分离功能")
+        # 【2026-10-04 修复】FunASR 的坑：构造时 vad_kwargs 里的参数被 init 签名捕获存到
+        # self.xxx（无人读取），运行时真正生效的是 vad_opts（默认 end_silence=800ms）。
+        # 曾导致 Config 的 300/800/1000ms 调整全部无效。此处启动后直写 vad_opts 覆盖。
+        try:
+            _vad_inner = getattr(asr_pipeline.vad_model, "model", None) or asr_pipeline.vad_model
+            _vad_inner.vad_opts.max_end_silence_time = Config.VAD_MAX_END_SILENCE
+            _vad_inner.vad_opts.max_single_segment_time = Config.VAD_MAX_SINGLE_SEGMENT
+            print(f"✅ VAD参数已直写 vad_opts: end_silence={Config.VAD_MAX_END_SILENCE}ms, "
+                  f"max_segment={Config.VAD_MAX_SINGLE_SEGMENT}ms")
+        except Exception as _vad_opt_err:
+            print(f"⚠️ VAD参数直写失败（将使用 fsmn-vad 默认值 800ms）: {_vad_opt_err}")
 
     # 3. 加载 SV 模型
     for name, conf in Config.SV_MODELS.items():
@@ -420,24 +655,7 @@ def load_models():
         )
     print(f"✅ 服务就绪 | ASR: SenseVoice | SV: {list(sv_pipelines.keys())}\n")
 
-    # 4. 加载 Whisper 模型 (可选)
-    if Config.ENABLE_WHISPER_COMPARISON:
-        print(f"🎤 加载 Whisper {Config.WHISPER_MODEL} 模型...")
-
-        try:
-            whisper_model = whisper.load_model(Config.WHISPER_MODEL, device=Config.DEVICE.split(':')[0])
-            print(f"✅ Whisper {Config.WHISPER_MODEL} 模型加载完成")
-
-        except Exception as e:
-            # 针对 macOS MPS 环境下的特殊报错进行友好提示
-            error_msg = str(e)
-            if "aten::_sparse_coo_tensor_with_dims_and_tensors" in error_msg:
-                logger_sys.warning("⚠️ Whisper 在 macOS MPS 环境下检测到张量不兼容，已自动回退到 SenseVoice 引擎进行高精度识别。")
-            else:
-                logger_sys.warning(f"⚠️ Whisper模型加载受限: {error_msg}，将使用主引擎进行音频转录。")
-            whisper_model = None
-
-    # 5. 加载 SenseVoice 模型 (情感检测)
+    # 4. 加载 SenseVoice 模型 (情感检测)
     if Config.ENABLE_SENSEVOICE:
         print(f"🎭 加载 SenseVoice 模型 (情感检测+第三转录)...")
         try:
@@ -661,7 +879,9 @@ def call_gemini_api(prompt):
 
         data = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500}
+            # thinkingLevel low: 3.x 思考模型防思考吃光 500 token 预算, 并加到 800
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 800,
+                                 "thinkingConfig": {"thinkingLevel": "low"}}
         }
         text = _post_gemini_request_with_fallback(
             data=data,
@@ -1260,8 +1480,14 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
     audio_paths_to_send.append(audio_path)
 
     if record_dt:
-        date_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, FileMonitorConfig.PROCESSED_DIR, record_dt.strftime("%Y-%m-%d"))
-        if os.path.exists(date_dir):
+        # 【双源】优先扫描 audio_path 归属设备的 processed/，无命中再依次尝试其余设备
+        _dev = _device_from_path(audio_path) or (SOURCE_DEVICES[0] if SOURCE_DEVICES else "")
+        _dev_order = ([_dev] if _dev else []) + [d for d in SOURCE_DEVICES + _LEGACY_DEVICES if d != _dev]
+        for _scan_dev in _dev_order:
+            date_dir = os.path.join(RECORDS_ROOT, _scan_dev, FileMonitorConfig.PROCESSED_DIR,
+                                    record_dt.strftime("%Y-%m-%d"))
+            if not os.path.exists(date_dir):
+                continue
             candidates = []
             for f in os.listdir(date_dir):
                 if f.endswith(tuple(FileMonitorConfig.SUPPORTED_FORMATS)):
@@ -1280,6 +1506,8 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
                     audio_paths_to_send.append(f_path)
 
             logger_a.info(f"👶 [BabyCry] 在 {date_dir} 中找到 {len(candidates)} 个上下文文件")
+            if candidates:
+                break  # 优先设备命中即止，避免跨设备重复注入上下文
 
     context_len = len(audio_paths_to_send) - 1
     logger_a.info(f"👶 [BabyCry] 收集完毕，共附带 {context_len} 个相邻时段记录作为多模态上下文 (总计 {len(audio_paths_to_send)} 个文件)")
@@ -1300,10 +1528,8 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
             advice = result.get("advice", "无")
             from db_manager import save_cry_analysis, update_cry_analysis
 
-            # 转换 absolute path 为相对于 SOURCE_DIR 的路径，以便前端使用
-            rel_audio_path = audio_path
-            if audio_path.startswith(FileMonitorConfig.SOURCE_DIR):
-                rel_audio_path = "/" + os.path.relpath(audio_path, FileMonitorConfig.SOURCE_DIR)
+            # 转换 absolute path 为相对 records 根的路径（含设备级），以便前端使用
+            rel_audio_path = "/" + _rel_to_records(audio_path)
 
             if placeholder_id:
                 update_cry_analysis(placeholder_id, reason, advice,
@@ -1447,15 +1673,15 @@ def retry_incomplete_cry_analyses():
             valid_paths = []
             if event_files:
                 for p in event_files:
-                    # 兼容相对路径和绝对路径
-                    abs_p = p if os.path.isabs(p) else os.path.join(FileMonitorConfig.SOURCE_DIR, p.lstrip('/'))
-                    if os.path.exists(abs_p):
+                    # 兼容相对路径和绝对路径（双源：相对路径按设备前缀/多设备解析）
+                    abs_p = p if os.path.isabs(p) else _resolve_under_records(p)
+                    if abs_p and os.path.exists(abs_p):
                         valid_paths.append(abs_p)
 
             # 单文件兜底
             if not valid_paths and audio_path:
-                abs_audio = audio_path if os.path.isabs(audio_path) else os.path.join(FileMonitorConfig.SOURCE_DIR, audio_path.lstrip('/'))
-                if os.path.exists(abs_audio):
+                abs_audio = audio_path if os.path.isabs(audio_path) else _resolve_under_records(audio_path)
+                if abs_audio and os.path.exists(abs_audio):
                     valid_paths = [abs_audio]
 
             # 兼容旧的 B 轨占位记录：保存后文件会重命名为 cry_<event_id>_*.wav，
@@ -1682,6 +1908,69 @@ def load_speaker_db_if_changed():
         _speaker_db_file_mtime = mtime
 
 # =================== 音频预处理 ===================
+# ---- Silero VAD v5 切分引擎（2026-10-03：替代 fsmn-vad 内嵌切分）----
+# 优点：婴儿声泛化更好；段间静音阈值放宽到 800ms（宝宝停顿不再切碎，切片更适合声纹注册）；
+#       ONNX CPU 推理，不占 GPU。段级转写仍由 Paraformer 完成。
+# 兼容：返回结构与 asr_pipeline.generate 完全一致（text + sentence_info），下游零改动；
+#       异常时调用点自动回退 fsmn-vad 全链路。
+_silero_vad_model = None
+
+
+def _get_silero_vad():
+    global _silero_vad_model
+    if _silero_vad_model is None:
+        from silero_vad import load_silero_vad
+        _silero_vad_model = load_silero_vad()
+    return _silero_vad_model
+
+
+def _generate_with_silero(pipeline, wav_path, gen_kwargs):
+    """Silero 切段 + 逐段 Paraformer 转写。输入为 16kHz mono wav（preprocess_audio 输出）。
+    返回 [{text, sentence_info: [{text, start(ms), end(ms)}]}]，与 fsmn 链路同构。"""
+    import numpy as np
+    import soundfile as sf
+    import torch
+    from silero_vad import get_speech_timestamps
+
+    wav, sr = sf.read(wav_path, dtype='float32', always_2d=False)
+    if wav.ndim > 1:
+        wav = wav.mean(axis=1)
+    if sr != 16000:
+        import torchaudio
+        wav = torchaudio.functional.resample(torch.from_numpy(wav), sr, 16000).numpy()
+
+    ts = get_speech_timestamps(
+        # silero-vad 6.x 参数名是 sampling_rate（旧版 4.x 才叫 fs）——用错会 TypeError 静默回退 fsmn
+        torch.from_numpy(np.ascontiguousarray(wav)), _get_silero_vad(), sampling_rate=16000,
+        threshold=Config.VAD_SPEECH_THRESHOLD,
+        min_speech_duration_ms=Config.VAD_MIN_SPEECH_MS,
+        min_silence_duration_ms=Config.VAD_MIN_SILENCE_MS,
+        max_speech_duration_s=Config.VAD_MAX_SPEECH_S,
+        speech_pad_ms=Config.VAD_SPEECH_PAD_MS,
+    )
+    if not ts:
+        return []
+
+    sentence_info = []
+    text_parts = []
+    for i, seg in enumerate(ts):
+        a_ms, b_ms = int(seg['start'] / 16), int(seg['end'] / 16)  # 16k: sample/16 = ms
+        piece_path = f"{wav_path}.s{i}.wav"
+        sf.write(piece_path, wav[seg['start']:seg['end']], 16000)
+        try:
+            out = pipeline.generate(input=piece_path, **gen_kwargs)
+        finally:
+            try:
+                os.remove(piece_path)
+            except Exception:
+                pass
+        text = (out[0].get("text", "") if out else "") or ""
+        sentence_info.append({"text": text, "start": a_ms, "end": b_ms})
+        text_parts.append(text)
+
+    return [{"text": "".join(text_parts), "sentence_info": sentence_info}]
+
+
 def preprocess_audio(input_path, output_path, normalize=None):
     # normalize=None 时跟随全局配置；显式传 False 可在并发下安全跳过归一化
     use_normalize = Config.NORMALIZE_AUDIO if normalize is None else normalize
@@ -1777,32 +2066,22 @@ def extract_segment(source_path, start_ms, end_ms, output_path):
 
 
 
-def transcribe_with_whisper(audio_path):
-    """
-    使用Whisper识别音频片段（作为FunASR的对比参考）
-
-    Args:
-        audio_path: 音频片段路径
-
-    Returns:
-        str: Whisper识别的文本，如果失败返回None
-    """
-    if not Config.ENABLE_WHISPER_COMPARISON or whisper_model is None:
-        return None
-
+def transcribe_with_nano(audio_path):
+    """用本地 Fun-ASR-Nano (audiocpp_server 8123, Metal) 识别切片; 失败返回None"""
+    url = os.getenv('NANO_ASR_URL', 'http://127.0.0.1:8123/v1/audio/transcriptions')
     try:
-        result = whisper_model.transcribe(
-            audio_path,
-            language='zh',
-            fp16=True,  # GPU加速
-            verbose=False
-        )
-        whisper_text = result['text'].strip()
-        logger_b.info(f"      [Whisper对比] {whisper_text}")
-        return whisper_text
+        with open(audio_path, 'rb') as f:
+            resp = requests.post(
+                url,
+                files={'file': (os.path.basename(audio_path), f, 'audio/wav')},
+                data={'model': 'fun-asr-nano', 'language': 'auto'},
+                timeout=60,
+            )
+        if resp.status_code == 200:
+            return (resp.json().get('text') or '').strip() or None
     except Exception as e:
-        logger_b.warning(f"      [Whisper对比] 识别失败: {e}")
-        return None
+        logger_b.warning(f"      [Nano] 识别失败: {e}")
+    return None
 
 
 def transcribe_with_sensevoice(audio_path):
@@ -2242,10 +2521,6 @@ def register_page():
 def manage_page():
     return render_template("manage.html")
 
-@app.route("/baby_cry")
-def baby_cry_page():
-    return render_template("baby_cry.html")
-
 @app.route("/api/illustration/<filename>")
 def serve_illustration(filename):
     """提供宝宝哭声事件插图（静态文件，支持浏览器缓存）"""
@@ -2272,8 +2547,8 @@ def api_get_cry_event(event_id):
         event_files = event.get("event_files_json", [])
         audio_urls = []
         for f in event_files:
-            if f.startswith(FileMonitorConfig.SOURCE_DIR):
-                f = os.path.relpath(f, FileMonitorConfig.SOURCE_DIR)
+            if f.startswith(RECORDS_ROOT):
+                f = _rel_to_records(f)  # 绝对路径 → 设备级相对路径（双源）
             elif f.startswith('/'):
                 f = f.lstrip('/')
             audio_urls.append(f"/api/audio/{f}")
@@ -2737,9 +3012,11 @@ def get_recent_process_logs(limit=100):
         logger_a.error(f"[刷盘] 读取process log失败: {e}")
         return f"读取刷盘日志失败: {e}"
 
-def run_refresh_file_cache(target_dir):
-    """后台执行刷盘任务"""
+def run_refresh_file_cache(target_dirs):
+    """后台执行刷盘任务（双源架构：逐设备目录刷）"""
     global refresh_cache_task
+    if isinstance(target_dirs, str):
+        target_dirs = [target_dirs]
     refresh_cache_task["running"] = True
     refresh_cache_task["status"] = "running"
     refresh_cache_task["count"] = 0
@@ -2752,7 +3029,7 @@ def run_refresh_file_cache(target_dir):
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "history_process.log")
     with open(log_file, "w", encoding="utf-8") as f:
-        f.write(f"[{time_module.strftime('%Y-%m-%d %H:%M:%S')}] 🔄 开始刷盘任务，扫描目录: {target_dir}\n")
+        f.write(f"[{time_module.strftime('%Y-%m-%d %H:%M:%S')}] 🔄 开始刷盘任务，扫描目录: {target_dirs}\n")
         f.flush()
 
     try:
@@ -2761,11 +3038,12 @@ def run_refresh_file_cache(target_dir):
         from db_manager import refresh_file_cache as do_refresh, init_pool
 
         init_pool()
-        logger_a.info(f"[刷盘] 后台任务开始，扫描目录: {target_dir}")
-        log_to_process(f"🔄 刷盘任务开始，目标目录: {target_dir}")
-
-        # 使用回调函数实时更新进度和日志
-        count = do_refresh(target_dir, progress_callback=update_refresh_progress, log_callback=log_to_process)
+        # 使用回调函数实时更新进度和日志（双源：逐设备目录刷，计数累加）
+        count = 0
+        for target_dir in target_dirs:
+            logger_a.info(f"[刷盘] 后台任务开始，扫描目录: {target_dir}")
+            log_to_process(f"🔄 刷盘任务开始，目标目录: {target_dir}")
+            count += do_refresh(target_dir, progress_callback=update_refresh_progress, log_callback=log_to_process)
 
         if count >= 0:
             refresh_cache_task["count"] = count
@@ -2801,13 +3079,13 @@ def refresh_file_cache():
             "task": refresh_cache_task
         })
 
-    # 启动后台线程
-    target_dir = FileMonitorConfig.SOURCE_DIR
-    thread = threading.Thread(target=run_refresh_file_cache, args=(target_dir,))
+    # 启动后台线程（双源：逐设备目录刷盘）
+    target_dirs = list(FileMonitorConfig.SOURCES)
+    thread = threading.Thread(target=run_refresh_file_cache, args=(target_dirs,))
     thread.daemon = True
     thread.start()
 
-    logger_a.info(f"[刷盘] 启动后台任务，扫描目录: {target_dir}")
+    logger_a.info(f"[刷盘] 启动后台任务，扫描目录: {target_dirs}")
     return jsonify({
         "message": "刷盘任务已启动",
         "status": "started",
@@ -2926,9 +3204,9 @@ def get_live_status():
             "a_progress": a_progress,
             "today_cry_count": today_cry_count,
             "pid": _history_reprocess_proc.pid if _history_reprocess_proc else None,
-            "a_reason": "A 轨历史分析中" if (a_running and _track_b_running and _track_b_paused) else None,
-            "b_reason": "A 轨历史分析中" if (a_running and _track_b_running) else None,
-            "message": "B 轨已暂停" if (_track_b_running and _track_b_paused) else ("B 轨正常运行中" if _track_b_running else "B 轨未启动"),
+            "a_reason": "哭声检测补跑中（转写让出 GPU）" if (a_running and _track_b_running and _track_b_paused) else None,
+            "b_reason": "哭声检测补跑中（转写让出 GPU）" if (a_running and _track_b_running) else None,
+            "message": "实时转写已暂停" if (_track_b_running and _track_b_paused) else ("实时转写运行中" if _track_b_running else "实时转写未启动"),
             "b_stats": {
                 "started_at": b_stats.get("started_at"),
                 "runtime": b_runtime,
@@ -2942,6 +3220,114 @@ def get_live_status():
         })
     except Exception as e:
         return jsonify({"error": str(e), "a_running": False, "logs_a": ""}), 500
+
+@app.route("/api/overview", methods=["GET"])
+def get_overview():
+    """系统总览：录音设备健康 + B 轨转写 + A 轨补跑 + 基础设施，一次请求拿全。
+    设备/基础设施部分来自后台线程 ≤5 分钟的缓存快照（ffmpeg 响度检测较重，不随轮询实时跑）；
+    B/A 轨部分每次请求实时读取（内存/本地文件，开销可忽略）。"""
+    try:
+        global _track_b_running, _track_b_paused, _history_reprocess_proc
+        with _overview_cache_lock:
+            devices = [d.copy() for d in _overview_cache["devices"]]
+            infra = json.loads(json.dumps(_overview_cache["infra"]))
+            scan_age = (int(time.time() - _overview_cache["updated_at"])
+                        if _overview_cache["updated_at"] else None)
+            total_now = _overview_cache.get("total_today")
+            total_prev = _overview_cache.get("prev_total_today")
+
+        # ---- A 轨（与 live_status 同一套判定：进程存活 或 进度文件心跳 10 分钟内 running）----
+        a_running = _history_reprocess_proc is not None and _history_reprocess_proc.poll() is None
+        progress_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "a_track_progress.json")
+        if not a_running and os.path.exists(progress_file):
+            try:
+                if time.time() - os.path.getmtime(progress_file) < 600:
+                    with open(progress_file, "r", encoding="utf-8") as f:
+                        if json.load(f).get("status") == "running":
+                            a_running = True
+            except Exception:
+                pass
+        a_progress = None
+        if os.path.exists(progress_file):
+            try:
+                with open(progress_file, "r", encoding="utf-8") as f:
+                    a_progress = json.load(f)
+                # 进程已退出但进度状态还是 running，修正为 stopped
+                if not a_running and a_progress.get("status") == "running":
+                    a_progress["status"] = "stopped"
+            except Exception:
+                a_progress = None
+
+        # ---- B 轨：统计 + 心跳 + 积压 + 效率 ----
+        with _b_stats_lock:
+            b_stats = _b_stats.copy()
+        now_ts = time.time()
+        hour_rate = sum(1 for t in b_stats.get("done_window", []) if now_ts - t <= 3600)
+        # DB 真实入库统计（缓存线程 5 分钟刷新；进程计数会因重启清零，仅作降级回退）
+        db_stats = _overview_cache.get("db_stats") or {}
+        ingest_1h = db_stats.get("ingest_1h")
+        ingest_today = db_stats.get("ingest_today")
+        cry_today = db_stats.get("cry_today")
+        b_runtime = None
+        if b_stats.get("started_at"):
+            try:
+                diff = (datetime.now() - datetime.fromisoformat(b_stats["started_at"])).total_seconds()
+                hours, mins = int(diff // 3600), int((diff % 3600) // 60)
+                b_runtime = f"{hours}小时{mins}分" if hours > 0 else f"{mins}分钟"
+            except Exception:
+                b_runtime = None
+        # 心跳：audio_processor 每个文件处理前/每轮监听都会 touch（smb_watchdog 240s 判死同源）
+        hb_age = None
+        try:
+            hb_file = getattr(audio_processor, "_B_TRACK_HEARTBEAT",
+                              os.path.join(os.path.dirname(os.path.abspath(__file__)), "log", "b_track_heartbeat"))
+            hb_age = int(time.time() - os.path.getmtime(hb_file))
+        except Exception:
+            pass
+        # 积压 ≈ 各设备今日目录现存 m4a 总数（B 轨转写完会删除源文件，现存即待转写存量；
+        # 来自 ≤5 分钟缓存，做的是趋势参考而非精确值）
+        backlog = sum(d.get("today_count", 0) for d in devices) if devices else None
+        # 积压趋势：最近两轮扫描(间隔 300s)的现存总数差 → 折算每小时净变化
+        # 正=录制快于转写(积压在涨)，负=转写在消化积压，0=稳态；重启后首两轮 prev 为空则不出数
+        backlog_trend = None
+        if total_now is not None and total_prev is not None:
+            backlog_trend = round((total_now - total_prev) / 300 * 3600)
+
+        # ---- GPU 占用（推算，不做探测）：补跑 > 转写 > 空闲 ----
+        if a_running:
+            gpu_state = "补跑占用"
+        elif _track_b_running:
+            gpu_state = "转写占用"
+        else:
+            gpu_state = "空闲"
+
+        return jsonify({
+            "devices": devices,
+            "devices_scan_age_sec": scan_age,
+            "b_track": {
+                "running": _track_b_running,
+                "paused": _track_b_paused if _track_b_running else True,
+                "heartbeat_age_sec": hb_age,
+                "backlog": backlog,
+                "backlog_trend_per_hour": backlog_trend,
+                "hour_rate": hour_rate,
+                "ingest_rate_per_hour": ingest_1h,
+                "today_transcribed": ingest_today if ingest_today is not None else b_stats.get("today_record_count", 0),
+                "today_cry_count": cry_today if cry_today is not None else b_stats.get("today_cry_count", 0),
+                "runtime": b_runtime,
+                "last_event_time": b_stats.get("last_event_time"),
+            },
+            "a_track": {
+                "running": a_running,
+                "progress": a_progress,
+                "window": "01:00-06:30",
+                "next_run": "01:05",
+            },
+            "infra": dict(infra, gpu_state=gpu_state),
+        })
+    except Exception as e:
+        logger_sys.error(f"❌ /api/overview 失败: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/live_logs", methods=["GET"])
 def get_live_logs():
@@ -2994,7 +3380,7 @@ def start_live():
         import threading
         global _monitor_thread, _track_b_running, _track_b_paused
         if _track_b_running and _monitor_thread and _monitor_thread.is_alive():
-            return jsonify({"message": "B 轨已在运行中", "status": "already_running"})
+            return jsonify({"message": "实时转写已在运行中", "status": "already_running"})
         _track_b_running = True
         _track_b_paused = False
         with _b_stats_lock:
@@ -3005,7 +3391,7 @@ def start_live():
             _b_stats["last_cry_time"] = None
         _monitor_thread = threading.Thread(target=audio_processor.start_monitor, daemon=True)
         _monitor_thread.start()
-        return jsonify({"message": "B 轨实时监听已启动", "status": "started"})
+        return jsonify({"message": "实时语音转写已启动", "status": "started"})
     except Exception as e:
         logger.error(f"启动 B 轨失败: {e}")
         return jsonify({"message": f"启动失败: {e}", "status": "error"}), 500
@@ -3017,9 +3403,9 @@ def pause_live():
     try:
         global _track_b_paused
         if not _track_b_running:
-            return jsonify({"message": "B 轨未启动", "status": "not_running"})
+            return jsonify({"message": "实时转写未启动", "status": "not_running"})
         _track_b_paused = True
-        return jsonify({"message": "B 轨已暂停", "status": "paused"})
+        return jsonify({"message": "实时转写已暂停", "status": "paused"})
     except Exception as e:
         return jsonify({"message": f"暂停失败: {e}", "status": "error"}), 500
 
@@ -3032,7 +3418,7 @@ def stop_live():
         _track_b_running = False
         _track_b_paused = True
         _monitor_thread = None
-        return jsonify({"message": "B 轨已停止", "status": "stopped"})
+        return jsonify({"message": "实时转写已停止", "status": "stopped"})
     except Exception as e:
         return jsonify({"message": f"停止失败: {e}", "status": "error"}), 500
 
@@ -3149,9 +3535,10 @@ def _get_audio_duration(path, timeout=10):
         return None
 
 
-def _find_top_cry_windows(src_local, top_n=5):
+def _find_top_cry_windows(src_local, top_n=5, step_scale=1):
     """在事件音频中自动定位最像 Baby 的纯哭声段（滑窗打分），返回 top_n 个候选窗。
     用声纹库 Baby 平均声纹做种子：单模型全窗粗筛 → top 窗 3 模型精排。
+    step_scale>1 时放大滑窗步长（长录音降采样粗扫，推理量按倍数下降，精度略降）。
     返回 [(score, start_sec, end_sec), ...]（分数降序）；库中无声纹种子时返回 []。"""
     avg_embeddings = None
     if SAMPLE_TARGET_SPEAKER in speaker_db and "avg_embeddings" in speaker_db[SAMPLE_TARGET_SPEAKER]:
@@ -3165,9 +3552,8 @@ def _find_top_cry_windows(src_local, top_n=5):
     duration = _get_audio_duration(src_local)
     if not duration or duration <= SAMPLE_WINDOW_SECONDS:
         return [(0.0, 0.0, float(duration or 0.0))]  # 整段不足一个窗，直接整段
-
     win_ms = int(SAMPLE_WINDOW_SECONDS * 1000)
-    step_ms = int(SAMPLE_WINDOW_STEP * 1000)
+    step_ms = int(SAMPLE_WINDOW_STEP * 1000 * max(1, int(step_scale)))
     total_ms = int(duration * 1000)
 
     windows = []
@@ -3251,9 +3637,12 @@ def _find_best_cry_window(src_local):
     return w_start, w_end, score
 
 
-def preset_cry_segments(event_id, src_local, top_n=5):
+def preset_cry_segments(event_id, src_local, top_n=5, fast_windows=None, step_scale=1):
     """【2026-09-20 用户建议落地】分析时顺手预切哭声候选片段并存盘。
     之后预览/确认直接读文件——零 GPU 等待，彻底避开补跑抢 GPU 导致的预览卡顿。
+    fast_windows: 调用方已知的 [(score, start_sec, end_sec), ...]，直接按位切片，
+    跳过全量滑窗打分（历史事件补切用，秒级完成）；None 则走滑窗扫描。
+    step_scale: 滑窗步长放大倍数（长录音降采样粗扫）。
     失败只降级到旧的"用时定位"路径，不影响主流程。"""
     try:
         seg_dir = os.path.join(Config.TEMP_DIR, "preview_segments")
@@ -3261,8 +3650,11 @@ def preset_cry_segments(event_id, src_local, top_n=5):
         manifest_path = os.path.join(seg_dir, f"{event_id}.json")
         if os.path.exists(manifest_path):
             return True
-        with gpu_lock:
-            windows = _find_top_cry_windows(src_local, top_n=top_n)
+        if fast_windows:
+            windows = fast_windows
+        else:
+            with gpu_lock:
+                windows = _find_top_cry_windows(src_local, top_n=top_n, step_scale=step_scale)
         if not windows:
             return False
         manifest = []
@@ -3284,17 +3676,21 @@ def preset_cry_segments(event_id, src_local, top_n=5):
         return False
 
 
-def _locate_and_copy_event_audio(event):
+def _locate_and_copy_event_audio(event, copy=True):
     """定位事件音频源文件并带超时复制到本地 temp。
     优先级: audio_path(持久音频,分析完成后可能已清理) → event_files_json 中与
     filename 匹配的文件 → event_files_json 其余文件。复制动作即存在性检查。
+    copy=False 时免拷贝直接返回第一个非空候选路径（ffmpeg input-seek 可直接
+    远程读段，历史事件快速预切省去整段大文件拷贝）。
     返回 (本地路径 or None, 错误信息)"""
     candidates = []
     audio_path = event.get("audio_path")
     if audio_path:
         candidates.append(audio_path)
         if not os.path.isabs(audio_path):
-            candidates.append(os.path.join(FileMonitorConfig.SOURCE_DIR, audio_path))
+            _abs = _resolve_under_records(audio_path)
+            if _abs and _abs not in candidates:
+                candidates.append(_abs)
     event_files = event.get("event_files_json") or []
     fname = event.get("filename")
     for f in event_files:
@@ -3306,18 +3702,18 @@ def _locate_and_copy_event_audio(event):
 
     # 【2026-09-21】NAS 回退：老事件（尤其回合合并前 created 的实时事件，event_files 为空）
     # 持久音频被清理后，按录音日期到 NAS 各设备源目录找原文件；
-    # 覆盖统一归档 processed/（B 轨处理后的文件都会移到 Sony-2/processed/<日期>/）。
+    # 覆盖统一归档 processed/（B 轨处理后的文件都会移到各设备 processed/<日期>/，
+    # 【2026-10-03 双源】设备清单含 Pixel-6/Pixel-5 及 Sony 兼容源）。
     # 复制动作自带存在性检查，多候选逐个尝试即可。
     try:
         # 注意：recording_time 从 DB 读出是 ISO 字符串而非 datetime，直接用文件名解析最稳
         _rec = parse_recording_time(fname or "")
         if _rec and fname:
             _date_str = _rec.strftime("%Y-%m-%d")
-            _records_root = os.path.dirname("/Volumes/download/records/Sony-2")
-            for _dev in ("Sony-2", "Sony-1", "Sony-3"):
+            for _dev in SOURCE_DEVICES + _LEGACY_DEVICES:
                 for _cand in (
-                    os.path.join(_records_root, _dev, _date_str, fname),
-                    os.path.join(_records_root, _dev, "processed", _date_str, fname),
+                    os.path.join(RECORDS_ROOT, _dev, _date_str, fname),
+                    os.path.join(RECORDS_ROOT, _dev, "processed", _date_str, fname),
                 ):
                     if _cand not in candidates:
                         candidates.append(_cand)
@@ -3325,6 +3721,20 @@ def _locate_and_copy_event_audio(event):
         pass
 
     os.makedirs(Config.TEMP_DIR, exist_ok=True)
+    if not copy:
+        # 免拷贝模式: 第一个存在且非空的候选直接返回 (ffmpeg input-seek 远程读段)
+        last_err = "事件无可定位的音频文件"
+        for src in candidates:
+            src = str(src).strip()
+            if not src:
+                continue
+            try:
+                if os.path.exists(src) and os.path.getsize(src) > 0:
+                    return src, None
+                last_err = f"{src}: 不存在或空文件"
+            except OSError as _e:
+                last_err = f"{src}: {_e}"
+        return None, f"音频不可达(免拷贝模式) → {last_err}"
     src_ext = (os.path.splitext(candidates[0])[1] if candidates else "") or ".wav"
     local_path = os.path.join(
         Config.TEMP_DIR, f"confirm_src_{event.get('id')}_{int(time.time())}{src_ext}"
@@ -3363,11 +3773,28 @@ def api_preset_cry_segments(event_id):
         seg_dir = os.path.join(Config.TEMP_DIR, "preview_segments")
         if os.path.exists(os.path.join(seg_dir, f"{event_id}.json")):
             return jsonify({"already": True}), 200
-        src_local, locate_err = _locate_and_copy_event_audio(event)
+        # 【2026-10-02 快速路径】历史事件 DB 里已有精确切片位置 (start_time/end_time, 秒)，
+        # 直接按位切 3 个候选变体，跳过全量滑窗打分 (几小时录音的滑窗推理要 100-400s)。
+        # 仅切片 ≤600s 时启用；超长粗切片 (整段录音级) 仍走旧滑窗保证精度。
+        fast = None
+        st, et = event.get("start_time"), event.get("end_time")
+        try:
+            st, et = float(st), float(et)
+        except (TypeError, ValueError):
+            st = et = None
+        if st is not None and et is not None and 1.0 <= et - st <= 600:
+            fast = [
+                (1.0, st, et),
+                (0.9, max(0.0, st - 2.0), et + 2.0),
+                (0.8, max(0.0, st - 5.0), et + 5.0),
+            ]
+        src_local, locate_err = _locate_and_copy_event_audio(event, copy=not fast)
         if not src_local:
             return jsonify({"error": f"音频不可达: {locate_err}"}), 404
         try:
-            ok = preset_cry_segments(event_id, src_local)
+            # 超长粗切片(>600s, 整段录音级): 降采样滑窗(步长×12), 推理量减 12 倍
+            scale = 12 if (st is None or et is None or et - st > 600) else 1
+            ok = preset_cry_segments(event_id, src_local, fast_windows=fast, step_scale=scale)
             return jsonify({"ok": bool(ok)}), 200
         finally:
             # 清理批量定位产生的临时副本（持久音频 cry_*.wav 不在此列，绝不删）
@@ -3624,6 +4051,28 @@ def cry_segment_preview(event_id):
                     resp.headers["X-Cry-Variant"] = str(variant)
                     resp.headers["X-Cry-Windows"] = str(len(manifest))
                     return resp
+                # 【2026-10-02】清单在但切片 wav 缺失(批量预切中断遗留 110 个事件)：
+                # 按清单 start/end 免拷贝直切(ffmpeg 远程读段, 秒级)，省掉 GPU 滑窗
+                # 打分(100-400s)；结果写入长期缓存，下次直接秒回
+                _cand = manifest[variant] if isinstance(manifest[variant], dict) else {}
+                _st = float(_cand.get("start") or 0.0)
+                _et = float(_cand.get("end") or 0.0)
+                if _et - _st >= 1.0:
+                    _src, _loc_err = _locate_and_copy_event_audio(event, copy=False)
+                    if _src:
+                        try:
+                            if extract_segment(_src, int(_st * 1000), int(_et * 1000), cached):
+                                logger_b.info(f"🎵 [试听快速路径] 事件 {event_id} 清单直切 v{variant} ({_st:.1f}-{_et:.1f}s)")
+                                resp = send_file(cached, mimetype="audio/wav")
+                                resp.headers["X-Cry-Variant"] = str(variant)
+                                resp.headers["X-Cry-Windows"] = str(len(manifest))
+                                resp.headers["X-Cry-Fastpath"] = "manifest"
+                                return resp
+                        except Exception as fast_err:
+                            logger_a.warning(f"清单直切失败 (event_id={event_id})，落穿用时定位: {fast_err}")
+                    else:
+                        logger_a.warning(f"清单直切无源 (event_id={event_id}): {_loc_err}")
+                logger_a.warning(f"预切 wav 缺失，落穿用时定位 (event_id={event_id}, v{variant})")
         except Exception as man_err:
             logger_a.warning(f"读取预切片段失败 (event_id={event_id})，回退用时定位: {man_err}")
 
@@ -3895,6 +4344,43 @@ def list_speakers():
         logger_b.error(f"获取说话人列表失败: {str(e)}")
         return jsonify({"error": "Failed to retrieve speakers"}), 500
 
+# =================== 声纹注册防重复（内容指纹） ===================
+def _sample_fingerprint(wav_path):
+    """预处理后标准 wav 的 MD5 —— 同源音频字节一致，作为防重复注册指纹"""
+    try:
+        with open(wav_path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except Exception:
+        return None
+
+def _find_voiceprint_duplicate(fp):
+    """跨说话人全局查重。返回 (说话人, 样本) 或 (None, None)。
+    顺带懒补存量样本缺失的指纹（从已存档的样本 wav 计算）。"""
+    if not fp:
+        return None, None
+    fp_added = False
+    for pd_ in speaker_db.values():
+        for s_ in pd_.get('samples', []):
+            if not s_.get('fingerprint'):
+                s_['fingerprint'] = _sample_fingerprint(s_.get('audio_path', ''))
+                if s_['fingerprint']:
+                    fp_added = True
+    hit_spk, hit_s = None, None
+    for spk, pd_ in speaker_db.items():
+        for s_ in pd_.get('samples', []):
+            if s_.get('fingerprint') == fp:
+                hit_spk, hit_s = spk, s_
+                break
+        if hit_spk:
+            break
+    if fp_added:
+        try:
+            with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
+                json.dump(speaker_db, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger_b.warning(f"声纹库指纹懒补落盘失败（不影响本次注册）: {e}")
+    return hit_spk, hit_s
+
 @app.route("/speaker/register", methods=["POST"])
 @admin_required
 def register_speaker_web():
@@ -3941,6 +4427,16 @@ def register_speaker_web():
             if not preprocess_audio(raw_temp, proc_temp):
                 return jsonify({"error": f"Audio preprocessing failed for {audio_file.filename}"}), 500
 
+            # 内容指纹防重复注册（跨说话人全局查重）
+            fp = _sample_fingerprint(proc_temp)
+            dup_spk, dup_s = _find_voiceprint_duplicate(fp)
+            if dup_spk:
+                logger_b.info(f"🚫 拒绝重复注册: 该音频已归属 [{dup_spk}] (样本 {dup_s.get('id')}, {dup_s.get('timestamp')})")
+                return jsonify({
+                    "error": f"该音频已注册到「{dup_spk}」名下（{dup_s.get('timestamp', '')}），无需重复注册",
+                    "duplicate": True, "existing_speaker": dup_spk
+                }), 409
+
             # 为每个模型提取嵌入
             sample_embeddings = {}
             for model_name, sv_pipe in sv_pipelines.items():
@@ -3965,6 +4461,9 @@ def register_speaker_web():
             sample_info = {
                 "id": sample_id,
                 "filename": audio_file.filename,
+                "source_key": request.form.get('source_key', ''),
+                "source": "web",
+                "fingerprint": fp,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "audio_path": sample_audio_path,
                 "embeddings": sample_embeddings
@@ -4277,6 +4776,8 @@ def register_speaker():
 
             # 收集新样本数据
             new_samples = []
+            skipped_dup = []
+            batch_fps = {}
             model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
 
             for file in audio_files:
@@ -4290,6 +4791,16 @@ def register_speaker():
                 if not preprocess_audio(raw_temp, proc_temp):
                     logger_b.warning(f"⚠️ 文件 {file.filename} 预处理失败，已跳过。")
                     continue
+
+                # 内容指纹防重复注册（跨说话人全局查重 + 本批次互查）
+                fp_i = _sample_fingerprint(proc_temp)
+                if fp_i and (fp_i in batch_fps or _find_voiceprint_duplicate(fp_i)[0]):
+                    dup_owner = batch_fps.get(fp_i) or _find_voiceprint_duplicate(fp_i)[0]
+                    logger_b.info(f"🚫 跳过重复文件 {file.filename}: 已归属 [{dup_owner}]")
+                    skipped_dup.append(file.filename)
+                    continue
+                if fp_i:
+                    batch_fps[fp_i] = speaker_name
 
                 # 为每个模型提取嵌入
                 sample_embeddings = {}
@@ -4313,6 +4824,9 @@ def register_speaker():
                     sample_info = {
                         "id": sample_id,
                         "filename": file.filename,
+                        "source_key": request.form.get('source_key', ''),
+                        "source": "upload",
+                        "fingerprint": fp_i,
                         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                         "audio_path": sample_audio_path,
                         "embeddings": sample_embeddings
@@ -4329,6 +4843,11 @@ def register_speaker():
                 logger_b.info(f"  - 模型 [{model_name}] 处理了 {len(emb_list)} 个样本")
 
             if not avg_embeddings:
+                if skipped_dup and not new_samples:
+                    return jsonify({
+                        "error": f"全部 {len(skipped_dup)} 个文件都是重复样本（已存在于声纹库），未做任何修改",
+                        "duplicate": True, "duplicates_skipped": skipped_dup
+                    }), 409
                 return jsonify({"error": "Failed to extract embeddings from any samples"}), 500
 
             with db_lock:
@@ -4369,10 +4888,14 @@ def register_speaker():
                     json.dump(speaker_db, f, indent=2, ensure_ascii=False)
 
             logger_b.info(f"✅ 声纹{action}成功: {speaker_name}")
-            return jsonify({
+            resp = {
                 "message": f"Speaker '{speaker_name}' {action} successfully.",
                 "samples_added": len(new_samples)
-            })
+            }
+            if skipped_dup:
+                resp["duplicates_skipped"] = skipped_dup
+                resp["message"] += f"（跳过 {len(skipped_dup)} 个重复文件: {', '.join(skipped_dup[:3])}{'...' if len(skipped_dup) > 3 else ''}）"
+            return jsonify(resp)
 
         except Exception as e:
             logger_b.error(f"❌ 注册异常: {str(e)}")
@@ -4389,6 +4912,26 @@ def register_speaker():
                     try: os.remove(f)
                     except: pass
 
+
+@app.route("/api/voiceprint_registered", methods=["GET"])
+@admin_required
+def get_voiceprint_registered():
+    """已注册声纹的样本清单 —— 前端「记录」页据此标注已入库的段，防止重复注册"""
+    registered = []
+    for spk, pd in speaker_db.items():
+        for s in pd.get('samples', []):
+            registered.append({
+                "speaker": spk,
+                "filename": s.get('filename', ''),
+                "source_key": s.get('source_key', ''),
+                "timestamp": s.get('timestamp', ''),
+            })
+    source_keys = sorted({r['source_key'] for r in registered if r['source_key']})
+    return jsonify({
+        "registered": registered,
+        "source_keys": source_keys,
+        "total": len(registered)
+    })
 
 @app.route("/transcribe", methods=["POST"])
 @app.route("/transcribes", methods=["POST"])
@@ -4433,10 +4976,15 @@ def transcribe_audio():
 
             logger_b.info(f"📥 收到转录任务: {file.filename}")
 
-            # 更新 B 轨统计
+            # 更新 B 轨统计（同步端点：收到即处理，接收时刻窗口即实时吞吐速率）
             with _b_stats_lock:
                 _b_stats["today_record_count"] += 1
                 _b_stats["last_event_time"] = datetime.now().strftime('%H:%M:%S')
+                now_ts = time.time()
+                w = _b_stats["done_window"]
+                w.append(now_ts)
+                while w and now_ts - w[0] > 3600:
+                    w.pop(0)
 
             logger_b.info("  [生命周期: 1. 音频预处理] 开始 (FFmpeg降噪、重采样、归一化)...")
             if not preprocess_audio(raw_temp, proc_temp):
@@ -4453,7 +5001,14 @@ def transcribe_audio():
             _gen_kwargs = dict(language="auto", use_itn=True, use_punc=True)
             if Config.ASR_HOTWORD:
                 _gen_kwargs["hotword"] = Config.ASR_HOTWORD  # SeACo 热词偏置
-            res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
+            if Config.VAD_ENGINE == "silero":
+                try:
+                    res = _generate_with_silero(asr_pipeline, proc_temp, _gen_kwargs)
+                except Exception as _vad_ex:
+                    logger_b.warning(f"  ⚠️ Silero VAD 异常（{_vad_ex.__class__.__name__}: {_vad_ex}），本次回退 fsmn-vad 全链路")
+                    res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
+            else:
+                res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
 
             # 【轨道A: 独立哭声检测】直接对完整 60s 原始音频做声纹匹配
             # 使用 CryDetectionConfig 独立参数，与轨道B (VAD+语音识别) 完全隔离
@@ -4793,6 +5348,7 @@ def transcribe_audio():
 
                         identity, confidence = None, 0.0
                         recognition_details = []
+                        sensevoice_text = None  # 只在长段分支赋值，短段/切片失败时保持 None（否则 UnboundLocalError，Silero 短段一多就暴露）
 
                         segment_audio_path = None
 
@@ -4809,8 +5365,9 @@ def transcribe_audio():
                             if date_match:
                                 date_str = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
 
-                            # 按日期分类的目录结构: audio_segments/YYYY-MM-DD/filename/
-                            segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, "audio_segments", date_str, base_filename)
+                            # 按日期分类的目录结构: <设备>/audio_segments/YYYY-MM-DD/filename/（双源按设备隔离）
+                            _seg_dev = source_device if source_device else (SOURCE_DEVICES[0] if SOURCE_DEVICES else "unknown")
+                            segments_dir = os.path.join(RECORDS_ROOT, _seg_dev, "audio_segments", date_str, base_filename)
                             os.makedirs(segments_dir, exist_ok=True)
 
                             # 临时文件用于处理
@@ -4838,18 +5395,21 @@ def transcribe_audio():
                                 # 2. 【轨道B】纯语音识别声纹 (标准参数，不做哭声补偿)
                                 identity, confidence, recognition_details = identify_speaker_fusion(seg_wav_temp)
 
-                                # 3. 补全其他信息 (Whisper/Emotion)
+                                # 3. 补全其他信息 (Whisper/Emotion/Nano)
                                 whisper_text = None
+                                nano_text = None
                                 emotion = sensevoice_emotion
 
                                 if identity is not None:
                                     if emotion is None:
                                         emotion = detect_emotion_for_segment(seg_wav_temp)
-                                    whisper_text = transcribe_with_whisper(seg_wav_temp)
+                                    # Whisper 对比转写已移除（效果不佳）, whisper_text 恒为 null
+                                    nano_text = transcribe_with_nano(seg_wav_temp)
                                     logger_b.info(f"      [性能] 已识别说话人 {identity}")
                                 else:
                                     logger_b.info(f"      [性能] 未识别说话人，跳过后续处理")
                                     whisper_text = None
+                                    nano_text = None
 
                                 # 保存超过15个字的语句音频
                                 # 检测是否为噪音(重复字符过多)
@@ -4898,8 +5458,6 @@ def transcribe_audio():
                                             f.write(f"情感: {emotion}\n")
                                             f.write(f"置信度: {confidence:.3f}\n")
                                             f.write(f"\n=== FunASR 识别结果 ===\n{clean_text}\n")
-                                            if whisper_text:
-                                                f.write(f"\n=== Whisper 识别结果 ===\n{whisper_text}\n")
                                             if sensevoice_text:
                                                 f.write(f"\n=== SenseVoice 识别结果 ===\n{sensevoice_text}\n")
 
@@ -4911,6 +5469,7 @@ def transcribe_audio():
                             # 即使跳过声纹识别，也要初始化这些变量
                             emotion = None  # 未识别到情感时为None,不使用neutral
                             whisper_text = None
+                            nano_text = None
 
 
                         # 核心优化：如果 SenseVoice 已经判定为 <|CRY|>，则豁免 ONLY_REGISTERED_SPEAKERS 检查
@@ -4965,6 +5524,7 @@ def transcribe_audio():
                             "text": clean_text, "start": start, "end": end,
                             "spk": identity or "Unknown", "emotion": emotion,
                             "whisper_text": whisper_text,
+                            "nano_text": nano_text,
                             "sensevoice_text": sensevoice_text,
                             "confidence": float(f"{confidence:.3f}"),
                             "recognition_details": recognition_details,
@@ -5068,6 +5628,10 @@ def transcribe_audio():
                 except Exception as e:
                     logger_b.error(f"❌ 数据库保存异常: {e}")
                     logger_b.error(traceback.format_exc())
+            else:
+                # 0 有效语音段（纯静音/未过 VAD）不入库，但必须打带 recording_time 的闭合标记——
+                # 否则 web_viewer 仪表盘的日志配对永远无法闭合，文件会一直假性显示"处理中"（2026-10-04）
+                logger_b.info(f"⭕ 无有效语音段, 跳过入库 (recording_time: {parse_recording_time(file.filename)})")
             # =========================================================
 
             return jsonify(response_data)
@@ -5122,10 +5686,18 @@ def get_sample_audio(speaker_name, sample_id):
 
 @app.route('/audio_segments/<path:filename>')
 def serve_audio_segment(filename):
-    """提供音频片段静态文件服务"""
+    """提供音频片段静态文件服务（双源：逐设备 audio_segments/ 探测）"""
+    from werkzeug.exceptions import NotFound
     try:
-        audio_segments_dir = os.path.join(FileMonitorConfig.SOURCE_DIR, 'audio_segments')
-        return send_from_directory(audio_segments_dir, filename)
+        rel = filename.lstrip('/')
+        for dev in SOURCE_DEVICES + _LEGACY_DEVICES:
+            audio_segments_dir = os.path.join(RECORDS_ROOT, dev, 'audio_segments')
+            try:
+                return send_from_directory(audio_segments_dir, rel)
+            except NotFound:
+                continue
+        # 兼容单源直挂（--source-path 覆盖等场景）
+        return send_from_directory(os.path.join(FileMonitorConfig.SOURCE_DIR, 'audio_segments'), rel)
     except Exception as e:
         logger_sys.error(f"获取音频片段失败: {str(e)}")
         return jsonify({"error": "Audio segment not found"}), 404
@@ -5137,7 +5709,12 @@ def serve_audio_file(filename):
     try:
         # 清理路径（移除开头的 /）
         clean_filename = filename.lstrip('/')
-        return send_from_directory(FileMonitorConfig.SOURCE_DIR, clean_filename)
+        # 双源：设备级路径直接定位；旧式相对路径（无设备前缀）逐设备探测
+        _abs = _resolve_under_records(clean_filename)
+        if _abs:
+            _dir, _base = os.path.split(_abs)
+            return send_from_directory(_dir, _base)
+        return send_from_directory(RECORDS_ROOT, clean_filename)
     except Exception as e:
         logger_sys.error(f"获取音频文件失败: {str(e)}")
         return jsonify({"error": "Audio file not found"}), 404
@@ -5159,9 +5736,9 @@ def serve_event_audio(event_id):
         logger_sys.info(f"🔍 [上下文音频] event_files: {event_files}")
         audio_urls = []
         for f in event_files:
-            # 转换为相对于 SOURCE_DIR 的路径
-            if f.startswith(FileMonitorConfig.SOURCE_DIR):
-                f = os.path.relpath(f, FileMonitorConfig.SOURCE_DIR)
+            # 转换为相对 records 根的路径（含设备级；旧式路径保持原样由 serve 端探测）
+            if f.startswith(RECORDS_ROOT):
+                f = _rel_to_records(f)
             elif f.startswith('/'):
                 f = f.lstrip('/')
             audio_urls.append(f"/api/audio/{f}")
@@ -5221,6 +5798,8 @@ if __name__ == "__main__":
     # Update config from args
     if args.source_path:
         FileMonitorConfig.SOURCE_DIR = args.source_path
+        FileMonitorConfig.SOURCES = [args.source_path]
+        SOURCE_DEVICES[:] = [os.path.basename(args.source_path.rstrip("/"))]
         print(f"配置更新: 源目录 -> {args.source_path}")
 
     if args.port:
@@ -5268,6 +5847,10 @@ if __name__ == "__main__":
     _rec_thread.join(10)
     if _rec_thread.is_alive():
         logger_sys.warning("⚠️ 恢复监控初始化扫描超时(10s)，将在后台继续，不阻塞服务启动")
+
+    # 启动系统总览设备健康扫描（后台 5 分钟缓存，/api/overview 只读快照）
+    threading.Thread(target=_overview_cache_loop, daemon=True, name="overview-scan").start()
+    logger_sys.info("系统总览设备健康扫描线程已启动 (间隔300s)")
 
     print("🎉 服务启动成功！")
     print("📌 声纹注册页面: http://127.0.0.1:5008/register_page")

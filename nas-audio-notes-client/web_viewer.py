@@ -67,6 +67,21 @@ CONFIG = {
 
 }
 
+# 【2026-10-03 双源】B 轨数据源改为双 Pixel（客厅 Pixel-6 / 卧室 Pixel-5），
+# Sony 保留在候选尾部兼容历史录音。SOURCE_DIR 保留为兼容引用（config.json 覆盖仍生效）。
+RECORDS_ROOT = os.path.dirname(DEFAULT_SOURCE_DIR.rstrip("\\/"))
+SOURCE_DEVICES = ["Pixel-6", "Pixel-5", "Sony-2", "Sony-1", "Sony-3"]
+
+def _find_audio_segment(rel_clean):
+    """双源探测 audio_segments 切片：逐设备查找，返回绝对路径或 None（含穿越防护）"""
+    search_dirs = [os.path.join(RECORDS_ROOT, dev, "audio_segments") for dev in SOURCE_DEVICES]
+    search_dirs.append(os.path.join(CONFIG["SOURCE_DIR"], "audio_segments"))  # 单源直挂兼容
+    for segments_dir in search_dirs:
+        full_path = os.path.abspath(os.path.join(segments_dir, rel_clean))
+        if full_path.startswith(os.path.abspath(segments_dir) + os.sep) and os.path.isfile(full_path):
+            return full_path
+    return None
+
 # 从JSON文件加载配置
 CONFIG_FILE = "config.json"
 if os.path.exists(CONFIG_FILE):
@@ -224,9 +239,12 @@ def update_system_status():
     SKIP_DIRS = {'processed', 'failed', 'temp', 'audio_segments', '__pycache__'}
     AUDIO_EXTS = ('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg')
     try:
-        source_dir = CONFIG["SOURCE_DIR"]
-        if os.path.exists(source_dir) and os.path.isdir(source_dir):
-            count = 0
+        count = 0
+        # 【双源】逐设备统计待处理文件
+        for dev in SOURCE_DEVICES:
+            source_dir = os.path.join(RECORDS_ROOT, dev)
+            if not (os.path.exists(source_dir) and os.path.isdir(source_dir)):
+                continue
             for entry in os.listdir(source_dir):
                 if entry in SKIP_DIRS:
                     continue
@@ -241,9 +259,7 @@ def update_system_status():
                                 count += 1
                     except Exception:
                         pass
-            pending_count = count
-        else:
-            pending_count = 0
+        pending_count = count
     except Exception as e:
         logger_web.error(f"[StatusMonitor] 检查待处理文件失败: {e}")
         pending_count = -1
@@ -589,24 +605,41 @@ GROWTH_STOP_TERMS = {
     '这个', '那个', '就是', '然后', '我们', '你们', '他们', '没有', '不是', '什么', '可以', '一下',
     '知道', '现在', '这里', '那里', '这样', '一样', '因为', '所以', '还是', '已经', '不要', '不用',
     '今天', '明天', '昨天', '时候', '东西', '一个', '两个', '一点', '怎么', '这么', '那么', '真的',
-    '是不', '的是', '了吗', '了吧', '去吧', '对不', '不能'
+    '是不', '的是', '了吗', '了吧', '去吧', '对不', '不能',
+    # jieba 分词后的高频虚词/互动套话(2026-10-02 扩充, 严格化成长词典)
+    '是不是', '还有', '出来', '起来', '一起', '看看', '但是', '人家', '好不好', '要不要',
+    '行不行', '能不能', '里面', '回来', '可能', '不会', '大家', '上面', '下面', '看到',
+    '觉得', '这种', '那种', '过来', '应该', '地方', '这是', '那是', '外面', '这些',
+    '那些', '如果', '自己', '我要', '为什么', '开始', '没关系', '不好意思', '谢谢', '再见',
+    '总是', '老是', '原来', '只有', '不过', '可是', '没什么', '怎么样', '许多', '一点',
 }
 
+_JIEBA = None
+
+def _jieba():
+    """惰性加载 jieba(首次分词时初始化, 静默建缓存日志)"""
+    global _JIEBA
+    if _JIEBA is None:
+        import jieba
+        jieba.setLogLevel(60)
+        _JIEBA = jieba
+    return _JIEBA
+
 def _growth_text_terms(text):
-    """Extract lightweight Chinese terms without adding a tokenizer dependency."""
-    text = re.sub(r'\s+', '', text or '')
+    """提取严格的词语: 中文用 jieba 真分词(只留≥2字词), 英文只留纯字母单词。
+    旧版对中文做 2-3 字暴力滑窗, 任意字块组合都成了"词", 断句全错。"""
+    text = text or ''
     terms = []
 
-    for block in re.findall(r'[\u4e00-\u9fff]{2,}', text):
-        max_n = min(3, len(block))
-        for n in range(2, max_n + 1):
-            for i in range(len(block) - n + 1):
-                term = block[i:i + n]
-                if term not in GROWTH_STOP_TERMS:
-                    terms.append(term)
+    for block in re.findall(r'[\u4e00-\u9fff]+', text):
+        for w in _jieba().cut(block):
+            if len(w) >= 2 and w not in GROWTH_STOP_TERMS:
+                terms.append(w)
 
-    for token in re.findall(r'[A-Za-z0-9]{2,}', text):
-        terms.append(token.lower())
+    for token in re.findall(r"[A-Za-z][A-Za-z']{1,19}", text):
+        t = token.lower().strip("'")
+        if len(t) >= 2:
+            terms.append(t)
 
     return terms
 
@@ -778,11 +811,12 @@ def proxy_register_speaker():
         if 'audio_file' in request.files:
             audio_file = request.files['audio_file']
             files['audio_file'] = (audio_file.filename, audio_file.stream, audio_file.content_type)
-        
+
         data = {
-            'speaker_name': request.form.get('speaker_name', '')
+            'speaker_name': request.form.get('speaker_name', ''),
+            'source_key': request.form.get('source_key', '')
         }
-        
+
         response = requests.post(
             f"{ASR_SERVER_URL}/speaker/register",
             files=files,
@@ -790,10 +824,23 @@ def proxy_register_speaker():
             headers=_asr_admin_headers(),
             timeout=30
         )
-        
+
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/voiceprint_registered')
+@login_required
+def proxy_voiceprint_registered():
+    """已注册声纹样本清单（供记录页标注已入库的段）"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/voiceprint_registered",
+                                headers=_asr_admin_headers(), timeout=8)
+        return Response(response.content, status=response.status_code,
+                        content_type=response.headers.get('Content-Type', 'application/json'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # =================== 负样本反馈（电视/动画声音标记） ===================
 SPK_NEG_FEEDBACK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'spk_negative_feedback.json')
@@ -814,6 +861,129 @@ def _add_spk_negative_path(path):
             json.dump(sorted(cur), f, ensure_ascii=False, indent=1)
     except Exception as e:
         print(f"[spk-negative] 反馈记录写盘失败: {e}")
+    # 单日可见数缓存失效 (负样本隐藏会影响当天角标)
+    m = re.search(r'(\d{4}-\d{2}-\d{2})', path or '')
+    if m:
+        _rec_vis_invalidate_date(m.group(1))
+
+# =================== 记录Tab日期角标: 可见录音数 ===================
+_REC_VIS_CACHE_KEY = 'records:visible_counts'
+
+def _valkey_client():
+    import valkey
+    uri = os.environ.get('VALKEY_URI', '')
+    return valkey.from_url(uri) if uri else None
+
+def _rec_vis_invalidate_date(date_str):
+    """负样本变动后失效单日可见数缓存 (下次请求重扫该日)"""
+    try:
+        r = _valkey_client()
+        if not r:
+            return
+        raw = r.get(_REC_VIS_CACHE_KEY)
+        if not raw:
+            return
+        data = json.loads(raw)
+        if date_str in (data.get('raw') or {}):
+            data['raw'].pop(date_str, None)
+            data['vis'].pop(date_str, None)
+            r.set(_REC_VIS_CACHE_KEY, json.dumps(data), ex=86400 * 2)
+    except Exception:
+        pass
+
+def _rec_vis_invalidate_all():
+    """负样本删除后整表失效 (下次请求全量重算)"""
+    try:
+        r = _valkey_client()
+        if r:
+            r.delete(_REC_VIS_CACHE_KEY)
+    except Exception:
+        pass
+
+def _rec_scan_visible(dates):
+    """扫描指定日期的转写行, 返回 {date: 可见录音数} (过滤规则与移动端前端一致)"""
+    neg = _load_spk_negative_paths()
+    conn = get_connection()
+    if not conn:
+        return {}
+    vis = {}
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COALESCE(recording_time, created_at)::date AS d, segments_json
+            FROM transcriptions
+            WHERE COALESCE(recording_time, created_at)::date = ANY(%s)
+            """,
+            ([datetime.date.fromisoformat(d) for d in dates],)
+        )
+        for d, sj in cur.fetchall():
+            d = str(d)
+            if d not in vis:
+                vis[d] = 0
+            try:
+                segs = json.loads(sj or '[]')
+            except Exception:
+                segs = []
+            for s in segs:
+                spk = str(s.get('spk') or '').strip()
+                if not spk or spk.lower() in ('unknown', 'baby'):
+                    continue
+                if s.get('segment_audio_path') in neg:
+                    continue
+                vis[d] += 1
+                break   # 只要有一句可见, 该录音就计入角标
+        cur.close()
+    finally:
+        return_connection(conn)
+    return vis
+
+def _rec_visible_counts():
+    """每日期可见录音数 (Valkey 缓存): 原始行数有变化的日期才重扫, 老日期吃缓存"""
+    try:
+        r = _valkey_client()
+    except Exception:
+        r = None
+    cached = None
+    if r:
+        try:
+            raw = r.get(_REC_VIS_CACHE_KEY)
+            cached = json.loads(raw) if raw else None
+        except Exception:
+            cached = None
+    today = datetime.date.today().isoformat()
+    conn = get_connection()
+    if not conn:
+        return {}
+    raw_counts = {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COALESCE(recording_time, created_at)::date AS d, COUNT(*) FROM transcriptions GROUP BY d")
+        raw_counts = {str(row[0]): int(row[1]) for row in cur.fetchall()}
+        cur.close()
+    finally:
+        return_connection(conn)
+    vis, cached_raw = {}, {}
+    if cached and isinstance(cached.get('vis'), dict) and cached.get('today') == today:
+        vis = dict(cached['vis'])
+        cached_raw = cached.get('raw') or {}
+    for d in list(vis):
+        if d not in raw_counts:
+            vis.pop(d)
+    dirty = [d for d, n in raw_counts.items() if cached_raw.get(d) != n]
+    if dirty:
+        try:
+            vis.update(_rec_scan_visible(dirty))
+        except Exception as e:
+            logger_web.error(f"[rec-vis] 重扫可见数失败: {e}")
+            if not vis:
+                return {}
+    if r:
+        try:
+            r.set(_REC_VIS_CACHE_KEY, json.dumps({'today': today, 'raw': raw_counts, 'vis': vis}), ex=86400 * 2)
+        except Exception:
+            pass
+    return vis
 
 @app.route('/api/spk_negative', methods=['POST'])
 @login_required
@@ -865,6 +1035,8 @@ def proxy_negative_delete(neg_id):
     """从黑名单移除单条负样本（回滚）"""
     try:
         response = requests.delete(f"{ASR_SERVER_URL}/speaker/negative/{neg_id}", headers=_asr_admin_headers(), timeout=15)
+        if response.status_code < 300:
+            _rec_vis_invalidate_all()   # 黑名单变化影响可见数, 整表重算
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -946,28 +1118,6 @@ def proxy_register_page():
         return html
     except Exception as e:
         return f"<h1>Error loading speaker registration page</h1><p>{str(e)}</p>", 500
-
-@app.route('/baby_cry_page')
-@login_required
-def proxy_baby_cry_page():
-    """转发宝宝哭闹分析页面"""
-    try:
-        response = requests.get(f"{ASR_SERVER_URL}/baby_cry", timeout=10)
-        html = response.text
-        html = html.replace('/api/', '/api/') # 本地代理也是 /api/
-        # 修改静态资源和导航链接
-        html = html.replace('href="/manage"', 'href="/"')
-        # 注入统一顶部导航(自包含样式, 不依赖页面自身 CSS)
-        try:
-            nav_path = os.path.join(SCRIPT_DIR, 'templates', 'nav.html')
-            with open(nav_path, encoding='utf-8') as _f:
-                _nav = _f.read()
-            html = re.sub(r'(<body[^>]*>)', lambda m: m.group(1) + _nav, html, count=1)
-        except Exception:
-            pass
-        return html
-    except Exception as e:
-        return f"<h1>Error loading baby cry page</h1><p>{str(e)}</p>", 500
 
 @app.route('/api/trigger_reprocess', methods=['POST'])
 @login_required
@@ -1078,6 +1228,7 @@ def proxy_cry_segment_preview(event_id):
         variant = request.args.get('variant', '0')
         response = requests.get(f"{ASR_SERVER_URL}/api/cry_segment_preview/{event_id}?variant={variant}", headers=_asr_admin_headers(), timeout=120)
         resp = Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+        resp.headers['Cache-Control'] = 'no-store'  # 【2026-10-02】防 iOS 缓存旧响应导致试听假卡
         if response.headers.get('X-Cry-Windows'):
             resp.headers['X-Cry-Windows'] = response.headers['X-Cry-Windows']
         return resp
@@ -1321,9 +1472,21 @@ def public_cry_preview_media(event_id, media_path):
     if media_path not in allowed:
         return jsonify({"error": "该文件不属于此事件"}), 403
     try:
-        source_dir = CONFIG["SOURCE_DIR"]
-        for cand in (os.path.join(source_dir, "processed", media_path),
-                     os.path.join(source_dir, media_path)):
+        # 【双源】新式设备级路径（Pixel-6/2026-10-02/x.m4a）直接定位；
+        # 旧式路径（2026-09-20/x.m4a）逐设备 processed/ 优先探测
+        parts = media_path.replace('\\', '/').split('/')
+        if '..' in parts:
+            return jsonify({"error": "Invalid path"}), 403
+        cands = []
+        if len(parts) >= 3 and parts[0] in SOURCE_DEVICES:
+            dev, rest = parts[0], '/'.join(parts[1:])
+            cands += [os.path.join(RECORDS_ROOT, dev, "processed", rest),
+                      os.path.join(RECORDS_ROOT, media_path)]
+        else:
+            for dev in SOURCE_DEVICES:
+                cands += [os.path.join(RECORDS_ROOT, dev, "processed", media_path),
+                          os.path.join(RECORDS_ROOT, dev, media_path)]
+        for cand in cands:
             if os.path.isfile(cand):
                 return send_file(cand)
         return jsonify({"error": "媒体文件不存在"}), 404
@@ -1405,6 +1568,190 @@ def proxy_live_logs():
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/overview', methods=['GET'])
+@login_required
+def proxy_overview():
+    """系统总览：代理到 ASR 服务器（设备健康为服务端 5 分钟缓存，响应轻、可随轮询拉）"""
+    try:
+        response = requests.get(f"{ASR_SERVER_URL}/api/overview", timeout=8)
+        return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/parallel_lights', methods=['GET'])
+@login_required
+def api_parallel_lights():
+    """首页并行任务信号灯: 一次轮询返回各后台线程/进程存活状态"""
+    import socket, subprocess
+    lights = []
+    core_on = False
+    try:
+        core_on = requests.get(f"{ASR_SERVER_URL}/manage", timeout=2).status_code == 200
+    except Exception:
+        pass
+    lights.append({"key": "core", "label": "5008主服务", "on": core_on})
+
+    a_running = b_running = False
+    if core_on:
+        try:
+            st = requests.get(f"{ASR_SERVER_URL}/api/live_status", timeout=3).json()
+            a_running = bool(st.get('a_running'))
+            b_running = bool(st.get('b_running'))
+        except Exception:
+            pass
+    lights.append({"key": "trackb", "label": "语音转写", "on": b_running})
+    lights.append({"key": "tracka", "label": "检测补跑", "on": a_running})
+
+    def _pgrep_alive(pattern):
+        try:
+            return subprocess.run(['pgrep', '-f', pattern], capture_output=True, timeout=3).returncode == 0
+        except Exception:
+            return False
+
+    lights.append({"key": "preset", "label": "预切批次", "on": _pgrep_alive('batch_preset_previews')})
+
+    nano_on = False
+    try:
+        with socket.create_connection(('127.0.0.1', 8123), timeout=1):
+            nano_on = True
+    except Exception:
+        pass
+    lights.append({"key": "nano", "label": "Nano推理", "on": nano_on})
+    processing, completed = _scan_processing_files()
+    return jsonify({"lights": lights, "processing": processing,
+                    "completed": completed, "backfill": _scan_backfill_progress()})
+
+
+def _scan_processing_files():
+    """解析 5008 处理日志，找出正在处理的转录任务 + 最近已完成的任务（含耗时）。
+    「📥 收到转录任务」与完成标记配对，未闭合的即处理中。
+    完成标记有两种：
+    - audio_processor 客户端的「✅ 转录完成: <文件名> (N 字)」
+    - 5008 服务端的「✅ 数据库保存成功 (recording_time: YYYY-MM-DD HH:MM:SS)」
+      （backfill_pixels.py 提交的文件没有前者，只能靠服务端标记闭合，
+       recording_time 由文件名 TermuxAudioRecording_日期_时分秒 推得）
+    返回 (processing, completed)：processing=收到未闭合，completed=最近闭合的任务（带处理耗时）"""
+    import re
+    from datetime import datetime
+    log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "log", "launchd-asr-server.err")
+    processing, completed = [], []
+    try:
+        active = {}          # filename -> 收到时刻 ts
+        rec_time_map = {}    # recording_time字符串 -> filename
+        # 文件名中的时间戳 → recording_time（与 5008 日志中的 recording_time 格式一致）
+        rt_re = re.compile(r'(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})')
+
+        def _close(fn, ts):
+            """闭合任务：从 active 移除并记入 completed（重复的完成标记自动去重）"""
+            recv_ts = active.pop(fn, None)
+            if recv_ts is None:
+                return
+            completed.append({"filename": fn, "elapsed_s": max(1, int(ts - recv_ts))})
+
+        with open(log_path, 'rb') as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 128 * 1024))  # 尾部 128KB 足够覆盖并发任务窗口
+            f.readline()  # 丢弃可能截断的首行
+            for raw in f:
+                line = raw.decode('utf-8', errors='replace').strip()
+                m = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                if not m:
+                    continue
+                ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
+                if '📥 收到转录任务: ' in line:
+                    fn = line.split('📥 收到转录任务: ', 1)[1].strip()
+                    active[fn] = ts
+                    rm = rt_re.search(fn)
+                    if rm:
+                        rec_time_map[f"{rm.group(1)} {rm.group(2)}:{rm.group(3)}:{rm.group(4)}"] = fn
+                elif '✅ 转录完成: ' in line:
+                    _close(line.split('✅ 转录完成: ', 1)[1].strip().rsplit(' (', 1)[0], ts)
+                elif '✅ 数据库保存成功 (recording_time: ' in line:
+                    rt = line.split('recording_time: ', 1)[1].rstrip(')').strip()
+                    fn = rec_time_map.get(rt)
+                    if fn:
+                        _close(fn, ts)
+                        rec_time_map.pop(rt, None)
+                elif '⭕ 无有效语音段, 跳过入库 (recording_time: ' in line:
+                    rt = line.split('recording_time: ', 1)[1].rstrip(')').strip()
+                    fn = rec_time_map.get(rt)
+                    if fn:
+                        _close(fn, ts)
+                        rec_time_map.pop(rt, None)
+        now = time.time()
+        processing = [{"filename": fn, "elapsed_s": int(now - ts)}
+                      for fn, ts in sorted(active.items(), key=lambda x: -x[1])]
+        completed = completed[-6:]  # 只留最近 6 个
+    except Exception:
+        pass
+    return processing, completed
+
+
+def _scan_backfill_progress():
+    """解析 backfill 日志（Pixel=backfill_rerun.log / Sony=backfill_sony.log）最新进度，
+    并用「队列预览」行 + 逐文件 ✔/✗ 行推算接下来待处理的文件。
+    格式: 进度 60/3678 | 成功 58 失败 2 | 1.5 个/分钟 | 剩余约 41.6 小时
+          队列预览: Pixel-5/xxx.m4a, Pixel-6/yyy.m4a, ...
+          ✔ Pixel-5/xxx.m4a (1/3678)  /  ✗ Pixel-6/yyy.m4a HTTP 500
+    返回 None 表示 backfill 未运行或无进度信息。"""
+    import re
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "log")
+    prog_re = re.compile(r'进度 (\d+)/(\d+) \| 成功 (\d+) 失败 (\d+).*?剩余约 ([\d.]+) (小时|分钟)')
+    batches = []  # 各批次（Pixel/Sony）独立解析后聚合，两客户端可能并存
+    try:
+        for name in ("backfill_rerun.log", "backfill_sony.log"):
+            log_path = os.path.join(log_dir, name)
+            if not os.path.exists(log_path):
+                continue
+            snapshot, gone = [], set()
+            last_progress = None
+            with open(log_path, 'rb') as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 256 * 1024))
+                f.readline()
+                for raw in f:
+                    line = raw.decode('utf-8', errors='replace').strip()
+                    if '进度 ' in line:
+                        last_progress = line
+                    elif '队列预览: ' in line:
+                        # 每次预览行重置快照（新一轮启动）
+                        snapshot = [x.strip() for x in line.split('队列预览: ', 1)[1].split(',') if x.strip()]
+                        gone = set()
+                    elif snapshot:
+                        if ' ✔ ' in line:
+                            gone.add(line.rsplit(' ✔ ', 1)[1].split(' (')[0].strip())
+                        elif ' ✗ ' in line:
+                            gone.add(line.rsplit(' ✗ ', 1)[1].split(' HTTP')[0].strip())
+            if last_progress:
+                m = prog_re.search(last_progress)
+                if m:
+                    done, total, ok, fail = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+                    eta_val, eta_unit = float(m.group(5)), m.group(6)
+                    batches.append({
+                        "done": done, "total": total,
+                        "remaining": max(0, total - done),
+                        "ok": ok, "fail": fail,
+                        "eta_h": eta_val if eta_unit == '小时' else eta_val / 60,
+                        "pending_files": [x for x in snapshot if x not in gone][:3],
+                    })
+        if batches:
+            eta_sum = sum(b["eta_h"] for b in batches)
+            result = {
+                "done": sum(b["done"] for b in batches),
+                "total": sum(b["total"] for b in batches),
+                "remaining": sum(b["remaining"] for b in batches),
+                "ok": sum(b["ok"] for b in batches),
+                "fail": sum(b["fail"] for b in batches),
+                "eta": f"约{eta_sum:.1f}h" if eta_sum >= 1 else f"约{eta_sum*60:.0f}min",
+                "pending_files": [f for b in batches for f in b["pending_files"]][:3],
+            }
+    except Exception:
+        pass
+    return result
 
 @app.route('/api/reprocess_history', methods=['POST'])
 @login_required
@@ -1562,28 +1909,14 @@ def api_scan_dates():
 @app.route('/api/transcript_dates')
 @login_required
 def api_transcript_dates():
-    """有转写记录的日期列表(直接查 transcriptions 表, 与刷盘缓存无关)"""
-    conn = None
+    """有可见录音的日期列表 (角标=与展示一致的可见数, 已过滤 Unknown/Baby/负样本)"""
     try:
-        conn = get_connection()
-        if not conn:
-            return jsonify({"dates": []})
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT COALESCE(recording_time, created_at)::date AS d, COUNT(*) AS n
-            FROM transcriptions
-            GROUP BY d ORDER BY d DESC
-            """
-        )
-        dates = [{'date': row[0].isoformat(), 'count': row[1]} for row in cursor.fetchall()]
-        cursor.close()
-        return_connection(conn)
+        vis = _rec_visible_counts()
+        dates = [{'date': d, 'count': n} for d, n in vis.items() if n > 0]
+        dates.sort(key=lambda x: x['date'], reverse=True)
         return jsonify({"dates": dates})
     except Exception as e:
         logger_web.error(f"[Error] 查询转写日期失败: {e}")
-        if conn:
-            return_connection(conn)
         return jsonify({"dates": []})
 
 
@@ -1740,8 +2073,49 @@ def api_data_range():
                 "expected_format": "YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
             }), 400
         
-        # 获取所有数据
-        all_items = db_get_transcripts(offset=0, limit=10000)
+        # SQL 按时间范围直接分页 (全量历史可查, 修复老日期点开为空的问题)
+        _conn = get_connection()
+        if not _conn:
+            return jsonify({"error": "数据库连接失败"}), 500
+        _total_in_range = 0
+        all_items = []
+        try:
+            _cur = _conn.cursor()
+            _cur.execute(
+                """
+                SELECT COUNT(*) FROM transcriptions
+                WHERE COALESCE(recording_time, created_at) >= %s
+                  AND COALESCE(recording_time, created_at) <= %s
+                """,
+                (start_date, end_date)
+            )
+            _total_in_range = _cur.fetchone()[0]
+            _cur.execute(
+                """
+                SELECT id, filename, created_at, full_text, segments_json, recording_time
+                FROM transcriptions
+                WHERE COALESCE(recording_time, created_at) >= %s
+                  AND COALESCE(recording_time, created_at) <= %s
+                ORDER BY COALESCE(recording_time, created_at) DESC
+                OFFSET %s LIMIT %s
+                """,
+                (start_date, end_date, offset, limit)
+            )
+            for row in _cur.fetchall():
+                _segs = []
+                try:
+                    _segs = json.loads(row[4]) if row[4] else []
+                except Exception:
+                    _segs = []
+                all_items.append({
+                    'id': row[0], 'filename': row[1],
+                    'created_at': row[2].isoformat() if row[2] else None,
+                    'full_text': row[3], 'segments': _segs,
+                    'recording_time': row[5].isoformat() if row[5] else None,
+                })
+            _cur.close()
+        finally:
+            return_connection(_conn)
         
         # 过滤时间范围内的数据
         filtered_items = []
@@ -1800,8 +2174,8 @@ def api_data_range():
         filtered_items.sort(key=lambda x: x.get('parsed_time', ''), reverse=True)
 
         # 应用分页
-        total_count = len(filtered_items)
-        paginated_items = filtered_items[offset:offset+limit]
+        total_count = _total_in_range   # SQL COUNT(*) (时间范围内全量, 不受分页影响)
+        paginated_items = filtered_items   # SQL 已完成 OFFSET/LIMIT 分页
 
         # 展示层负样本过滤: 被用户标为"不是家里任何人"的句子 → spk 置 Unknown（前端自动隐藏）
         try:
@@ -2115,21 +2489,13 @@ def api_update_config():
 @app.route('/audio_segments/<path:filepath>')
 @login_required
 def serve_audio_segment(filepath):
-    """提供音频片段文件"""
+    """提供音频片段文件（双源：逐设备 audio_segments/ 探测）"""
     try:
-        segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")
-        full_path = os.path.join(segments_dir, filepath)
-        
-        # 调试日志
-        logger_web.info(f"[Audio] 请求: {filepath}")
-        logger_web.info(f"[Audio] SOURCE_DIR: {CONFIG['SOURCE_DIR']}")
-        logger_web.info(f"[Audio] 完整路径: {full_path}")
-        logger_web.info(f"[Audio] 文件存在: {os.path.exists(full_path)}")
-        
-        # 安全检查：确保路径在segments目录内
-        if not os.path.abspath(full_path).startswith(os.path.abspath(segments_dir)):
-            return jsonify({"error": "Invalid path"}), 403
-
+        rel_clean = filepath.replace('\\', '/').lstrip('/')
+        full_path = _find_audio_segment(rel_clean)
+        if not full_path:
+            return jsonify({"error": "Audio segment not found"}), 404
+        logger_web.info(f"[Audio] 请求: {filepath} -> {full_path}")
         return send_file(full_path, mimetype='audio/wav')
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2149,16 +2515,13 @@ def api_retranscribe():
     rel = (data.get('path') or '').strip()
     if not rel:
         return jsonify({"error": "missing path"}), 400
-    segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")
     rel_clean = rel.replace('\\', '/')
     for prefix in ('/audio_segments/', 'audio_segments/'):
         if rel_clean.startswith(prefix):
             rel_clean = rel_clean[len(prefix):]
             break
-    full_path = os.path.abspath(os.path.join(segments_dir, rel_clean))
-    if not full_path.startswith(os.path.abspath(segments_dir) + os.sep):
-        return jsonify({"error": "Invalid path"}), 403
-    if not os.path.isfile(full_path):
+    full_path = _find_audio_segment(rel_clean)
+    if not full_path:
         return jsonify({"error": "audio not found: " + rel_clean}), 404
     keys = _groq_keys()
     if not keys:
@@ -2201,16 +2564,13 @@ def api_nano_transcribe():
     rel = (data.get('path') or '').strip()
     if not rel:
         return jsonify({"error": "missing path"}), 400
-    segments_dir = os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")
     rel_clean = rel.replace('\\', '/')
     for prefix in ('/audio_segments/', 'audio_segments/'):
         if rel_clean.startswith(prefix):
             rel_clean = rel_clean[len(prefix):]
             break
-    full_path = os.path.abspath(os.path.join(segments_dir, rel_clean))
-    if not full_path.startswith(os.path.abspath(segments_dir) + os.sep):
-        return jsonify({"error": "Invalid path"}), 403
-    if not os.path.isfile(full_path):
+    full_path = _find_audio_segment(rel_clean)
+    if not full_path:
         return jsonify({"error": "audio not found: " + rel_clean}), 404
     nano_url = os.getenv('NANO_ASR_URL', 'http://127.0.0.1:8123/v1/audio/transcriptions')
     lang = (data.get('language') or 'auto').strip() or 'auto'
@@ -2236,39 +2596,48 @@ def api_nano_transcribe():
 def serve_original_audio(filepath):
     """提供原始或已处理的录音文件回放"""
     try:
-        source_dir = CONFIG["SOURCE_DIR"]
         # 【2026-09-20】本地持久音频（temp_cry 暂存区）：audio_urls 形如
         # /api/audio/Users/mac/asr-server/temp_cry/cry_xxx.wav，此前只在 NAS 目录找 → 404 无声
         if filepath.startswith("Users/mac/asr-server/temp_cry/"):
             local_path = "/" + filepath
             if os.path.isfile(local_path):
                 return send_file(local_path)
-        # 先尝试在 processed 目录下找
-        processed_path = os.path.join(source_dir, "processed", filepath)
-        if os.path.exists(processed_path) and os.path.isfile(processed_path):
-            return send_file(processed_path)
-            
-        # 再尝试直接在根目录下找
-        root_path = os.path.join(source_dir, filepath)
-        if os.path.exists(root_path) and os.path.isfile(root_path):
-            return send_file(root_path)
-            
+        # 【双源】新式设备级路径（Pixel-6/2026-10-02/x.m4a）直接定位；
+        # 旧式路径逐设备 processed/ 优先、根目录次之
+        parts = filepath.replace('\\', '/').split('/')
+        if '..' in parts:
+            return jsonify({"error": "Invalid path"}), 403
+        if len(parts) >= 3 and parts[0] in SOURCE_DEVICES:
+            dev, rest = parts[0], '/'.join(parts[1:])
+            cands = [os.path.join(RECORDS_ROOT, dev, "processed", rest),
+                     os.path.join(RECORDS_ROOT, filepath)]
+        else:
+            cands = []
+            for dev in SOURCE_DEVICES:
+                cands += [os.path.join(RECORDS_ROOT, dev, "processed", filepath),
+                          os.path.join(RECORDS_ROOT, dev, filepath)]
+
+        for cand in cands:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                return send_file(cand)
+
         # 最后的兜底：如果只是文件名，尝试根据日期前缀搜索
         if '/' not in filepath and ('_' in filepath or '-' in filepath):
             import re
             match = re.search(r'(\d{4}-\d{2}-\d{2})', filepath)
             if not match:
                 match = re.search(r'(\d{8})', filepath)
-            
+
             if match:
                 date_found = match.group(1)
                 if '-' not in date_found:
                     date_found = f"{date_found[:4]}-{date_found[4:6]}-{date_found[6:8]}"
-                
-                search_path = os.path.join(source_dir, "processed", date_found, filepath)
-                if os.path.exists(search_path):
-                    return send_file(search_path)
-        
+
+                for dev in SOURCE_DEVICES:
+                    search_path = os.path.join(RECORDS_ROOT, dev, "processed", date_found, filepath)
+                    if os.path.exists(search_path):
+                        return send_file(search_path)
+
         return jsonify({"error": f"Audio file not found: {filepath}"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2312,7 +2681,9 @@ def serve_long_sentence_audio(filename):
 def mobile_monitor():
     if not check_auth():
         return redirect(url_for('login'))
-    return render_template('mobile_monitor.html')
+    resp = make_response(render_template('mobile_monitor.html'))
+    resp.headers['Cache-Control'] = 'no-store'  # 【2026-10-02】防 iOS 缓存旧 JS：旧试听逻辑无超时兜底会永久卡"定位片段中"
+    return resp
 
 @app.route('/daily')
 def daily_report_page():
@@ -2344,10 +2715,17 @@ def _pb_normalize(p):
     }
 
 
-def _pb_load(date_str):
+# 变体册默认 engine 显示 (JSON 未写 engine 时的兜底)
+_PB_VARIANT_ENGINES = {'grok': 'grok-chat-fast', 'agnes': 'agnes-2.5-pro-alpha'}
+
+
+def _pb_load(date_str, variant=''):
+    """加载绘本 JSON。variant 非空时读 {date}.{variant}.json(变体对照册, 如 grok/agnes)"""
     if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_str or ''):
         return None
-    path = os.path.join(PICTUREBOOK_DIR, f'{date_str}.json')
+    if variant and not re.fullmatch(r'[a-z0-9_-]{1,20}', variant):
+        return None
+    path = os.path.join(PICTUREBOOK_DIR, f'{date_str}{("." + variant) if variant else ""}.json')
     if not os.path.isfile(path):
         return None
     try:
@@ -2355,6 +2733,116 @@ def _pb_load(date_str):
             return _pb_normalize(json.load(f))
     except Exception:
         return None
+
+
+# ---------------- 录音手机集群监控 (adb) ----------------
+
+_ADB_CLUSTER_FILE = '/Users/mac/phone-recorder-apk/cluster.devices'
+_ADB_OFFLINE_STATE = '/Users/mac/asr-server/log/adb_offline_state'
+
+
+def _adb_cluster_snapshot():
+    """采集录音手机集群状态: 注册表 × adb devices × 电池/版本详情"""
+    import subprocess
+    import concurrent.futures
+
+    devices = []
+    try:
+        with open(_ADB_CLUSTER_FILE) as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3:
+                    devices.append({'name': parts[0], 'serial': parts[1], 'addr': parts[2]})
+    except FileNotFoundError:
+        pass
+
+    online = set()
+    try:
+        out = subprocess.run(['adb', 'devices'], capture_output=True, text=True, timeout=10).stdout
+        for l in out.splitlines():
+            p = l.split()
+            if len(p) >= 2 and p[1] == 'device':
+                online.add(p[0].rstrip('.'))
+    except Exception:
+        pass
+
+    offline_state = {}
+    try:
+        with open(_ADB_OFFLINE_STATE) as f:
+            for line in f:
+                p = line.split()
+                if len(p) >= 2:
+                    offline_state[p[0]] = int(p[1])
+    except Exception:
+        pass
+
+    def probe(target):
+        """采集单台设备详情 (并行调用)"""
+        def sh(cmd):
+            try:
+                return subprocess.run(['adb', '-s', target] + cmd,
+                                      capture_output=True, text=True, timeout=8).stdout.strip()
+            except Exception:
+                return ''
+        model = sh(['shell', 'getprop', 'ro.product.marketname']) or sh(['shell', 'getprop', 'ro.product.model'])
+        ver = ''
+        m = re.search(r'versionName=([\w.]+)', sh(['shell', 'dumpsys', 'package', 'com.asr.recorder']))
+        if m:
+            ver = m.group(1)
+        bat = sh(['shell', 'dumpsys', 'battery'])
+        level_m = re.search(r'level:\s*(\d+)', bat)
+        ac_m = re.search(r'AC powered:\s*(\w+)', bat)
+        usb_m = re.search(r'USB powered:\s*(\w+)', bat)
+        charging = (ac_m and ac_m.group(1) == 'true') or (usb_m and usb_m.group(1) == 'true')
+        temp_m = re.search(r'temperature:\s*(\d+)', bat)
+        rec_pid = sh(['shell', 'pidof', 'com.asr.recorder'])
+        return {
+            'model': model or '?', 'apk_ver': ver or '?',
+            'battery': int(level_m.group(1)) if level_m else None,
+            'charging': bool(charging),
+            'temp': round(int(temp_m.group(1)) / 10, 1) if temp_m else None,
+            'recording': bool(rec_pid),
+        }
+
+    online_targets = []
+    for d in devices:
+        s = d['serial'].rstrip('.')
+        a = d['addr'].rstrip('.')
+        t = s if s in online else (a if a in online else None)
+        d['online'] = t is not None
+        if t:
+            d['_target'] = t
+            online_targets.append(d)
+        else:
+            first = offline_state.get(d['name'])
+            d['offline_min'] = int(time.time() - first) // 60 if first else None
+
+    if online_targets:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            fut = {ex.submit(probe, d['_target']): d for d in online_targets}
+            for f, d in fut.items():
+                try:
+                    d.update(f.result(timeout=15))
+                except Exception:
+                    d.update({'model': '?', 'apk_ver': '?', 'battery': None,
+                              'charging': False, 'temp': None, 'recording': False})
+        for d in devices:
+            d.pop('_target', None)
+    return {'devices': devices, 'ts': time.strftime('%H:%M:%S')}
+
+
+@app.route('/api/adb_cluster')
+def api_adb_cluster():
+    if not check_auth():
+        return jsonify({'error': 'unauthorized'}), 401
+    return jsonify(_adb_cluster_snapshot())
+
+
+@app.route('/adb')
+def adb_monitor_page():
+    if not check_auth():
+        return redirect(url_for('login'))
+    return render_template('adb.html')
 
 
 @app.route('/picturebook')
@@ -2434,20 +2922,25 @@ def api_picturebook():
         for fn in sorted(os.listdir(PICTUREBOOK_DIR), reverse=True):
             if not fn.endswith('.json'):
                 continue
+            # 变体册: {date}.{variant}.json → variant='grok'/'agnes'/...; 主册: {date}.json
+            m = re.fullmatch(r'(\d{4}-\d{2}-\d{2})\.([a-z0-9_-]{1,20})\.json', fn)
+            variant = m.group(2) if m else ''
             try:
                 with open(os.path.join(PICTUREBOOK_DIR, fn)) as f:
                     p = _pb_normalize(json.load(f))
             except Exception:
                 continue
             book_pages = p.get('pages') or []
-            d = p.get('date') or fn[:-5]
-            has_video = f"{d}.mp4" in clip_files
-            # 视频进度: 有图有声的页数中, 片段已生成的比例
+            d = m.group(1) if m else fn[:-5]
+            has_video = (not variant) and f"{d}.mp4" in clip_files
+            # 视频进度: 有图有声的页数中, 片段已生成的比例(变体册不做视频)
             makeable = [pg for pg in book_pages if pg.get('image') and pg.get('audio')]
-            total = len(makeable)
-            done = sum(1 for pg in makeable if f"{d}_p{pg.get('seq')}.mp4" in clip_files)
+            total = len(makeable) if not variant else 0
+            done = sum(1 for pg in makeable if f"{d}_p{pg.get('seq')}.mp4" in clip_files) if not variant else 0
             pages.append({
                 'date': d,
+                'variant': variant,
+                'engine': (p.get('engine') or _PB_VARIANT_ENGINES.get(variant, variant)) if variant else 'gemini-3.8-flash',
                 'title': p.get('title') or 'Untitled',
                 'page_count': len(book_pages),
                 'has_image': any(pg.get('image') for pg in book_pages),
@@ -2464,15 +2957,17 @@ def api_picturebook():
 def api_picturebook_story(date_str):
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
-    book = _pb_load(date_str)
+    variant = request.args.get('variant', '')
+    book = _pb_load(date_str, variant)
     if book is None:
         return jsonify({'error': 'not found'}), 404
     book_pages = book.get('pages') or []
-    has_video = os.path.isfile(os.path.join(PICTUREBOOK_DIR, 'video', f'{date_str}.mp4'))
+    has_video = (not variant) and os.path.isfile(os.path.join(PICTUREBOOK_DIR, 'video', f'{date_str}.mp4'))
     resp = jsonify({
         'date': book.get('date'),
         'title': book.get('title'),
         'version': book.get('version', 1),
+        'engine': (book.get('engine') or _PB_VARIANT_ENGINES.get(variant, variant)) if variant else 'gemini-3.8-flash',
         'has_video': has_video,
         'pages': [{
             'seq': pg.get('seq', i + 1),
@@ -2491,7 +2986,7 @@ def api_picturebook_story(date_str):
 def api_picturebook_image(date_str, seq=1):
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
-    book = _pb_load(date_str)
+    book = _pb_load(date_str, request.args.get('variant', ''))
     if book is None:
         return jsonify({'error': 'not found'}), 404
     pg = next((x for x in (book.get('pages') or []) if x.get('seq') == seq), None)
@@ -2526,19 +3021,20 @@ def api_picturebook_thumb(date_str):
     """封面缩略图 (512px JPEG, sips 现生成缓存)——书架大量封面避免整页大图解码卡顿"""
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
-    book = _pb_load(date_str)
+    variant = request.args.get('variant', '')
+    book = _pb_load(date_str, variant)
     if book is None:
         return jsonify({'error': 'not found'}), 404
     img = next((p.get('image') for p in (book.get('pages') or []) if p.get('image')), '')
     if not img:
         return jsonify({'error': 'no image'}), 404
     if img.startswith(('http', 'data:')):   # 远程/内嵌图不缩略, 回退原图路由
-        return api_picturebook_image(date_str, 1)
+        return api_picturebook_image(date_str, 1, variant=variant) if variant else api_picturebook_image(date_str, 1)
     src = os.path.realpath(os.path.join(PICTUREBOOK_DIR, img))
     if not src.startswith(os.path.realpath(PICTUREBOOK_DIR) + os.sep) or not os.path.isfile(src):
         return jsonify({'error': 'no image'}), 404
     os.makedirs(THUMB_DIR, exist_ok=True)
-    tp = os.path.join(THUMB_DIR, f'{date_str}.jpg')
+    tp = os.path.join(THUMB_DIR, f'{date_str}{("." + variant) if variant else ""}.jpg')
     if not os.path.isfile(tp) or os.path.getmtime(tp) < os.path.getmtime(src):
         try:
             subprocess.run(['sips', '-s', 'format', 'jpeg', '-s', 'formatOptions', '72',
@@ -2549,6 +3045,8 @@ def api_picturebook_thumb(date_str):
         resp = send_file(tp, mimetype='image/jpeg')
         resp.headers['Cache-Control'] = 'public, max-age=600'
         return resp
+    if variant:   # 缩略生成失败兜底原图(带变体)
+        return api_picturebook_image(date_str, 1, variant=variant)
     return api_picturebook_image(date_str, 1)   # 缩略生成失败兜底原图
 
 
@@ -2556,7 +3054,7 @@ def api_picturebook_thumb(date_str):
 def api_picturebook_audio(date_str, seq):
     if not check_auth():
         return jsonify({'error': 'unauthorized'}), 401
-    book = _pb_load(date_str)
+    book = _pb_load(date_str, request.args.get('variant', ''))
     if book is None:
         return jsonify({'error': 'not found'}), 404
     pg = next((x for x in (book.get('pages') or []) if x.get('seq') == seq), None)

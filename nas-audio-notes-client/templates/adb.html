@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>录音集群监控 | Audio Notes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        ink: '#07111f', panel: '#101827', line: '#223047',
+                        mint: '#22c55e', sky: '#38bdf8', amber: '#f59e0b', rose: '#f43f5e'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #07111f; color: #e2e8f0; }
+        .phone-card { transition: transform .18s ease, box-shadow .18s ease; }
+        .phone-card:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,0,0,.4); }
+        .pulse-dot { animation: pdot 1.6s ease infinite; }
+        @keyframes pdot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+        .batt { height: 10px; border-radius: 5px; background: #1e293b; overflow: hidden; }
+        .batt > div { height: 100%; border-radius: 5px; transition: width .5s; }
+    </style>
+</head>
+
+<body class="min-h-screen font-sans">
+{% include 'nav.html' %}
+    <div class="max-w-6xl mx-auto px-4 py-6">
+        <header class="flex items-center justify-between mb-5">
+            <div>
+                <h1 class="text-2xl font-extrabold flex items-center gap-2">
+                    <i class="fa-solid fa-mobile-screen-button text-sky"></i> 录音集群监控
+                </h1>
+                <p class="text-sm text-slate-400 mt-1">局域网内录音手机实时状态 · 每 10 秒自动刷新 <span id="ts" class="text-slate-500 ml-1"></span></p>
+            </div>
+            <a href="/" class="text-sm text-slate-400 hover:text-white transition"><i class="fa-solid fa-house mr-1"></i>主页</a>
+        </header>
+
+        <div id="summary" class="mb-5 grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+
+        <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="col-span-full text-center text-slate-500 py-16"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-3 block"></i>加载中…</div>
+        </div>
+    </div>
+
+<script>
+const battColor = (l, chg) => {
+    if (l === null) return 'bg-slate-600 w-1/2';
+    const w = Math.max(l, 4);
+    if (l <= 20) return `bg-rose-500`;
+    if (l <= 40) return `bg-amber-500`;
+    return chg ? 'bg-mint' : 'bg-sky';
+};
+
+function render(d) {
+    document.getElementById('ts').textContent = `· 更新于 ${d.ts}`;
+    const ds = d.devices || [];
+    const on = ds.filter(x => x.online).length;
+    const rec = ds.filter(x => x.online && x.recording).length;
+    const unplug = ds.filter(x => x.online && !x.charging).length;
+    const offline = ds.filter(x => !x.online);
+    document.getElementById('summary').innerHTML = `
+        <div class="rounded-xl border border-line bg-panel px-4 py-3">
+            <div class="text-3xl font-extrabold text-mint">${on}<span class="text-slate-500 text-base">/${ds.length}</span></div>
+            <div class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-signal mr-1"></i>在线设备</div>
+        </div>
+        <div class="rounded-xl border border-line bg-panel px-4 py-3">
+            <div class="text-3xl font-extrabold ${rec === on && on > 0 ? 'text-mint' : 'text-amber'}">${rec}</div>
+            <div class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-microphone mr-1"></i>录音进程活跃</div>
+        </div>
+        <div class="rounded-xl border border-line bg-panel px-4 py-3">
+            <div class="text-3xl font-extrabold ${unplug ? 'text-amber' : 'text-sky'}">${unplug}</div>
+            <div class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-plug-circle-xmark mr-1"></i>未插电 (在线中)</div>
+        </div>
+        <div class="rounded-xl border ${offline.length ? 'border-rose/40' : 'border-line'} bg-panel px-4 py-3">
+            <div class="text-3xl font-extrabold ${offline.length ? 'text-rose' : 'text-slate-300'}">${offline.length}</div>
+            <div class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>离线</div>
+        </div>`;
+
+    document.getElementById('grid').innerHTML = ds.map(x => {
+        if (!x.online) {
+            return `<div class="phone-card rounded-2xl border border-rose/30 bg-panel p-5">
+                <div class="flex items-center justify-between">
+                    <span class="font-bold text-lg">${x.name}</span>
+                    <span class="text-xs px-2 py-1 rounded-full bg-rose/15 text-rose border border-rose/30">
+                        <i class="fa-solid fa-circle pulse-dot text-[8px] mr-1"></i>离线
+                    </span>
+                </div>
+                <div class="text-sm text-slate-500 mt-2">${x.model || ''}</div>
+                <div class="mt-3 text-sm text-rose/80">
+                    <i class="fa-solid fa-clock mr-1"></i>已离线 ${x.offline_min !== null && x.offline_min !== undefined ? x.offline_min + ' 分钟' : '(计时中)'}
+                </div>
+                <div class="mt-2 text-xs text-slate-500">掉线 30 分钟会邮件告警 · 守护每 5 分钟自动重连</div>
+            </div>`;
+        }
+        const b = x.battery;
+        return `<div class="phone-card rounded-2xl border border-line bg-panel p-5">
+            <div class="flex items-center justify-between">
+                <span class="font-bold text-lg">${x.name}</span>
+                <span class="text-xs px-2 py-1 rounded-full ${x.recording ? 'bg-mint/15 text-mint border border-mint/30' : 'bg-amber/15 text-amber border border-amber/30'}">
+                    <i class="fa-solid fa-circle pulse-dot text-[8px] mr-1"></i>${x.recording ? '录音中' : '进程未跑'}
+                </span>
+            </div>
+            <div class="text-sm text-slate-400 mt-1">${x.model || ''} <span class="text-slate-600">· APK ${x.apk_ver || '?'}</span></div>
+            <div class="mt-3 flex items-center gap-2">
+                <i class="fa-solid ${x.charging ? 'fa-bolt text-mint' : 'fa-battery-quarter text-amber'}"></i>
+                <div class="batt flex-1"><div class="${battColor(b, x.charging)}" style="width:${b === null ? 50 : b}%"></div></div>
+                <span class="text-sm font-semibold w-10 text-right">${b === null ? '?' : b + '%'}</span>
+            </div>
+            <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
+                <span>${x.charging ? '⚡ 充电中' : '⚠️ 未插电'}</span>
+                <span>${x.temp !== null && x.temp !== undefined ? '<i class="fa-solid fa-temperature-half mr-1"></i>' + x.temp + '°C' : ''}</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function refresh() {
+    try {
+        const r = await fetch('/api/adb_cluster');
+        if (r.status === 401) { location.href = '/login'; return; }
+        render(await r.json());
+    } catch (e) { /* 保持旧画面 */ }
+}
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+
+</html>

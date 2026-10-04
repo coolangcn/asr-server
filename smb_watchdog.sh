@@ -91,6 +91,54 @@ is_mounted() {
     mount | grep -q "on $MOUNT_POINT"
 }
 
+# ---- B 轨监听假死检测（2026-10-03）----
+# 病：挂载健康，但 5008 监听线程的内核 SMB 调用悬死（不可中断等待），
+#     监听"活着"却永远扫不到新文件。普通重启进程无效，必须强制重挂清内核脏会话。
+# 信号：5008 每轮扫描刷新 log/b_track_heartbeat 的 mtime（连续 SMB 超时 180s
+#     时刻意停滞心跳）。mtime 超过 B_HEARTBEAT_MAX_AGE 即判定假死。
+# 动作：杀 5008 → 强制重挂（清内核脏状态）→ 拉起 → 重置心跳。
+B_HEARTBEAT="/Users/mac/asr-server/log/b_track_heartbeat"
+B_HEARTBEAT_MAX_AGE=240
+BTRACK_ALERT_STATE="/tmp/smb_watchdog_btrack_alert_ts"
+
+btrack_selfheal() {
+    local now=$(date +%s)
+    local last=$(cat "$BTRACK_ALERT_STATE" 2>/dev/null || echo 0)
+    if [ $((now - last)) -ge $ALERT_COOLDOWN ]; then
+        echo "$now" > "$BTRACK_ALERT_STATE"
+        /Users/mac/asr_env/bin/python3 -c "
+import sys
+sys.path.insert(0, '/Users/mac/asr-server')
+from email_utils import send_email_sync
+send_email_sync('B 轨监听假死已自动恢复', '''检测到 5008 B 轨监听心跳停滞（内核 SMB 会话悬死），
+已自动执行：杀 5008 → 强制重挂 SMB → 拉起服务。
+积压录音将由监听自动追赶，无需人工干预。
+详情: $LOG_FILE''')
+" 2>/dev/null || log "⚠️ 邮件发送失败"
+    fi
+    log "🚨 [B轨心跳] 停滞 ${age}s，启动自愈: 杀5008 → 重挂 → 拉起"
+    pkill -f "asr_server.py" 2>/dev/null
+    sleep 3
+    with_timeout $UNMOUNT_TIMEOUT diskutil unmount force "$MOUNT_POINT" >> "$LOG_FILE" 2>&1
+    sleep 2
+    if ! is_mounted; then
+        with_timeout 45 mount_smbfs "$SMB_URL_CLI" "$MOUNT_POINT" >> "$LOG_FILE" 2>&1 || log "⚠️ 重挂失败（下一轮看门狗继续处理挂载）"
+    fi
+    # 拉起服务：kickstart 仅对已加载服务有效（bootout 后找不到），失败则 bootstrap 兜底
+    launchctl kickstart -k gui/501/com.asr.server 2>>"$LOG_FILE" || \
+        launchctl bootstrap gui/501 "$HOME/Library/LaunchAgents/com.asr.server.plist" >> "$LOG_FILE" 2>&1
+    touch "$B_HEARTBEAT"   # 给新进程宽限期（模型加载 ~60s 后监听线程接管心跳）
+    log "✅ [B轨心跳] 自愈动作完成（杀5008+重挂+拉起），等待新进程接管心跳"
+}
+
+check_btrack_heartbeat() {
+    # 心跳文件不存在 = 监听从未跑过或刚清过日志，不触发
+    [ -f "$B_HEARTBEAT" ] || return 0
+    age=$(( $(date +%s) - $(stat -f %m "$B_HEARTBEAT" 2>/dev/null || date +%s) ))
+    [ "$age" -le "$B_HEARTBEAT_MAX_AGE" ] && return 0
+    btrack_selfheal
+}
+
 finder_mount() {
     # 仅用 mount_smbfs（CLI 通道稳定）；Finder/osascript 通道会挂起且可能弹密码框，已弃用
     log "🔗 mount_smbfs 直接挂载..."
@@ -112,6 +160,7 @@ if probe_alive; then
         log "✅ 挂载已恢复（此前累计失败 $(cat "$STATE_FILE") 轮）"
     fi
     echo 0 > "$STATE_FILE"
+    check_btrack_heartbeat   # 挂载健康但监听线程 SMB 悬死 → 假死自愈
     exit 0
 fi
 

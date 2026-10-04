@@ -88,6 +88,19 @@
             padding: 20px 0 24px;
         }
 
+        /* 并行任务信号灯 */
+        .parallel-lights { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 12px; margin-top: 10px; }
+        #processing-now { display: none; flex-wrap: wrap; justify-content: center; gap: 5px 8px; margin-top: 6px; }
+        .proc-chip { font-size: 11px; color: #93c5fd; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.35); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+        .proc-chip-pending { color: #fbbf24; background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.35); }   /* 黄: 待处理 */
+        .proc-chip-done { color: #86efac; background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.35); }        /* 绿: 已处理 */
+        .parallel-light { display: inline-flex; align-items: center; gap: 4px; }
+        .parallel-light .pl-dot { width: 6px; height: 6px; border-radius: 50%; background: #4b5563; flex-shrink: 0; }
+        .parallel-light.on .pl-dot { background: #22c55e; box-shadow: 0 0 5px rgba(34,197,94,.5); animation: plPulse 2s ease-in-out infinite; }
+        .parallel-light .pl-label { font-size: .62rem; font-weight: 700; color: #6b7280; white-space: nowrap; }
+        .parallel-light.on .pl-label { color: #d1d5db; }
+        @keyframes plPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
         .header h1 {
             font-size: 1.5rem;
             font-weight: 700;
@@ -669,20 +682,25 @@
             color: #34d399; border-color: rgba(52,211,153,.55); background: rgba(52,211,153,.12);
         }
         .rec-date-chip.sm { padding: 4px 10px; font-size: .72rem; }
-        .rec-count { font-size: .72rem; color: var(--text-secondary); margin: 0 2px 10px; }
+        .rec-count { font-size: .72rem; color: var(--text-secondary); text-align: center; letter-spacing: .4px; opacity: .85; margin: 0 0 12px; }
         .rec-card {
-            background: var(--bg-card); border: 1px solid rgba(148,163,184,.15);
-            border-radius: 14px; padding: 12px 12px 4px; margin-bottom: 10px;
+            background: var(--bg-card); border: 1px solid rgba(148,163,184,.14);
+            border-radius: 16px; padding: 12px 14px 6px; margin-bottom: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,.16);
         }
-        .rec-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
-        .rec-id { font-size: .6rem; color: var(--text-secondary); opacity: .75; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px; flex-shrink: 0; font-variant-numeric: tabular-nums; cursor: pointer; }
-        .rec-time { font-size: .95rem; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-        .rec-file { font-size: .68rem; color: var(--text-secondary); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .rec-seg { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px dashed rgba(148,163,184,.12); }
+        .rec-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px; padding-bottom: 8px; border-bottom: 1px solid rgba(148,163,184,.10); }
+        .rec-id { font-size: .6rem; color: var(--text-secondary); opacity: .8; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; background: rgba(148,163,184,.06); flex-shrink: 0; font-variant-numeric: tabular-nums; cursor: pointer; }
+        .rec-time { font-size: .92rem; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+        .rec-time i { color: #34d399; }
+        .rec-file { font-size: .62rem; color: var(--text-secondary); max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(148,163,184,.08); border-radius: 999px; padding: 3px 9px; }
+        .rec-seg { display: flex; align-items: flex-start; gap: 8px; padding: 9px 0 7px; border-top: 1px solid rgba(148,163,184,.07); }
+        .rec-card-head + .rec-seg { border-top: none; }
+        .rec-mrow[style*="flex-wrap"] { align-items: center; row-gap: 4px; }
         /* 多模型结果: 模型 ID 徽章 + 文本各占一行, 文本折行不串行 */
-        .rec-mrow { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
-        .rec-mtag { font-size: .62rem; font-weight: 600; padding: 1px 7px; border: 1px solid var(--border); border-radius: 6px; flex-shrink: 0; margin-top: 1px; white-space: nowrap; }
+        .rec-mrow { display: flex; align-items: flex-start; gap: 7px; min-width: 0; padding: 2px 0; }
+        .rec-mtag { font-size: .6rem; font-weight: 700; padding: 2px 0; border: 1px solid var(--border); border-radius: 999px; margin-top: 2px; white-space: nowrap; flex: 0 0 46px; text-align: center; box-sizing: border-box; letter-spacing: .5px; }
         .rec-mtext { flex: 1; min-width: 0; font-size: .92rem; line-height: 1.5; color: var(--text-primary); overflow-wrap: anywhere; }
+        .rec-msub { color: var(--text-secondary); font-size: .87rem; }
         .rec-spk {
             flex: 0 0 auto; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             font-size: .68rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; color: #fff;
@@ -719,11 +737,19 @@
         }
         .rec-nano:active { background: #2dd4bf; color: #062b26; }
         .rec-nano.loading { opacity: .5; pointer-events: none; }
+        .rec-play, .rec-smp, .rec-nano { transition: transform .08s ease; }
+        .rec-play:active, .rec-smp:active, .rec-nano:active { transform: scale(.9); }
         .rec-empty { text-align: center; color: var(--text-secondary); font-size: .85rem; padding: 36px 0; }
         .rec-loading { color: var(--text-secondary); font-size: .8rem; padding: 8px; white-space: nowrap; }
 
 
         /* ============ 哭声事件 Tab ============ */
+        /* 预切进度卡(自 baby_cry 仪表盘移植) */
+        .cry-preset-card { background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 0 2px 10px; }
+        .cry-preset-head { display: flex; justify-content: space-between; align-items: center; font-size: .75rem; color: var(--text-secondary); }
+        .cry-preset-head span:last-child { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .cry-preset-bar { height: 5px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 6px; }
+        .cry-preset-bar > div { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg,#6366f1,#10b981); transition: width .5s ease; }
         .track-tab.track-cry { }
         .track-tab.track-cry.active {
             border-color: #f472b6;
@@ -1058,6 +1084,26 @@
             margin-bottom: 8px;
             opacity: 0.5;
         }
+
+        /* 系统总览 */
+        .overview-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        @media (min-width: 640px) { .overview-grid { grid-template-columns: 1fr 1fr; } }
+        .ov-sec { background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 12px; min-width: 0; }
+        .ov-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 8px; }
+        .ov-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; min-width: 0; }
+        .ov-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+        .ov-dot.ok { background: var(--success); box-shadow: 0 0 5px rgba(16,185,129,0.5); }
+        .ov-dot.warn { background: var(--warning); }
+        .ov-dot.bad { background: var(--danger); box-shadow: 0 0 5px rgba(239,68,68,0.5); }
+        .ov-dot.off { background: #475569; }
+        .ov-label { color: var(--text-secondary); }
+        .ov-val { color: var(--text-primary); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ov-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+        .ov-badge.ok { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.4); }
+        .ov-badge.warn { background: rgba(245,158,11,0.15); color: var(--warning); border: 1px solid rgba(245,158,11,0.4); }
+        .ov-badge.bad { background: rgba(239,68,68,0.15); color: var(--danger); border: 1px solid rgba(239,68,68,0.4); }
+        .ov-bar { height: 5px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; margin: 6px 0; }
+        .ov-bar > div { height: 100%; background: var(--success); border-radius: 999px; transition: width 0.5s ease; }
     </style>
 </head>
 <body>
@@ -1068,17 +1114,46 @@
         <div class="header">
             <h1><i class="fa-solid fa-chart-line"></i> 任务监控</h1>
             <p id="updateTime">正在连接...</p>
+            <!-- 并行任务信号灯 -->
+            <div id="parallel-lights" class="parallel-lights" title="并行后台任务存活状态"></div>
+            <div id="processing-now"></div>
+        </div>
+
+        <!-- 系统总览 -->
+        <div class="status-card" id="overviewCard" style="display:none; padding: 16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px;">
+                <h2 style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0;"><i class="fa-solid fa-gauge-high" style="color: var(--primary);"></i> 系统总览</h2>
+                <span id="ovSummary" class="ov-badge ok">整体正常</span>
+            </div>
+            <div class="overview-grid">
+                <div class="ov-sec">
+                    <div class="ov-title">📱 录音设备</div>
+                    <div id="ovDevices"><span class="ov-label">加载中…</span></div>
+                </div>
+                <div class="ov-sec">
+                    <div class="ov-title">🎙️ 实时转写 · B轨</div>
+                    <div id="ovB"><span class="ov-label">加载中…</span></div>
+                </div>
+                <div class="ov-sec">
+                    <div class="ov-title">😢 检测补跑 · A轨</div>
+                    <div id="ovA"><span class="ov-label">加载中…</span></div>
+                </div>
+                <div class="ov-sec">
+                    <div class="ov-title">🖥️ 基础设施</div>
+                    <div id="ovInfra"><span class="ov-label">加载中…</span></div>
+                </div>
+            </div>
         </div>
 
         <!-- 轨道切换 -->
         <div class="track-tabs">
-            <button class="track-tab track-a active" onclick="switchTrack('a')">
+            <button class="track-tab track-a active" onclick="switchTrack('a')" title="哭声检测补跑">
                 <i class="fa-solid fa-folder-open"></i>
-                A轨
+                补跑
             </button>
-            <button class="track-tab track-b" onclick="switchTrack('b')">
+            <button class="track-tab track-b" onclick="switchTrack('b')" title="实时语音转写">
                 <i class="fa-solid fa-microphone"></i>
-                B轨
+                转写
             </button>
             <button class="track-tab track-cry" onclick="switchTrack('cry')">
                 <i class="fa-solid fa-heart-crack"></i>
@@ -1096,6 +1171,7 @@
 
         <!-- A轨内容 -->
         <div id="track-a-content" class="track-content active">
+            <div class="rec-count" style="margin:0 2px 10px">😢 哭声检测补跑：对历史录音批量跑哭声检测（GPU 密集，限凌晨 01:00-06:30 窗口）</div>
             <!-- 操作按钮 -->
             <div class="action-buttons">
                 <button class="action-btn start" id="aStartBtn" onclick="startHistoryTask()">
@@ -1174,6 +1250,7 @@
 
         <!-- B轨内容 -->
         <div id="track-b-content" class="track-content">
+            <div class="rec-count" style="margin:0 2px 10px">🎙️ 实时语音转写：监听 Sony-2 新录音，自动转写 + 声纹识别入库</div>
             <!-- 操作按钮 -->
             <div class="action-buttons">
                 <button class="action-btn start" id="bStartBtn" onclick="startLiveTask()">
@@ -1236,6 +1313,10 @@
 
         <!-- 哭声事件 Tab -->
         <div id="track-cry-content" class="track-content">
+            <div class="cry-preset-card" title="已预切事件可秒开试听；未预切首次需 GPU 定位">
+                <div class="cry-preset-head"><span>⚡ 试听预切进度</span><span id="cryPresetPct">加载中…</span></div>
+                <div class="cry-preset-bar"><div id="cryPresetBar"></div></div>
+            </div>
             <div class="cry-events-list" id="cryEventsList">
                 <div class="cry-empty">
                     <div class="empty-icon">👶</div>
@@ -1256,7 +1337,10 @@
 
         <!-- 声纹样本管理 -->
         <div id="track-sp-content" class="track-content">
-            <div class="rec-count" style="margin:0 2px 10px">新增样本：到「记录」Tab 试听某句后，点旁边的 <i class="fa-solid fa-user-plus" style="color:#f59e0b"></i> 即可入库</div>
+            <div class="rec-count" style="margin:0 2px 10px;display:flex;align-items:center;gap:8px">
+                <span style="flex:1">新增样本：到「记录」Tab 试听某句后，点旁边的 <i class="fa-solid fa-user-plus" style="color:#f59e0b"></i> 即可入库</span>
+                <button onclick="uploadSheetOpen()" style="flex:none;padding:6px 12px;border-radius:8px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.12);color:#fbbf24;font-size:.8rem;font-weight:600">⬆ 上传注册</button>
+            </div>
             <div id="spBody">
                 <div class="rec-empty">声纹列表加载中…</div>
             </div>
@@ -1265,7 +1349,7 @@
         <!-- 日志 -->
         <div class="log-card">
             <div class="log-header">
-                <h3><i class="fa-solid fa-terminal"></i> <span id="logTitleText">A轨日志</span></h3>
+                <h3><i class="fa-solid fa-terminal"></i> <span id="logTitleText">补跑日志</span></h3>
                 <button class="log-toggle" onclick="toggleLogs()">
                     <span id="logToggleText">展开</span> <i class="fa-solid fa-chevron-down"></i>
                 </button>
@@ -1307,13 +1391,13 @@
                 }
 
                 return {
-                    title: 'A轨日志',
+                    title: '补跑日志',
                     logs: statusData.logs_a || ''
                 };
             }
 
             return {
-                title: 'B轨日志',
+                title: '转写日志',
                 logs: liveLogsData.logs || ''
             };
         }
@@ -1367,7 +1451,7 @@
                 const response = await fetch('/api/reprocess_history', { method: 'POST' });
                 const data = await response.json();
                 if (data.status === 'started' || data.message?.includes('启动')) {
-                    showToast('A轨历史任务已启动', 'success');
+                    showToast('补跑任务已启动', 'success');
                 } else {
                     showToast(data.message || '启动失败', 'error');
                 }
@@ -1379,7 +1463,7 @@
         }
 
         async function stopHistoryTask() {
-            if (!confirm('确定要停止A轨历史任务吗？')) return;
+            if (!confirm('确定要停止补跑任务吗？')) return;
             const btn = document.getElementById('aStopBtn');
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 停止中...';
@@ -1455,7 +1539,7 @@
             try {
                 const response = await fetch('/api/start_live', { method: 'POST' });
                 const data = await response.json();
-                showToast(data.message || 'B轨实时任务已启动', 'success');
+                showToast(data.message || '实时转写已启动', 'success');
             } catch (e) {
                 showToast('启动失败: ' + e.message, 'error');
             }
@@ -1469,7 +1553,7 @@
             try {
                 const response = await fetch('/api/pause_live', { method: 'POST' });
                 const data = await response.json();
-                showToast(data.message || 'B轨已暂停', 'success');
+                showToast(data.message || '实时转写已暂停', 'success');
             } catch (e) {
                 showToast('暂停失败: ' + e.message, 'error');
             }
@@ -1477,14 +1561,14 @@
         }
 
         async function stopLiveTask() {
-            if (!confirm('确定要停止B轨实时任务吗？')) return;
+            if (!confirm('确定要停止实时转写吗？')) return;
             const btn = document.getElementById('bStopBtn');
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 停止中...';
             try {
                 const response = await fetch('/api/stop_live', { method: 'POST' });
                 const data = await response.json();
-                showToast(data.message || 'B轨已停止', 'success');
+                showToast(data.message || '实时转写已停止', 'success');
             } catch (e) {
                 showToast('停止失败: ' + e.message, 'error');
             }
@@ -1524,10 +1608,11 @@
 
         async function fetchData() {
             try {
-                const [statusRes, liveLogsRes, refreshStatusRes] = await Promise.all([
+                const [statusRes, liveLogsRes, refreshStatusRes, overviewRes] = await Promise.all([
                     fetch('/api/live_status'),
                     fetch('/api/live_logs'),
-                    fetch('/api/refresh_file_cache/status')
+                    fetch('/api/refresh_file_cache/status'),
+                    fetch('/api/overview').catch(() => null)
                 ]);
 
                 const [statusData, liveLogsData, refreshStatusData] = await Promise.all([
@@ -1540,6 +1625,11 @@
                 updateTrackB(statusData, liveLogsData.logs || '');
                 updateRefreshButton(refreshStatusData.task || {});
 
+                // 系统总览(代理失败时静默跳过, 保留上次渲染)
+                if (overviewRes && overviewRes.ok) {
+                    try { updateOverview(await overviewRes.json()); } catch (e) { /* 忽略 */ }
+                }
+
                 const currentLogs = getCurrentLogs(statusData, liveLogsData, refreshStatusData);
                 updateLogTitle(currentLogs.title);
                 updateLogs(currentLogs.logs);
@@ -1547,6 +1637,110 @@
             } catch (e) {
                 console.error('获取数据失败:', e);
             }
+        }
+
+        // ===== 系统总览渲染 =====
+        function ovDot(s) { return `<span class="ov-dot ${s}"></span>`; }
+
+        function updateOverview(d) {
+            if (!d || !d.devices) return;
+            const card = document.getElementById('overviewCard');
+            if (!card) return;
+            card.style.display = 'block';
+
+            // 顶部结论徽章: 设备故障数 + B轨心跳/积压异常
+            const bad = d.devices.filter(x => x.status === 'bad').length;
+            let warn = d.devices.filter(x => x.status === 'warn').length;
+            const b = d.b_track || {};
+            if (b.running && (b.heartbeat_age_sec == null || b.heartbeat_age_sec > 240)) warn++;
+            if ((b.backlog || 0) > 10) warn++;
+            const badge = document.getElementById('ovSummary');
+            if (bad > 0) { badge.className = 'ov-badge bad'; badge.textContent = `${bad} 项故障`; }
+            else if (warn > 0) { badge.className = 'ov-badge warn'; badge.textContent = `${warn} 项留意`; }
+            else { badge.className = 'ov-badge ok'; badge.textContent = '整体正常'; }
+
+            // 录音设备: 每行 名称+状态点+精简详情(悬停title看全文)+时间·段数
+            const ovShort = x => {
+                const v = x.max_volume != null ? x.max_volume.toFixed(1) : null;
+                const dt = x.detail || '';
+                if (x.status === 'ok') return v != null ? `${v}dB` : '';
+                if (v != null && x.max_volume <= -80) return `静音 ${v}dB`;
+                if (!x.today_count) return '无录音';
+                if (dt.includes('无新录音')) return `${dt.split(' ')[0]}分未更新`;
+                if (dt.includes('间隔偏长')) return `${dt.split(' ')[1] || ''}分未更新`;
+                if (dt.includes('响度偏低')) return `偏低 ${v}dB`;
+                if (dt.includes('超时')) return '扫描超时';
+                if (dt.includes('目录读取异常')) return '目录异常';
+                return dt.slice(0, 12);
+            };
+            document.getElementById('ovDevices').innerHTML = d.devices.map(x => `
+                <div class="ov-row" title="${(x.detail || '').replace(/"/g, '&quot;')}">
+                    <span style="display:flex; align-items:center; gap:6px; min-width:0;">
+                        ${ovDot(x.status)}
+                        <span style="color: var(--text-primary); white-space:nowrap; flex-shrink:0;">${x.name}</span>
+                        <span class="ov-label" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ovShort(x)}</span>
+                    </span>
+                    <span class="ov-val ov-label">${x.latest_time || '--:--'} · ${x.today_count ?? '-'}</span>
+                </div>`).join('');
+
+            // B轨: 运行态/心跳/积压+趋势/转写速率/今日入库
+            const hbTxt = b.heartbeat_age_sec == null ? '无心跳' : `${Math.round(b.heartbeat_age_sec)}s前`;
+            const hbRed = b.running && (b.heartbeat_age_sec == null || b.heartbeat_age_sec > 240);
+            const backlog = b.backlog || 0;
+            const trend = b.backlog_trend_per_hour;
+            let trendTxt = '—', trendSty = '';
+            if (trend != null) {
+                if (trend > 0) { trendTxt = `+${trend}/时`; trendSty = 'color: var(--danger);'; }
+                else if (trend < 0) { trendTxt = `${trend}/时`; trendSty = 'color: var(--success);'; }
+                else { trendTxt = '持平'; }
+            }
+            let chaseTxt = '';
+            if (trend != null && trend < 0 && backlog > 0) {
+                const hrs = backlog / (-trend);
+                chaseTxt = hrs <= 48 ? ` ≈${hrs.toFixed(1)}小时追平` : '';
+            }
+            const rate = b.hour_rate;
+            document.getElementById('ovB').innerHTML = `
+                <div class="ov-row"><span style="display:flex; align-items:center; gap:6px;">${ovDot(b.running ? 'ok' : 'off')}<span style="color: var(--text-primary);">${b.running ? '运行中' : '已停止'}</span><span class="ov-label">${b.runtime ? '· ' + b.runtime : ''}</span></span></div>
+                <div class="ov-row"><span class="ov-label">心跳</span><span class="ov-val" style="${hbRed ? 'color: var(--danger);' : ''}">${hbTxt}</span></div>
+                <div class="ov-row"><span class="ov-label">积压</span><span class="ov-val" style="${backlog > 10 ? 'color: var(--warning);' : ''}">${backlog} 段 <span style="${trendSty}">${trendTxt}${chaseTxt}</span></span></div>
+                <div class="ov-row"><span class="ov-label">转写吞吐</span><span class="ov-val">${rate != null ? rate + ' 段/时' : '—'}</span></div>
+                <div class="ov-row"><span class="ov-label">入库</span><span class="ov-val">今日 ${b.today_transcribed ?? 0} · 近1时 ${b.ingest_rate_per_hour ?? '—'} · 哭声 ${b.today_cry_count ?? 0}</span></div>`;
+
+            // A轨: 补跑中显示进度条+效率, 否则显示待窗口+上次战绩
+            const a = d.a_track || {};
+            const p = a.progress;
+            if (a.running) {
+                const pct = p ? (p.percent != null ? Math.round(p.percent) : (p.total ? Math.round((p.processed || 0) / p.total * 100) : 0)) : 0;
+                document.getElementById('ovA').innerHTML = `
+                    <div class="ov-row"><span style="display:flex; align-items:center; gap:6px;">${ovDot('ok')}<span style="color: var(--text-primary);">补跑中</span><span class="ov-label">${pct}%</span></span></div>
+                    <div class="ov-bar"><div style="width:${pct}%;"></div></div>
+                    <div class="ov-row"><span class="ov-label">进度</span><span class="ov-val">${p ? `${p.processed || 0}/${p.total || 0}` : '--'}</span></div>
+                    <div class="ov-row"><span class="ov-label">速度</span><span class="ov-val">${p && p.avg_time != null ? p.avg_time.toFixed(1) + 's/段 ≈' + Math.round(3600 / p.avg_time) + '段/时' : '--'}</span></div>
+                    <div class="ov-row"><span class="ov-label">预计还需</span><span class="ov-val">${p && p.eta_hours != null ? p.eta_hours.toFixed(1) + ' 小时' : '--'}</span></div>
+                    <div class="ov-row"><span class="ov-label">成/跳/败</span><span class="ov-val">${p ? `${p.success_count || 0} / ${p.skip_count || 0} / ${p.error_count || 0}` : '--'}</span></div>`;
+            } else {
+                const lastRun = p && p.success_count != null
+                    ? `<div class="ov-row"><span class="ov-label">上次补跑</span><span class="ov-val">✅${p.success_count || 0} ⏭${p.skip_count || 0} ❌${p.error_count || 0}</span></div>` : '';
+                document.getElementById('ovA').innerHTML = `
+                    <div class="ov-row"><span style="display:flex; align-items:center; gap:6px;">${ovDot('off')}<span style="color: var(--text-primary);">待窗口</span></span></div>
+                    <div class="ov-row"><span class="ov-label">窗口</span><span class="ov-val">${a.window || '--'}</span></div>
+                    <div class="ov-row"><span class="ov-label">下次运行</span><span class="ov-val">${a.next_run || '--'}</span></div>
+                    ${lastRun}`;
+            }
+
+            // 基础设施: SMB/5009面板/静音巡检/GPU 胶囊灯
+            const inf = d.infra || {};
+            const pill = (label, ok, extra = '') => `
+                <div class="ov-row">
+                    <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">${ovDot(ok ? 'ok' : 'bad')}<span class="ov-val" style="text-align:left;">${label}</span></span>
+                    ${extra ? `<span class="ov-label" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${extra}</span>` : ''}
+                </div>`;
+            document.getElementById('ovInfra').innerHTML =
+                pill('SMB 存储', !!(inf.smb && inf.smb.ok), (inf.smb && inf.smb.detail) || '') +
+                pill('面板 5009', !!(inf.panel_5009 && inf.panel_5009.ok)) +
+                pill('静音巡检', !!(inf.silence_check && inf.silence_check.ok), (inf.silence_check && inf.silence_check.last_alert) ? `告警 ${inf.silence_check.last_alert}` : '无告警') +
+                `<div class="ov-row"><span class="ov-label">GPU</span><span class="ov-val">${inf.gpu_state || '--'}</span></div>`;
         }
 
         function updateTrackA(logs, statusData) {
@@ -1818,7 +2012,7 @@
                 bLabel.textContent = '已暂停';
                 bBadge.textContent = 'PAUSED';
                 bBadge.className = 'status-badge paused';
-                document.getElementById('bStatusText').textContent = statusData.b_reason || '等待A轨完成';
+                document.getElementById('bStatusText').textContent = statusData.b_reason || '等待补跑完成';
             } else {
                 bRing.className = 'pulse-ring running';
                 bRing.innerHTML = '<i class="fa-solid fa-microphone"></i>';
@@ -2051,62 +2245,145 @@
         function pickRecYear(y) { recYear = y; recMonth = '全部'; stopRecAudio(); renderRecFilters(); }
         function pickRecMonth(m) { recMonth = m; stopRecAudio(); renderRecFilters(); }
 
+        let recDayState = null;   // {date, offset, cardCount, segCount, loading}
         async function loadRecDay(dateStr, chip) {
             document.querySelectorAll('.rec-date-chip').forEach(c => c.classList.remove('active'));
             if (chip) chip.classList.add('active');
             recCurDate = dateStr;
             stopRecAudio();
+            recDayState = { date: dateStr, offset: 0, cardCount: 0, segCount: 0, loading: false };
             const body = document.getElementById('recBody');
             body.innerHTML = '<div class="rec-empty">加载中…</div>';
+            await fetchRecPage(dateStr);
+        }
+
+        /* ---- 已注册声纹切片标注（防重复注册）----
+           source_key = 切片路径最后两级（录音目录/seg_N.wav）；seg_N.wav 每天各目录重名，必须带目录级才唯一 */
+        let regSourceKeys = new Set(), regInfo = {}, regVpPromise = null;
+        const regKeyOf = p => { const a = String(p || '').split('/').filter(Boolean); return a.slice(-2).join('/'); };
+        function loadRegisteredVp() {
+            if (!regVpPromise) regVpPromise = (async () => {
+                try {
+                    const r = await fetch('/api/voiceprint_registered');
+                    if (!r.ok) return;
+                    const d = await r.json();
+                    regInfo = {};
+                    regSourceKeys = new Set((d.registered || []).filter(x => x.source_key).map(x => x.source_key));
+                    (d.registered || []).forEach(x => { if (x.source_key) regInfo[x.source_key] = { spk: x.speaker, ts: (x.timestamp || '').slice(5, 16) }; });
+                } catch (e) { regVpPromise = null; }
+            })();
+            return regVpPromise;
+        }
+        function vpRegRowHtml(info) {   // 已注册切片在详情里的一行标注（与 P/SV/W 信息行同样式）
+            const spk = (info && info.spk) || '?';
+            const ts = info && info.ts ? ` · ${info.ts}` : '';
+            return `<div class="rec-mrow vp-reg-row"><span class="rec-mtag" style="color:#34d399;border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.12)" title="该切片已在声纹库中，无需重复注册">✓ 声纹</span><span class="rec-mtext rec-msub" style="color:#34d399">已注册到「${escapeHtml(spk)}」名下${escapeHtml(ts)}</span></div>`;
+        }
+        function markRegistered(path, owner, ts) {   // 注册成功后即时点亮按钮 + 插入详情标注行
+            const key = regKeyOf(path);
+            regSourceKeys.add(key);
+            regInfo[key] = { spk: owner || (regInfo[key] && regInfo[key].spk), ts: ts || (regInfo[key] && regInfo[key].ts) || '' };
+            document.querySelectorAll(`.rec-smp[data-smpkey="${key}"]`).forEach(b => {
+                b.disabled = true;
+                b.style.color = '#34d399';
+                b.style.borderColor = 'rgba(52,211,153,.45)';
+                b.style.background = 'rgba(52,211,153,.12)';
+                b.title = `已注册到「${(regInfo[key] && regInfo[key].spk) || '?'}」的声纹，无需重复`;
+                b.innerHTML = '<i class="fa-solid fa-check"></i>';
+                b.removeAttribute('onclick');
+                const segEl = b.closest('.rec-seg');
+                if (segEl && !segEl.querySelector('.vp-reg-row')) {
+                    const firstRow = segEl.querySelector('.rec-mrow');
+                    if (firstRow) firstRow.insertAdjacentHTML('afterend', vpRegRowHtml(regInfo[key]));
+                }
+            });
+        }
+
+        function recCardHtml(item, segs) {
+            const t = item.time_simple || (item.recording_time || '').slice(11, 16) || '--:--';
+            const segHtml = segs.map(seg => {
+                const spk = recCleanSpk(seg.spk);
+                const canPlay = seg.segment_audio_path && !seg.segment_audio_path.includes('temp')
+                                && seg.segment_audio_path.startsWith('/');
+                const emoIcon = { happy: '😊', laughter: '😂', sad: '😢', angry: '😠', surprised: '😮', fear: '😨', disgusted: '🤢', neutral: '😐' }[seg.emotion] || '';
+                const emo = seg.emotion ? `<span class="rec-emo">${emoIcon}${escapeHtml(seg.emotion)}</span>` : '';
+                const whisper = seg.whisper_text ? `<div class="rec-mrow"><span class="rec-mtag" style="color:#60a5fa;border-color:rgba(96,165,250,.45);background:rgba(96,165,250,.12)" title="Whisper 英文对照">🌐 W</span><span class="rec-mtext rec-msub">${escapeHtml(seg.whisper_text)}</span></div>` : '';
+                const sv = seg.sensevoice_text ? `<div class="rec-mrow"><span class="rec-mtag" style="color:#c084fc;border-color:rgba(192,132,252,.45);background:rgba(192,132,252,.12)" title="SenseVoice 情绪">😊 SV</span><span class="rec-mtext rec-msub">${escapeHtml(seg.sensevoice_text)}</span></div>` : '';
+                const nanoDb = seg.nano_text ? `<div class="rec-mrow rec-nano-row"><span class="rec-mtag" style="color:#2dd4bf;border-color:rgba(45,212,191,.45);background:rgba(45,212,191,.12)" title="Fun-ASR-Nano 方言">🏮 N</span><span class="rec-mtext rec-msub">${escapeHtml(seg.nano_text)}</span></div>` : '';
+                const regKey = regKeyOf(seg.segment_audio_path), reged = regSourceKeys.has(regKey);
+                const smpBtn = reged
+                    ? `<button class="rec-smp" disabled style="color:#34d399;border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.12)" title="已注册到「${escapeHtml((regInfo[regKey] && regInfo[regKey].spk) || '?')}」的声纹"><i class="fa-solid fa-check"></i></button>`
+                    : `<button class="rec-smp" title="设为声纹样本" data-smpkey="${regKey}" onclick="spkSheetOpen('${seg.segment_audio_path}', '${(seg.spk || '').replace(/'/g, '')}', this)"><i class="fa-solid fa-user-plus"></i></button>`;
+                const regRow = reged ? vpRegRowHtml(regInfo[regKey]) : '';
+                const segId = (() => { const m = (seg.segment_audio_path || '').match(/(\d{4}-\d{2}-\d{2})\/TermuxAudioRecording_\d{4}-\d{2}-\d{2}_(\d{2})-(\d{2})-(\d{2})\/seg_(\d+)\.wav/); if (!m) return null; return `${m[1].replace(/-/g, '').slice(4)}_${m[2]}${m[3]}_${m[5]}`; })();
+                const idBadge = segId ? `<span class="rec-id" title="点击复制引用 ID" onclick="recCopyId('${segId}', event)">${segId}</span>${deviceBadge(_deviceFromPath(seg.segment_audio_path))}` : '';
+                return `<div class="rec-seg" style="flex-direction:column;align-items:stretch">
+                    <div class="rec-mrow" style="flex-wrap:wrap">
+                        ${idBadge}<span class="rec-spk" style="background:${recSpkColor(seg.spk)}">${escapeHtml(spk)}</span>
+                        ${emo}
+                        ${canPlay ? `<button class="rec-play" onclick="recPlay('${seg.segment_audio_path}', this)"><i class="fa-solid fa-play"></i></button>
+                            ${smpBtn}
+                            <button class="rec-nano" title="用本地 Fun-ASR-Nano 识别这句" onclick="recNano('${seg.segment_audio_path}', this)"><i class="fa-solid fa-microchip"></i></button>` : ''}
+                    </div>
+                    ${regRow}
+                    <div class="rec-mrow"><span class="rec-mtag" style="color:#e2e8f0;border-color:rgba(148,163,184,.4);background:rgba(148,163,184,.10)" title="Paraformer 主引擎">🎤 P</span><span class="rec-mtext">${escapeHtml(seg.text || '')}</span></div>
+                    ${sv}${whisper}${nanoDb}
+                </div>`;
+            }).join('');
+            return `<div class="rec-card">
+                <div class="rec-card-head">
+                    <span class="rec-time"><i class="fa-regular fa-clock" style="margin-right:4px;color:var(--text-secondary)"></i>${t}</span>
+                    <span class="rec-file">${escapeHtml((item.filename || '').replace(/\.[a-z0-9]+$/i, '').replace(/^TermuxAudioRecording_/, ''))}</span>
+                </div>
+                ${segHtml}
+            </div>`;
+        }
+
+        /* 分页加载: 每页300条, 与角标口径一致(全量可见录音) */
+        async function fetchRecPage(dateStr) {
+            const st = recDayState;
+            if (!st || st.date !== dateStr || st.loading) return;
+            st.loading = true;
+            await loadRegisteredVp();   // 首次拉取已注册切片名单（缓存 promise，之后瞬时返回）
+            const body = document.getElementById('recBody');
             try {
-                const r = await fetch(`/api/data/range?start_date=${dateStr}&end_date=${dateStr}&limit=300`);
+                const r = await fetch(`/api/data/range?start_date=${dateStr}&end_date=${dateStr}&limit=300&offset=${st.offset}`);
                 if (!r.ok) throw 0;
                 const d = await r.json();
+                if (recDayState !== st) return;   // 已切到别的日期, 丢弃本页
                 const items = d.transcripts || [];
-                if (!items.length) { body.innerHTML = `<div class="rec-empty">${dateStr} 没有语音识别记录</div>`; return; }
-                let segCount = 0, cardCount = 0;
-                recSpkColorMap = {}; recNextColorIdx = 0;   // 每天重新分配, 当天内不同人不同色
-                const cards = items.map(item => {
+                if (st.offset === 0) {
+                    if (!items.length) { body.innerHTML = `<div class="rec-empty">${dateStr} 没有语音识别记录</div>`; recDayState = null; return; }
+                    recSpkColorMap = {}; recNextColorIdx = 0;   // 每天重新分配, 当天内不同人不同色
+                    body.innerHTML = '<div class="rec-count" id="recCount"></div><div id="recCards"></div><div id="recMore" style="text-align:center;padding:2px 0 10px"></div>';
+                }
+                if (!items.length) { document.getElementById('recMore').innerHTML = ''; return; }
+                const wrap = document.createElement('div');
+                const cards = document.getElementById('recCards');
+                for (const item of items) {
                     const segs = (item.segments || []).filter(s => s.spk && !REC_HIDE_SPK.includes(String(s.spk).toLowerCase()));   // Unknown/宝宝 不展示
-                    if (!segs.length) return '';
-                    cardCount++;
-                    segCount += segs.length;
-                    const t = item.time_simple || (item.recording_time || '').slice(11, 16) || '--:--';
-                    const segHtml = segs.map(seg => {
-                        const spk = recCleanSpk(seg.spk);
-                        const canPlay = seg.segment_audio_path && !seg.segment_audio_path.includes('temp')
-                                        && seg.segment_audio_path.startsWith('/');
-                        const emoIcon = { happy: '😊', laughter: '😂', sad: '😢', angry: '😠', surprised: '😮', fear: '😨', disgusted: '🤢', neutral: '😐' }[seg.emotion] || '';
-                        const emo = seg.emotion ? `<span class="rec-emo">${emoIcon}${escapeHtml(seg.emotion)}</span>` : '';
-                        const whisper = seg.whisper_text ? `<div class="rec-mrow"><span class="rec-mtag" style="color:#60a5fa;border-color:rgba(96,165,250,.45)">↪️ Whisper</span><span class="rec-mtext">${escapeHtml(seg.whisper_text)}</span></div>` : '';
-                        const sv = seg.sensevoice_text ? `<div class="rec-mrow"><span class="rec-mtag" style="color:#c084fc;border-color:rgba(192,132,252,.45)">🎭 SenseVoice</span><span class="rec-mtext">${escapeHtml(seg.sensevoice_text)}</span></div>` : '';
-                        const nanoDb = seg.nano_text ? `<div class="rec-mrow rec-nano-row"><span class="rec-mtag" style="color:#2dd4bf;border-color:rgba(45,212,191,.45)">🔬 Nano</span><span class="rec-mtext">${escapeHtml(seg.nano_text)}</span></div>` : '';
-                        const segId = (() => { const m = (seg.segment_audio_path || '').match(/(\d{4}-\d{2}-\d{2})\/TermuxAudioRecording_\d{4}-\d{2}-\d{2}_(\d{2})-(\d{2})-(\d{2})\/seg_(\d+)\.wav/); if (!m) return null; return `${m[1].replace(/-/g, '').slice(4)}_${m[2]}${m[3]}_${m[5]}`; })();
-                        const idBadge = segId ? `<span class="rec-id" title="点击复制引用 ID" onclick="recCopyId('${segId}', event)">${segId}</span>` : '';
-                        return `<div class="rec-seg" style="flex-direction:column;align-items:stretch">
-                            <div class="rec-mrow" style="flex-wrap:wrap">
-                                ${idBadge}<span class="rec-spk" style="background:${recSpkColor(seg.spk)}">${escapeHtml(spk)}</span>
-                                ${emo}
-                                ${canPlay ? `<button class="rec-play" onclick="recPlay('${seg.segment_audio_path}', this)"><i class="fa-solid fa-play"></i></button>
-                                    <button class="rec-smp" title="设为声纹样本" onclick="spkSheetOpen('${seg.segment_audio_path}', '${(seg.spk || '').replace(/'/g, '')}', this)"><i class="fa-solid fa-user-plus"></i></button>
-                                    <button class="rec-nano" title="用本地 Fun-ASR-Nano 识别这句" onclick="recNano('${seg.segment_audio_path}', this)"><i class="fa-solid fa-microchip"></i></button>` : ''}
-                            </div>
-                            <div class="rec-mrow"><span class="rec-mtag" style="color:#e2e8f0;border-color:rgba(148,163,184,.35)">🅿️ Paraformer</span><span class="rec-mtext">${escapeHtml(seg.text || '')}</span></div>
-                            ${sv}${whisper}${nanoDb}
-                        </div>`;
-                    }).join('');
-                    return `<div class="rec-card">
-                        <div class="rec-card-head">
-                            <span class="rec-time"><i class="fa-regular fa-clock" style="margin-right:4px;color:var(--text-secondary)"></i>${t}</span>
-                            <span class="rec-file">${escapeHtml(item.filename || '')}</span>
-                        </div>
-                        ${segHtml}
-                    </div>`;
-                }).join('');
-                if (!cardCount) { body.innerHTML = `<div class="rec-empty">${dateStr} 没有语音识别记录</div>`; return; }
-                body.innerHTML = `<div class="rec-count">${cardCount} 条录音 · ${segCount} 句</div>` + cards;
+                    if (!segs.length) continue;
+                    st.cardCount++; st.segCount += segs.length;
+                    wrap.innerHTML = recCardHtml(item, segs);
+                    while (wrap.firstChild) cards.appendChild(wrap.firstChild);
+                }
+                const dayTotal = (recDatesData.find(x => x.date === st.date) || {}).count;   // 角标口径的当日可见总数
+                const headNum = (dayTotal && dayTotal !== st.cardCount) ? `${st.cardCount} / ${dayTotal} 条录音` : `${st.cardCount} 条录音`;
+                document.getElementById('recCount').textContent = `${headNum} · ${st.segCount} 句`;
+                st.offset += items.length;
+                const hasMore = items.length >= 300;
+                const moreEl = document.getElementById('recMore');
+                if (hasMore) moreEl.innerHTML = `<button class="rec-date-chip" onclick="fetchRecPage('${dateStr}')">⬇️ 加载更多</button>`;
+                else if (st.offset > 300) moreEl.innerHTML = '<span style="opacity:.45;font-size:.8rem">— 已全部加载 —</span>';
+                else moreEl.innerHTML = '';
+                if (st.cardCount === 0) {
+                    if (hasMore) { st.loading = false; return fetchRecPage(dateStr); }   // 前300条全被过滤, 自动续拉
+                    if (st.offset <= 300) body.innerHTML = `<div class="rec-empty">${dateStr} 没有语音识别记录</div>`;
+                }
             } catch (e) {
-                if (recCurDate === dateStr) body.innerHTML = '<div class="rec-empty">加载失败，请重试</div>';
+                if (recCurDate === dateStr && st.offset === 0) body.innerHTML = '<div class="rec-empty">加载失败，请重试</div>';
+            } finally {
+                st.loading = false;
             }
         }
 
@@ -2174,6 +2451,115 @@
         }
         function spkSheetClose() { const s = document.getElementById('spkSheet'); if (s) s.remove(); }
 
+        /* ---- 上传音频注册声纹：选说话人 + 多选文件，逐个走 /speaker/register ---- */
+        function uploadSheetOpen() {
+            uploadSheetClose();
+            const sheet = document.createElement('div');
+            sheet.id = 'uplSheet';
+            sheet.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end';
+            sheet.onclick = e => { if (e.target === sheet) uploadSheetClose(); };
+            const card = document.createElement('div');
+            card.style.cssText = 'width:100%;background:#161d2b;border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom))';
+            card.innerHTML = `<div style="font-size:.82rem;color:#8b95a7;margin-bottom:10px">上传音频注册声纹：先选说话人，再选文件。同一人传多段效果最好（每段 5-10 秒清晰人声）；名字已存在会自动增强</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px" id="uplNames">
+                    ${SPK_CHOICES.map(n => `<button data-n="${n}" style="flex:1 0 30%;padding:10px 0;border-radius:10px;border:1px solid #2a3547;background:#0f1723;color:#c9d3e2;font-size:.9rem;font-weight:600">${n}</button>`).join('')}
+                </div>
+                <input type="text" id="uplNewName" placeholder="或输入新名字（可选）" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid #2a3547;background:#0f1723;color:#e5eaf2;font-size:.9rem;margin-bottom:10px">
+                <input type="file" id="uplFiles" accept="audio/*,.m4a,.wav,.mp3,.amr,.3gp" multiple style="display:none">
+                <button id="uplPick" style="width:100%;padding:10px 0;border-radius:10px;border:1px solid rgba(56,189,248,.4);background:rgba(56,189,248,.08);color:#7dd3fc;font-size:.88rem;margin-bottom:8px">📎 选择音频文件（可多选）</button>
+                <div id="uplOut" style="display:none;font-size:.85rem;line-height:1.5;color:#c9d3e2;background:#0f1723;border:1px solid #2a3547;border-radius:10px;padding:10px;margin-bottom:8px;overflow-wrap:anywhere"></div>
+                <button id="uplGo" style="width:100%;padding:10px 0;border-radius:10px;border:none;background:rgba(245,158,11,.9);color:#1a1205;font-size:.92rem;font-weight:700;margin-bottom:8px" disabled>注册声纹</button>
+                <button style="width:100%;padding:10px 0;border-radius:10px;border:none;background:#0f1723;color:#8b95a7;font-size:.9rem" onclick="uploadSheetClose()">取消</button>`;
+            let who = null, files = [];
+            const goBtn = card.querySelector('#uplGo');
+            const syncGo = () => { goBtn.disabled = !(who && files.length); };
+            card.querySelectorAll('#uplNames button').forEach(b => {
+                b.onclick = () => {
+                    who = b.dataset.n;
+                    card.querySelector('#uplNewName').value = '';
+                    card.querySelectorAll('#uplNames button').forEach(x => {
+                        const on = x === b;
+                        x.style.background = on ? 'rgba(245,158,11,.15)' : '#0f1723';
+                        x.style.color = on ? '#fbbf24' : '#c9d3e2';
+                        x.textContent = x.dataset.n + (on ? ' ✓' : '');
+                    });
+                    syncGo();
+                };
+            });
+            card.querySelector('#uplNewName').oninput = e => {
+                who = e.target.value.trim() || null;
+                card.querySelectorAll('#uplNames button').forEach(x => { x.style.background = '#0f1723'; x.style.color = '#c9d3e2'; x.textContent = x.dataset.n; });
+                syncGo();
+            };
+            const pickBtn = card.querySelector('#uplPick'), fileInput = card.querySelector('#uplFiles');
+            pickBtn.onclick = () => fileInput.click();
+            fileInput.onchange = () => {
+                files = Array.from(fileInput.files || []);
+                pickBtn.innerHTML = files.length ? `📎 已选 ${files.length} 个文件` : '📎 选择音频文件（可多选）';
+                syncGo();
+            };
+            goBtn.onclick = () => doUploadRegister(who, files, card.querySelector('#uplOut'), goBtn);
+            sheet.appendChild(card);
+            document.body.appendChild(sheet);
+        }
+        function uploadSheetClose() { const s = document.getElementById('uplSheet'); if (s) s.remove(); }
+
+        async function doUploadRegister(name, files, out, goBtn) {
+            if (!name || !files.length) return;
+            goBtn.disabled = true; goBtn.textContent = '上传中…';
+            out.style.display = 'block';
+            let ok = 0; const errs = [];
+            for (let i = 0; i < files.length; i++) {
+                out.innerHTML = `⏳ 正在上传 ${i + 1}/${files.length}：${escapeHtml(files[i].name)}`;
+                try {
+                    const fd = new FormData();
+                    fd.append('speaker_name', name);
+                    fd.append('audio_file', files[i], files[i].name);
+                    const r = await fetch('/speaker/register', { method: 'POST', body: fd });
+                    if (r.status === 401) { location.href = '/login'; return; }
+                    const data = await r.json().catch(() => ({}));
+                    if (r.ok && !data.error) { ok++; } else { errs.push(`${files[i].name}: ${data.error || 'HTTP ' + r.status}`); }
+                } catch (e) { errs.push(`${files[i].name}: ${e.message}`); }
+            }
+            goBtn.disabled = false; goBtn.textContent = '注册声纹';
+            out.innerHTML = (errs.length ? '⚠️' : '✅') + ` 成功 ${ok}/${files.length} 个（${escapeHtml(name)}）` +
+                (errs.length ? `<br><span style="color:#f0847c">${errs.map(escapeHtml).join('<br>')}</span>` : '') +
+                `<br><span style="color:#8b95a7">声纹库已更新，后续转写即刻生效</span>`;
+            if (ok) loadSpSpeakers();
+        }
+
+        /* 卡片级上传：点谁的卡片按钮就直接传给谁，无需选人 */
+        function uploadForSpeaker(name) {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'audio/*,.m4a,.wav,.mp3,.amr,.3gp';
+            input.multiple = true;
+            input.style.display = 'none';
+            input.onchange = async () => {
+                const files = Array.from(input.files || []);
+                input.remove();
+                if (!files.length) return;
+                showToast(`⏳ 正在上传 ${files.length} 个文件到「${name}」…`);
+                let ok = 0; const errs = [];
+                for (let i = 0; i < files.length; i++) {
+                    try {
+                        const fd = new FormData();
+                        fd.append('speaker_name', name);
+                        fd.append('audio_file', files[i], files[i].name);
+                        const r = await fetch('/speaker/register', { method: 'POST', body: fd });
+                        if (r.status === 401) { location.href = '/login'; return; }
+                        const data = await r.json().catch(() => ({}));
+                        if (r.ok && !data.error) { ok++; } else { errs.push(data.error || `HTTP ${r.status}`); }
+                    } catch (e) { errs.push(e.message); }
+                }
+                showToast(errs.length ? `⚠️ ${ok}/${files.length} 成功：${errs[0]}` : `✅ 已为「${name}」添加 ${ok} 个声纹样本`, errs.length ? 'error' : 'success');
+                if (ok) loadSpSpeakers();
+            };
+            document.body.appendChild(input);
+            input.click();
+            setTimeout(() => input.remove(), 120000);
+        }
+
         /* 本地 Fun-ASR-Nano 重识别: 5009 代理 → audiocpp_server (手动触发, 不写库) */
         async function fetchNanoText(path) {
             const r = await fetch('/api/nano_transcribe', {
@@ -2192,7 +2578,7 @@
             else {
                 row = document.createElement('div');
                 row.className = 'rec-mrow rec-nano-row';
-                row.innerHTML = '<span class="rec-mtag" style="color:#2dd4bf;border-color:rgba(45,212,191,.45)">🔬 Nano</span><span class="rec-mtext"><i style="color:#8b95a7">⏳ 识别中…</i></span>';
+                row.innerHTML = '<span class="rec-mtag" style="color:#2dd4bf;border-color:rgba(45,212,191,.45);background:rgba(45,212,191,.12)">🏮 N</span><span class="rec-mtext rec-msub"><i style="color:#8b95a7">⏳ 识别中…</i></span>';
                 segEl.appendChild(row);
             }
             btn.classList.add('loading');
@@ -2297,11 +2683,16 @@
                 const fd = new FormData();
                 fd.append('speaker_name', name);
                 fd.append('audio_file', file);
+                fd.append('source_key', regKeyOf(path));
                 const resp = await fetch('/speaker/register', { method: 'POST', body: fd });
                 if (resp.status === 401) { location.href = '/login'; return; }
                 const data = await resp.json().catch(() => ({}));
                 if (resp.ok) {
                     showToast(`✓ 已注册到「${name}」的声纹样本（${data.mode === 'enhance' ? '增强' : '新注册'}）`, 'success');
+                    markRegistered(path, name);
+                } else if (resp.status === 409 && data.duplicate) {
+                    showToast('⚠ ' + (data.error || '该音频已注册过声纹'), 'error');
+                    markRegistered(path, data.existing_speaker);
                 } else {
                     showToast('注册失败: ' + (data.error || resp.status), 'error');
                 }
@@ -2325,10 +2716,10 @@
                     <div class="rec-card" style="border-color:rgba(251,146,60,.35)">
                         <div class="rec-card-head">
                             <span class="rec-spk" style="background:rgba(251,146,60,.18);color:#fb923c">🚫 负样本黑名单</span>
-                            <span class="rec-file" id="sp-neg-count">…</span>
+                            <button onclick="toggleSpNeg()" style="font-size:.68rem;font-weight:600;color:#fb923c;background:rgba(251,146,60,.10);border:1px solid rgba(251,146,60,.35);border-radius:999px;padding:3px 10px;display:flex;align-items:center;gap:5px"><span id="sp-neg-count">…</span><i class="fa-solid fa-chevron-down" id="sp-neg-arrow"></i></button>
                         </div>
                         <div style="font-size:.66rem;color:var(--text-secondary);margin-top:4px">电视/动画等非家人声音，用于拦截误归属；<b>只做拒绝，不参与正向归属</b>，可随时单条移除回滚</div>
-                        <div id="sp-neg-list" style="margin-top:6px"><div class="rec-loading">加载中…</div></div>
+                        <div id="sp-neg-list" style="margin-top:6px;display:none"><div class="rec-loading">加载中…</div></div>
                     </div>`;
                 if (!list.length) {
                     body.innerHTML = negBlock + '<div class="rec-empty">声纹库为空，去「记录」Tab 添加第一个样本吧</div>';
@@ -2344,11 +2735,21 @@
                         <div id="sp-samples-${spEsc(s.name)}" style="display:none;margin-top:6px"></div>
                         <div style="display:flex;gap:8px;margin-top:8px">
                             <button class="action-btn refresh" style="flex:1;margin:0" onclick="spToggleSamples('${spEsc(s.name)}')">查看样本</button>
+                            <button class="action-btn" style="flex:1;margin:0;border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.12);color:#fbbf24" onclick="uploadForSpeaker('${spEsc(s.name)}')">⬆ 上传声纹</button>
                             <button class="action-btn stop" style="flex:1;margin:0" onclick="spDeleteSpeaker('${spEsc(s.name)}')">删除说话人</button>
                         </div>
                     </div>`).join('');
                 loadSpNegatives();
             } catch (e) { body.innerHTML = '<div class="rec-empty">加载失败，请重试</div>'; }
+        }
+
+        function toggleSpNeg() {   // 负样本列表默认折叠, 点计数胶囊展开/收起
+            const box = document.getElementById('sp-neg-list');
+            const arrow = document.getElementById('sp-neg-arrow');
+            if (!box) return;
+            const show = box.style.display === 'none';
+            box.style.display = show ? '' : 'none';
+            if (arrow) arrow.className = show ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down';
         }
 
         async function loadSpNegatives() {
@@ -2486,11 +2887,53 @@
             }
         }
         
+        // 并行任务信号灯: 随主轮询刷新
+        async function refreshParallelLights() {
+            try {
+                const r = await fetch('/api/parallel_lights');
+                const d = await r.json();
+                if (!d.lights) return;
+                const box = document.getElementById('parallel-lights');
+                if (!box) return;
+                box.innerHTML = d.lights.map(l => `
+                    <span class="parallel-light ${l.on ? 'on' : ''}" title="${l.label}: ${l.on ? '运行中' : '未运行'}">
+                        <span class="pl-dot"></span><span class="pl-label">${l.label}</span>
+                    </span>`).join('');
+                // 处理进度三态：黄=待处理(backfill队列) → 蓝=正在处理 → 绿=最近已处理
+                const pz = document.getElementById('processing-now');
+                if (pz) {
+                    const parts = [];
+                    const bf = d.backfill;
+                    if (bf && bf.remaining > 0) {
+                        parts.push(`<span class="proc-chip proc-chip-pending" title="backfill队列 成功${bf.ok} 失败${bf.fail}">⏳ 待处理 ${bf.remaining} · ${bf.eta}</span>`);
+                        for (const f of (bf.pending_files || [])) {
+                            const short = f.replace('TermuxAudioRecording_', '').replace('.m4a', '');
+                            parts.push(`<span class="proc-chip proc-chip-pending">› ${short}</span>`);
+                        }
+                    }
+                    const list = d.processing || [];
+                    for (const p of list) {
+                        const short = p.filename.replace('TermuxAudioRecording_', '').replace('.m4a', '');
+                        parts.push(`<span class="proc-chip">⚙ ${short} · ${p.elapsed_s}s</span>`);
+                    }
+                    const done = (d.completed || []).slice(-3).reverse();
+                    for (const c of done) {
+                        const short = c.filename.replace('TermuxAudioRecording_', '').replace('.m4a', '');
+                        parts.push(`<span class="proc-chip proc-chip-done">✅ ${short} · ${c.elapsed_s}s</span>`);
+                    }
+                    pz.innerHTML = parts.join('');
+                    pz.style.display = parts.length ? 'flex' : 'none';
+                }
+            } catch (e) { /* 网络抖动时保留上次渲染 */ }
+        }
+
         // 初始加载
         fetchDataWithLock();
-        
+        refreshParallelLights();
+
         // 定时轮询（5秒一次）
         let fetchDataInterval = setInterval(fetchDataWithLock, 5000);
+        let parallelLightsInterval = setInterval(refreshParallelLights, 10000);  // 含"正在处理"展示，10s 刷新
         
         // 页面不可见时暂停轮询，恢复时重启
         document.addEventListener('visibilitychange', () => {
@@ -2503,11 +2946,19 @@
                     clearInterval(cryEventsInterval);
                     cryEventsInterval = null;
                 }
+                if (parallelLightsInterval) {
+                    clearInterval(parallelLightsInterval);
+                    parallelLightsInterval = null;
+                }
                 console.log('[mobile_monitor] 页面隐藏，暂停轮询');
             } else {
                 if (!fetchDataInterval) {
                     fetchDataInterval = setInterval(fetchDataWithLock, 5000);
                     fetchDataWithLock();
+                }
+                if (!parallelLightsInterval) {
+                    parallelLightsInterval = setInterval(refreshParallelLights, 30000);
+                    refreshParallelLights();
                 }
                 if (!cryEventsInterval && currentTrack === 'cry') {
                     cryEventsInterval = setInterval(loadCryEventsMobile, 30000);
@@ -2585,9 +3036,25 @@
             return filename;
         }
 
+        // 预切总进度(随哭声Tab事件列表同节奏刷新)
+        async function refreshCryPresetProgress() {
+            try {
+                const r = await fetch('/api/preview_progress');
+                const d = await r.json();
+                const pctEl = document.getElementById('cryPresetPct');
+                const barEl = document.getElementById('cryPresetBar');
+                if (!pctEl || !barEl) return;
+                if (d.error) { pctEl.textContent = '不可用'; return; }
+                const pct = d.pct || 0;
+                barEl.style.width = pct + '%';
+                pctEl.textContent = `${d.presliced}/${d.total} (${pct}%)` + (pct >= 100 ? ' ✅' : '');
+            } catch (e) {}
+        }
+
         async function loadCryEventsMobile(append = false) {
             if (cryEventsLoading) return;
             cryEventsLoading = true;
+            refreshCryPresetProgress();  // 预切进度随事件列表同节奏刷新(30秒)
 
             const container = document.getElementById('cryEventsList');
             if (!append) cryCurrentOffset = 0;
@@ -2642,7 +3109,7 @@
                     const index = total - cryCurrentOffset - idx;
 
                     html += `
-                        <div class="cry-event-card" onclick="showCryDetail(${ev.id}, ${index})">
+                        <div class="cry-event-card" data-cry-id="${ev.id}" onclick="showCryDetail(${ev.id}, ${index})">
                             <div class="cry-event-index">${index}</div>
                             <div style="flex: 1; min-width: 0;">
                                 <div class="cry-card-top">
@@ -2654,6 +3121,7 @@
                                 </div>
                                 <div class="cry-reason">${icon} ${reason} ${hasIll}</div>
                                 <div class="cry-card-footer">
+                                    <span style="font-weight:700;color:#a5b4fc">#${ev.id}${deviceBadge(ev.device)}</span>
                                     <span>⏱ ${ev.start_time?.toFixed(1)||0}-${ev.end_time?.toFixed(1)||0}s</span>
                                     <span>📁 ${ev.file_count||0} 文件</span>
                                     <span class="arrow">▸</span>
@@ -2692,6 +3160,17 @@
 
         function loadMoreCryEvents() {
             loadCryEventsMobile(true);
+        }
+
+        /* 设备徽章: 从文件路径提取 records/<设备名>/, #id 旁标注来源手机 */
+        function _deviceFromPath(path) {
+            if (!path) return null;
+            const m = String(path).match(/\/records\/([^/]+)\//);
+            return m ? m[1] : null;
+        }
+        function deviceBadge(dev) {
+            if (!dev) return '';
+            return ` <span style="font-size:.75em;color:#94a3b8;font-weight:600">📱${dev}</span>`;
         }
 
         async function showCryDetail(eventId, eventIndex = null) {
@@ -2776,8 +3255,9 @@
                 content.innerHTML = `
                     ${indexHtml}
                     <div class="cry-detail-header">
-                        <h2>${data.reason || '未知诱因'}</h2>
+                        <h2>${data.reason || '未知诱因'} <span style="font-size:.55em;color:#a5b4fc;vertical-align:middle">#${data.id}</span></h2>
                         <div class="cry-detail-meta">
+                            <span style="color:#a5b4fc;font-weight:700">🆔 ${data.id}${deviceBadge(data.device || _deviceFromPath((data.event_files_json||[])[0]))}</span>
                             <span>${icon} ${data.reason_category || '未分类'}</span>
                             <span>📅 ${dateStr} ${timeStr}</span>
                             <span>⏱ ${data.start_time||0}-${data.end_time||0}s</span>
@@ -2863,7 +3343,7 @@
                 return;
             }
             btn.disabled = true; btn.textContent = '⏳ 定位片段中...';
-            const _presliced = !(_mobileDetailCache[eventId] && _mobileDetailCache[eventId].presliced === false);
+            const _presliced = !(_cryDetailCache[eventId] && _cryDetailCache[eventId].presliced === false);
             const slowTip = setTimeout(() => { btn.textContent = _presliced ? '⏳ 加载中...（比预期慢，仍在处理）' : '⏳ 首次定位中...（GPU 正被补跑/检测占用，可能需 1-2 分钟，仅此一次）'; }, 12000);
             // 150 秒硬超时：绝不无限转圈
             const ctrl = new AbortController();
@@ -2928,6 +3408,12 @@
                 if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
                 alert('✅ 已标记为误报，感谢反馈');
                 if (_cryDetailCache[eventId]) _cryDetailCache[eventId].false_positive = true;
+                // 即时从列表移除该卡片（服务端列表本就排除误报，这里保证当下就消失）
+                const card = document.querySelector(`#cryEventsList [data-cry-id="${eventId}"]`);
+                if (card) { card.style.transition = 'opacity .3s'; card.style.opacity = '0'; setTimeout(() => card.remove(), 300); }
+                if (typeof cryEventsHash === 'string' && cryEventsHash) {
+                    cryEventsHash = cryEventsHash.split(',').filter(id => String(id) !== String(eventId)).join(',');
+                }
                 const sec = document.getElementById('mActionSec_' + eventId);
                 if (sec) sec.innerHTML = '<div class="cry-detail-section-title">🧬 反馈操作</div><div style="display:inline-block;padding:8px 16px;border-radius:999px;background:rgba(239,68,68,.15);color:#f87171;font-size:13px;font-weight:700">🚩 已标误报</div>';
             } catch (e) {

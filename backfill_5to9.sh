@@ -93,16 +93,25 @@ run_date() {
     fi
 }
 
+# ====== 窗口硬约束：A 轨只许在凌晨 01:00-06:30 运行，白天永不运行（2026-10-03）======
+# 每个日期开跑前检查；单日期跑到一半超窗不强杀（进度断点续传，明日接着跑）
+window_check() {
+    local h=$(date +%H%M)
+    [ "$h" -ge 0100 ] && [ "$h" -lt 0630 ] && return 0
+    echo "[$(date '+%m-%d %H:%M:%S')] ⏰ 超出凌晨窗口 (01:00-06:30)，补跑暂停，明日凌晨自动继续"
+    exit 0
+}
+
 # ====== 主流程：7/8/9 月 → 5/6 月，按快照执行 ======
 > "$FAILED"
-for d in $(grep -E '^2026-(07|08|09)-' "$SNAP"); do run_date "$d" || break; done
+for d in $(grep -E '^2026-(07|08|09)-' "$SNAP"); do window_check; run_date "$d" || break; done
 RC1=$?
 if [ $RC1 -ne 0 ]; then
     echo "[$(date '+%m-%d %H:%M:%S')] ❌ 7-9月阶段中止 (exit=$RC1)，可重跑本脚本断点续传" | tee -a "$LOG"
     exit $RC1
 fi
 
-for d in $(grep -E '^2026-(05|06)-' "$SNAP"); do run_date "$d" || break; done
+for d in $(grep -E '^2026-(05|06)-' "$SNAP"); do window_check; run_date "$d" || break; done
 RC2=$?
 if [ $RC2 -ne 0 ]; then
     echo "[$(date '+%m-%d %H:%M:%S')] ❌ 5-6月阶段中止 (exit=$RC2)，可重跑本脚本断点续传" | tee -a "$LOG"
@@ -117,6 +126,7 @@ for round in 1 2; do
     : > "$FAILED.round"
     while read -r d; do
         [ -n "$d" ] || continue
+        window_check
         run_date "$d" || { echo "$d" >> "$FAILED.round"; [ $? -eq 3 ] && break; }
     done < "$FAILED"
     mv "$FAILED.round" "$FAILED"

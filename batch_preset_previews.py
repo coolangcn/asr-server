@@ -17,6 +17,7 @@ BASE = "http://localhost:5008"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(ROOT, "log", "preset_batch.log")
 FAIL_PATH = os.path.join(ROOT, "log", "preset_failed.json")
+PURGED_PATH = os.path.join(ROOT, "log", "preset_purged.json")  # 源音频已被 NAS 清理的永久跳过清单
 TIMEOUT_PER_EVENT = 600  # 单事件上限（GPU 排队 + 滑窗 + 精排）
 
 
@@ -54,7 +55,7 @@ def all_event_ids():
         if len(events) < page_size:
             break
         offset += page_size
-    return sorted(ids)
+    return sorted(ids, reverse=True)  # 最新事件优先预切(用户先看最近的)
 
 
 def preset_one(event_id):
@@ -75,8 +76,24 @@ def preset_one(event_id):
         return "fail", str(e)[:200]
 
 
+def records_mount_ok():
+    """NAS records 挂载健康探测: 挂载病态时"源文件不可达"是假死, 不可归档 purged"""
+    root = "/Volumes/download/records/Sony-2"
+    try:
+        return os.path.isdir(root) and len(os.listdir(root)) > 0
+    except Exception:
+        return False
+
+
 def main():
     retry_only = "--retry-failed" in sys.argv
+    purged = set()
+    if os.path.exists(PURGED_PATH):
+        try:
+            with open(PURGED_PATH, encoding="utf-8") as f:
+                purged = set(json.load(f))
+        except Exception:
+            purged = set()
     if retry_only and os.path.exists(FAIL_PATH):
         with open(FAIL_PATH, encoding="utf-8") as f:
             ids = json.load(f)
@@ -84,6 +101,10 @@ def main():
     else:
         ids = all_event_ids()
         log(f"===== 批量预切启动：共 {len(ids)} 个事件 =====")
+    before = len(ids)
+    ids = [i for i in ids if i not in purged]
+    if before - len(ids):
+        log(f"已排除 {before - len(ids)} 个源音频被清理的永久失败事件")
 
     stats = {"ok": 0, "already": 0, "skipped": 0, "fail": 0}
     failed = []
@@ -91,7 +112,14 @@ def main():
     for i, eid in enumerate(ids, 1):
         status, info = preset_one(eid)
         stats[status] = stats.get(status, 0) + 1
-        if status == "fail":
+        if status == "fail" and info and ("源文件不可达" in str(info) or "持久音频已清理" in str(info)):
+            if records_mount_ok():
+                purged.add(eid)  # 挂载健康且源仍缺失 → 源音频已被清理, 重试无意义
+                log(f"  [{i}/{len(ids)}] #{eid} 源音频已清理, 归档永久跳过")
+            else:
+                failed.append(eid)  # 挂载病态 → 假死, 留在失败清单等挂载恢复后重试
+                log(f"  [{i}/{len(ids)}] #{eid} 挂载病态, 暂留失败清单")
+        elif status == "fail":
             failed.append(eid)
             log(f"  [{i}/{len(ids)}] #{eid} 失败: {info}")
         elif status == "ok":
@@ -103,8 +131,10 @@ def main():
 
     with open(FAIL_PATH, "w", encoding="utf-8") as f:
         json.dump(failed, f)
-    log(f"===== 批量预切完成: {stats} 失败 {len(failed)} 个 (清单 {FAIL_PATH}) "
-        f"用时 {(time.time()-t0)/60:.1f} 分钟 =====")
+    with open(PURGED_PATH, "w", encoding="utf-8") as f:
+        json.dump(sorted(purged), f)
+    log(f"===== 批量预切完成: {stats} 永久跳过 {len(purged)} 失败 {len(failed)} 个 "
+        f"(清单 {FAIL_PATH}) 用时 {(time.time()-t0)/60:.1f} 分钟 =====")
     if failed and not retry_only:
         log("提示: 可运行 python3 batch_preset_previews.py --retry-failed 重试失败项")
 
