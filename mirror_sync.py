@@ -15,7 +15,7 @@
 用法: mirror_sync.py pull | push
 硬约束：
   - 永不触碰 processed/ 之外的历史存量（5~9月哭声补跑仍读 NAS watched）
-  - 拉取只限近3天日期目录 + mtime>2min（防止拉走正在上传的半截文件）
+  - 拉取只限近3天日期目录 + mtime>30s + 双stat尺寸稳定确认（防拉走正在上传的半截文件）
   - 所有 NAS 访问带子线程硬超时，挂载假死绝不吊死（对齐 audio_processor 模式）
   - 本地磁盘 <3GB 时暂停 pull
   - 拉取经 .part 临时名落地、校验尺寸后改名，杜绝半截文件混入实时管线
@@ -34,7 +34,8 @@ NAS = "/Volumes/download/records"
 LOG = "/Users/mac/asr-server/log/mirror_sync.log"
 DEVICES = ["Pixel-6", "Pixel-5"]
 PULL_DAYS = 3            # pull 覆盖最近 N 天日期目录
-PULL_MIN_AGE_SEC = 120   # 文件 mtime 早于该秒数才拉（避开上传中）
+PULL_MIN_AGE_SEC = 30    # mtime 早于该秒数才考虑拉（配合双 stat 稳定确认防半截）
+STABILITY_PROBE_SEC = 3  # 双 stat 间隔：两次尺寸一致才认定上传完成，否则留给下轮
 KEEP_LOCAL_DAYS = 3      # processed/failed/segments 本地保留天数
 WATCHED_STALE_DAYS = 7   # watched 目录滞留文件兜底清理天数
 MIN_FREE_GB = 3          # 本地磁盘低于该值暂停 pull
@@ -139,6 +140,26 @@ def recent_dates():
     return [(today - timedelta(days=i)).isoformat() for i in range(PULL_DAYS)]
 
 
+def _stat_fp(fp, timeout=5):
+    """带超时的 (mtime, size) 探测；SMB 假死/文件消失返回 None（留给下轮）"""
+    def _do():
+        st = os.stat(fp)
+        return st.st_mtime, st.st_size
+    try:
+        v = run_with_timeout(_do, timeout)
+    except Exception:
+        return None
+    return None if v is _TIMEOUT else v
+
+
+def is_upload_stable(fp, size_now):
+    """双 stat 稳定确认：间隔 STABILITY_PROBE_SEC 再测一次尺寸，
+    与 size_now 一致才认定上传完成（兜底防拉走上传中的半截文件）"""
+    time.sleep(STABILITY_PROBE_SEC)
+    st = _stat_fp(fp)
+    return st is not None and st[1] == size_now
+
+
 def free_gb():
     try:
         return shutil.disk_usage("/").free / (1024 ** 3)
@@ -173,11 +194,12 @@ def do_pull():
             stale = []
             for n in names:
                 fp = os.path.join(src_dir, n)
-                try:
-                    if time.time() - os.path.getmtime(fp) > PULL_MIN_AGE_SEC:
-                        stale.append((n, fp))
-                except OSError:
+                st = _stat_fp(fp)
+                if st is None:
                     continue
+                mtime, size = st
+                if time.time() - mtime > PULL_MIN_AGE_SEC and is_upload_stable(fp, size):
+                    stale.append((n, fp))
             if not stale:
                 continue
 
