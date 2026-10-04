@@ -5103,17 +5103,25 @@ def transcribe_audio():
             except: pass
 
             logger_b.info("  [生命周期: 2. VAD & ASR] 开始 (FunASR语音检测与文字转录)...")
-            _gen_kwargs = dict(language="auto", use_itn=True, use_punc=True)
-            if Config.ASR_HOTWORD:
-                _gen_kwargs["hotword"] = Config.ASR_HOTWORD  # SeACo 热词偏置
-            if Config.VAD_ENGINE == "silero":
-                try:
-                    res = _generate_with_silero(asr_pipeline, proc_temp, _gen_kwargs)
-                except Exception as _vad_ex:
-                    logger_b.warning(f"  ⚠️ Silero VAD 异常（{_vad_ex.__class__.__name__}: {_vad_ex}），本次回退 fsmn-vad 全链路")
-                    res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
+            # 【2026-10-04 夜间降级】audio_processor 对凌晨(1-6点)录音携带 skip_asr=true：
+            # 跳过 FunASR 转写（GPU 让给凌晨哭声补跑），轨道A哭声检测照跑——
+            # 半夜哭声告警不再盲区；转写由历史补跑链路兜底，凌晨对话本就稀少。
+            # backfill_pixels / reprocess_history_cries 的提交不带此参数，不受影响。
+            if request.form.get('skip_asr', 'false').lower() == 'true':
+                logger_b.info("  🌙 [夜间降级] 跳过 VAD & ASR 转写，仅执行轨道A哭声检测")
+                res = None
             else:
-                res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
+                _gen_kwargs = dict(language="auto", use_itn=True, use_punc=True)
+                if Config.ASR_HOTWORD:
+                    _gen_kwargs["hotword"] = Config.ASR_HOTWORD  # SeACo 热词偏置
+                if Config.VAD_ENGINE == "silero":
+                    try:
+                        res = _generate_with_silero(asr_pipeline, proc_temp, _gen_kwargs)
+                    except Exception as _vad_ex:
+                        logger_b.warning(f"  ⚠️ Silero VAD 异常（{_vad_ex.__class__.__name__}: {_vad_ex}），本次回退 fsmn-vad 全链路")
+                        res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
+                else:
+                    res = asr_pipeline.generate(input=proc_temp, **_gen_kwargs)
 
             # 【轨道A: 独立哭声检测】直接对完整 60s 原始音频做声纹匹配
             # 使用 CryDetectionConfig 独立参数，与轨道B (VAD+语音识别) 完全隔离
@@ -5743,9 +5751,13 @@ def transcribe_audio():
                     logger_b.error(f"❌ 数据库保存异常: {e}")
                     logger_b.error(traceback.format_exc())
             else:
-                # 0 有效语音段（纯静音/未过 VAD）不入库，但必须打带 recording_time 的闭合标记——
-                # 否则 web_viewer 仪表盘的日志配对永远无法闭合，文件会一直假性显示"处理中"（2026-10-04）
-                logger_b.info(f"⭕ 无有效语音段, 跳过入库 (recording_time: {parse_recording_time(file.filename)})")
+                # 0 有效语音段（纯静音/未过 VAD）或夜间降级文件不入库，但必须打带 recording_time
+                # 的闭合标记——否则 web_viewer 仪表盘的日志配对永远无法闭合，文件会一直
+                # 假性显示"处理中"（2026-10-04）
+                if request.form.get('skip_asr', 'false').lower() == 'true':
+                    logger_b.info(f"⭕ 夜间降级仅哭声检测, 跳过转写入库 (recording_time: {parse_recording_time(file.filename)})")
+                else:
+                    logger_b.info(f"⭕ 无有效语音段, 跳过入库 (recording_time: {parse_recording_time(file.filename)})")
             # =========================================================
 
             return jsonify(response_data)

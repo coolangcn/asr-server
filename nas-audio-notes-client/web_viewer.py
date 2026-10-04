@@ -1844,6 +1844,13 @@ def _scan_processing_files():
                     if fn:
                         _close(fn, ts)
                         rec_time_map.pop(rt, None)
+                elif '⭕ 夜间降级仅哭声检测, 跳过转写入库 (recording_time: ' in line:
+                    # 【2026-10-04 夜间降级】凌晨录音只做哭声检测不入库，同样按闭合处理
+                    rt = line.split('recording_time: ', 1)[1].rstrip(')').strip()
+                    fn = rec_time_map.get(rt)
+                    if fn:
+                        _close(fn, ts)
+                        rec_time_map.pop(rt, None)
                 elif '📊 归属统计: ' in line:
                     # 例: 📊 归属统计: 23段 · Unknown18 · 妈妈5
                     if cur:

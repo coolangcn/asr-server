@@ -425,14 +425,18 @@ def _monitor_loop():
 
 def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
     """处理单个音频文件（B轨），返回是否成功"""
-    # 1. 检查录音时间，跳过凌晨 1-6 点
+    # 1. 检查录音时间
     recording_time = parse_recording_time(filename)
+    _skip_asr = False
     if recording_time:
         hour = recording_time.hour
-        if 1 <= hour < 6:
-            logger.info(f"⏭️ 跳过凌晨录音: {filename}")
-            _move_file(filepath, filename, processed_dir, recording_time)
-            return True
+        _age_sec = (datetime.now() - recording_time).total_seconds()
+        # 【2026-10-04 夜间降级】凌晨 1-6 点录音：跳过 ASR 转写（GPU 让给凌晨哭声补跑），
+        # 但保留轨道A哭声检测+即时告警——夜间哭声值守不再盲区（原逻辑是完全跳过不送检）。
+        # 仅对 6 小时内的新鲜录音生效；更旧的走下方历史掉队防线（交给补跑链路，防止轰炸告警）。
+        if 1 <= hour < 6 and _age_sec <= 6 * 3600:
+            _skip_asr = True
+            logger.info(f"🌙 夜间降级 (仅哭声检测): {filename}")
 
         # 【2026-09-21】历史掉队文件防线：录音时间超过 6 小时的文件不进实时管线。
         # 手机端积压队列补传会让几天前的录音此刻才落到 NAS（如 Sony-1 在 09-09
@@ -441,7 +445,6 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
         # 历史文件的哭声检测由补跑脚本（reprocess_history_cries.py）统一负责，
         # 那条链路不会触发报警。文件仍归档到 processed/，未打 DB 标记，
         # 补跑跑到对应月份时会正常补检。
-        _age_sec = (datetime.now() - recording_time).total_seconds()
         if _age_sec > 6 * 3600:
             logger.info(f"⏭️ 跳过历史掉队文件 (录音于 {_age_sec/3600:.1f} 小时前): {filename}")
             _move_file(filepath, filename, processed_dir, recording_time)
@@ -458,7 +461,8 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
         with open(filepath, 'rb') as f:
             files_data = {'audio_file': (filename, f, 'audio/mpeg')}
             response = requests.post(FileMonitorConfig.ASR_TRANSCRIBE_URL, files=files_data,
-                                     data={'source_device': source_device},
+                                     data={'source_device': source_device,
+                                           'skip_asr': 'true' if _skip_asr else 'false'},
                                      headers=_admin_headers(), timeout=7200)
         
         if response.status_code == 200:
