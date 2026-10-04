@@ -90,7 +90,17 @@
 
         /* 并行任务信号灯 */
         .parallel-lights { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 12px; margin-top: 10px; }
-        #processing-now { display: none; flex-wrap: wrap; justify-content: center; gap: 5px 8px; margin-top: 6px; }
+        #processing-now { margin-top: 6px; }
+        .proc-summary { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-bottom: 6px; }
+        .proc-dev-block { margin-bottom: 8px; }
+        .proc-dev-name { font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px; }
+        .proc-state-row { display: grid; grid-template-columns: 20px 1fr; gap: 4px; align-items: start; margin-bottom: 3px; }
+        .proc-state-row .chips { display: flex; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
+        .st-tag { font-size: 11px; width: 20px; text-align: center; }
+        .st-tag.pend { opacity: .75; }
+        .st-tag.go { animation: pulse 1.2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+        .st-tag.ok { opacity: .75; }
         .proc-chip { font-size: 11px; color: #93c5fd; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.35); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
         .proc-chip-pending { color: #fbbf24; background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.35); }   /* 黄: 待处理 */
         .proc-chip-done { color: #86efac; background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.35); }        /* 绿: 已处理 */
@@ -1135,7 +1145,7 @@
                     <div id="ovB"><span class="ov-label">加载中…</span></div>
                 </div>
                 <div class="ov-sec">
-                    <div class="ov-title">😢 检测补跑 · A轨</div>
+                    <div class="ov-title">😢 哭声补跑 · A轨</div>
                     <div id="ovA"><span class="ov-label">加载中…</span></div>
                 </div>
                 <div class="ov-sec">
@@ -1171,7 +1181,8 @@
 
         <!-- A轨内容 -->
         <div id="track-a-content" class="track-content active">
-            <div class="rec-count" style="margin:0 2px 10px">😢 哭声检测补跑：对历史录音批量跑哭声检测（GPU 密集，限凌晨 01:00-06:30 窗口）</div>
+            <div class="rec-count" style="margin:0 2px 6px">😢 哭声补跑：每晚 01:05 自动补跑 5~9 月历史录音的哭声检测，也可手动启动（GPU 密集）</div>
+            <div class="rec-count" id="pixelBackfillLine" style="margin:0 2px 10px;border-left:3px solid var(--warning);padding-left:8px">⚪ Pixel 转录补救：未运行</div>
             <!-- 操作按钮 -->
             <div class="action-buttons">
                 <button class="action-btn start" id="aStartBtn" onclick="startHistoryTask()">
@@ -1250,19 +1261,7 @@
 
         <!-- B轨内容 -->
         <div id="track-b-content" class="track-content">
-            <div class="rec-count" style="margin:0 2px 10px">🎙️ 实时语音转写：监听 Sony-2 新录音，自动转写 + 声纹识别入库</div>
-            <!-- 操作按钮 -->
-            <div class="action-buttons">
-                <button class="action-btn start" id="bStartBtn" onclick="startLiveTask()">
-                    <i class="fa-solid fa-play"></i> 启动
-                </button>
-                <button class="action-btn pause" id="bPauseBtn" onclick="pauseLiveTask()">
-                    <i class="fa-solid fa-pause"></i> 暂停
-                </button>
-                <button class="action-btn stop" id="bStopBtn" onclick="stopLiveTask()" disabled>
-                    <i class="fa-solid fa-stop"></i> 停止
-                </button>
-            </div>
+            <div class="rec-count" style="margin:0 2px 10px">🎙️ 双 Pixel 实时转写：Pixel-6（客厅）+ Pixel-5（卧室）录音自动转写 + 哭声检测 + 声纹入库，由 launchd 托管常驻运行</div>
 
             <div class="status-card">
                 <div class="status-header">
@@ -1285,8 +1284,8 @@
                         <div class="info-chip-label">今日录音</div>
                     </div>
                     <div class="info-chip">
-                        <div class="info-chip-value" id="bActiveTime">--</div>
-                        <div class="info-chip-label">运行时长</div>
+                        <div class="info-chip-value" id="bBacklog">--</div>
+                        <div class="info-chip-label">转写积压</div>
                     </div>
                     <div class="info-chip">
                         <div class="info-chip-value" id="bLastEvent">--</div>
@@ -1295,19 +1294,19 @@
                 </div>
             </div>
 
+            <div class="content-card" style="margin-bottom:10px;">
+                <h3><i class="fa-solid fa-boxes-stacked"></i> 历史补救进度</h3>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="flex:1;height:8px;border-radius:4px;background:rgba(148,163,184,.2);overflow:hidden;">
+                        <div id="bBackfillBar" style="height:100%;width:0%;border-radius:4px;background:linear-gradient(90deg,#38bdf8,#3b82f6);transition:width .5s;"></div>
+                    </div>
+                    <span id="bBackfillText" style="font-size:.72rem;color:var(--text-secondary);white-space:nowrap;">加载中…</span>
+                </div>
+            </div>
+
             <div class="content-card">
                 <h3><i class="fa-solid fa-bell"></i> 最近检测</h3>
                 <div class="current-file" id="bLastCry">暂无检测事件</div>
-            </div>
-
-            <div class="eta-card" style="background: linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%); border-color: rgba(56, 189, 248, 0.3);">
-                <div class="eta-icon" style="background: linear-gradient(135deg, #38bdf8 0%, #3b82f6 100%);">
-                    <i class="fa-solid fa-waveform"></i>
-                </div>
-                <div>
-                    <div class="eta-value" id="bStatusText">实时监测</div>
-                    <div class="eta-label">实时监听文件夹变化</div>
-                </div>
             </div>
         </div>
 
@@ -1349,7 +1348,7 @@
         <!-- 日志 -->
         <div class="log-card">
             <div class="log-header">
-                <h3><i class="fa-solid fa-terminal"></i> <span id="logTitleText">补跑日志</span></h3>
+                <h3><i class="fa-solid fa-terminal"></i> <span id="logTitleText">哭声补跑日志</span></h3>
                 <button class="log-toggle" onclick="toggleLogs()">
                     <span id="logToggleText">展开</span> <i class="fa-solid fa-chevron-down"></i>
                 </button>
@@ -1391,7 +1390,7 @@
                 }
 
                 return {
-                    title: '补跑日志',
+                    title: '哭声补跑日志',
                     logs: statusData.logs_a || ''
                 };
             }
@@ -1531,50 +1530,7 @@
             }
         }
 
-        // B轨操作
-        async function startLiveTask() {
-            const btn = document.getElementById('bStartBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 启动中...';
-            try {
-                const response = await fetch('/api/start_live', { method: 'POST' });
-                const data = await response.json();
-                showToast(data.message || '实时转写已启动', 'success');
-            } catch (e) {
-                showToast('启动失败: ' + e.message, 'error');
-            }
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-play"></i> 启动';
-        }
-
-        async function pauseLiveTask() {
-            const btn = document.getElementById('bPauseBtn');
-            btn.disabled = true;
-            try {
-                const response = await fetch('/api/pause_live', { method: 'POST' });
-                const data = await response.json();
-                showToast(data.message || '实时转写已暂停', 'success');
-            } catch (e) {
-                showToast('暂停失败: ' + e.message, 'error');
-            }
-            btn.disabled = false;
-        }
-
-        async function stopLiveTask() {
-            if (!confirm('确定要停止实时转写吗？')) return;
-            const btn = document.getElementById('bStopBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 停止中...';
-            try {
-                const response = await fetch('/api/stop_live', { method: 'POST' });
-                const data = await response.json();
-                showToast(data.message || '实时转写已停止', 'success');
-            } catch (e) {
-                showToast('停止失败: ' + e.message, 'error');
-            }
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止';
-        }
+        // B轨由 launchd 托管的 audio_processor 常驻运行, 旧的手动启停按钮已移除（控制不到独立进程, 且有误导风险）
 
         function recCopyId(id, ev) {
             ev.stopPropagation();
@@ -1707,6 +1663,14 @@
                 <div class="ov-row"><span class="ov-label">转写吞吐</span><span class="ov-val">${rate != null ? rate + ' 段/时' : '—'}</span></div>
                 <div class="ov-row"><span class="ov-label">入库</span><span class="ov-val">今日 ${b.today_transcribed ?? 0} · 近1时 ${b.ingest_rate_per_hour ?? '—'} · 哭声 ${b.today_cry_count ?? 0}</span></div>`;
 
+            // B轨 Tab 的「转写积压」chip（overview 数据同步刷新）
+            const bBacklogEl = document.getElementById('bBacklog');
+            if (bBacklogEl) {
+                bBacklogEl.textContent = backlog;
+                bBacklogEl.style.color = backlog > 10 ? 'var(--warning)' : '';
+            }
+            window._ovBacklog = backlog;  // 供仪表盘「实时流」列显示积压
+
             // A轨: 补跑中显示进度条+效率, 否则显示待窗口+上次战绩
             const a = d.a_track || {};
             const p = a.progress;
@@ -1726,6 +1690,7 @@
                     <div class="ov-row"><span style="display:flex; align-items:center; gap:6px;">${ovDot('off')}<span style="color: var(--text-primary);">待窗口</span></span></div>
                     <div class="ov-row"><span class="ov-label">窗口</span><span class="ov-val">${a.window || '--'}</span></div>
                     <div class="ov-row"><span class="ov-label">下次运行</span><span class="ov-val">${a.next_run || '--'}</span></div>
+                    <div class="ov-row"><span class="ov-label">上次推进到</span><span class="ov-val">${a.last_reprocess_date || '--'}</span></div>
                     ${lastRun}`;
             }
 
@@ -1773,6 +1738,13 @@
                 aRing.innerHTML = '<i class="fa-solid fa-check"></i>';
                 aLabel.textContent = '已完成';
                 aBadge.textContent = 'DONE';
+                aBadge.className = 'status-badge stopped';
+            } else if (progress && progress.status === 'stopped' && progress.total > 0) {
+                aRing.className = 'pulse-ring stopped';
+                aRing.innerHTML = '<i class="fa-solid fa-pause"></i>';
+                const pct = Math.round((progress.processed || 0) / progress.total * 100);
+                aLabel.textContent = `上次任务已停止 (${pct}%)`;
+                aBadge.textContent = 'STOPPED';
                 aBadge.className = 'status-badge stopped';
             } else {
                 aRing.className = 'pulse-ring stopped';
@@ -1990,14 +1962,6 @@
             const bRing = document.getElementById('bStatusRing');
             const bLabel = document.getElementById('bStatusLabel');
             const bBadge = document.getElementById('bStatusBadge');
-            const bStartBtn = document.getElementById('bStartBtn');
-            const bPauseBtn = document.getElementById('bPauseBtn');
-            const bStopBtn = document.getElementById('bStopBtn');
-
-            // 更新按钮状态
-            if (bStartBtn) bStartBtn.disabled = isRunning;
-            if (bPauseBtn) bPauseBtn.disabled = !isRunning || isPaused;
-            if (bStopBtn) bStopBtn.disabled = !isRunning;
 
             if (!isRunning) {
                 bRing.className = 'pulse-ring stopped';
@@ -2005,21 +1969,18 @@
                 bLabel.textContent = '未启动';
                 bBadge.textContent = 'STOPPED';
                 bBadge.className = 'status-badge stopped';
-                document.getElementById('bStatusText').textContent = '点击启动开始监听';
             } else if (isPaused) {
                 bRing.className = 'pulse-ring paused';
                 bRing.innerHTML = '<i class="fa-solid fa-pause"></i>';
                 bLabel.textContent = '已暂停';
                 bBadge.textContent = 'PAUSED';
                 bBadge.className = 'status-badge paused';
-                document.getElementById('bStatusText').textContent = statusData.b_reason || '等待补跑完成';
             } else {
                 bRing.className = 'pulse-ring running';
                 bRing.innerHTML = '<i class="fa-solid fa-microphone"></i>';
                 bLabel.textContent = '实时监听中';
                 bBadge.textContent = 'LIVE';
                 bBadge.className = 'status-badge running';
-                document.getElementById('bStatusText').textContent = '实时监测中';
             }
 
             if (statusData.b_reason && isPaused) {
@@ -2034,9 +1995,6 @@
                 
                 // 今日录音
                 document.getElementById('bRecordCount').textContent = bStats.today_record_count || '0';
-                
-                // 运行时长
-                document.getElementById('bActiveTime').textContent = bStats.runtime || '--';
                 
                 // 最近事件
                 document.getElementById('bLastEvent').textContent = bStats.last_event_time || bStats.last_cry_time || '--';
@@ -2053,22 +2011,10 @@
                 const todayRecordings = (liveLogs.match(new RegExp(today + '.*收到转录任务', 'g')) || []).length;
                 const todayCry = Number.isFinite(Number(statusData.today_cry_count)) ? Number(statusData.today_cry_count) : (liveLogs.match(/哭声|宝宝哭|检测到/g) || []).length;
 
-                const startMatch = liveLogs.match(/开始监控.*?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-                let runtime = '--';
-                if (startMatch) {
-                    const startTime = new Date(startMatch[1]);
-                    const now = new Date();
-                    const diff = Math.floor((now - startTime) / 1000);
-                    const hours = Math.floor(diff / 3600);
-                    const mins = Math.floor((diff % 3600) / 60);
-                    runtime = hours > 0 ? `${hours}小时${mins}分` : `${mins}分钟`;
-                }
-
                 const recentEvent = liveLogs.match(/收到转录任务.*?(\d{2}:\d{2}:\d{2})/);
 
                 document.getElementById('bRecordCount').textContent = todayRecordings || liveLogs.includes('收到转录任务') ? '1+' : '0';
                 document.getElementById('bCryCount').textContent = todayCry > 0 ? todayCry : '0';
-                document.getElementById('bActiveTime').textContent = runtime;
                 document.getElementById('bLastEvent').textContent = recentEvent ? recentEvent[1] : '--';
                 document.getElementById('bLastCry').textContent = liveLogs.includes('检测到') ? '最近有哭声' : (liveLogs.includes('哭声') ? '有哭声记录' : '暂无哭声');
             }
@@ -2316,7 +2262,7 @@
                     : `<button class="rec-smp" title="设为声纹样本" data-smpkey="${regKey}" onclick="spkSheetOpen('${seg.segment_audio_path}', '${(seg.spk || '').replace(/'/g, '')}', this)"><i class="fa-solid fa-user-plus"></i></button>`;
                 const regRow = reged ? vpRegRowHtml(regInfo[regKey]) : '';
                 const segId = (() => { const m = (seg.segment_audio_path || '').match(/(\d{4}-\d{2}-\d{2})\/TermuxAudioRecording_\d{4}-\d{2}-\d{2}_(\d{2})-(\d{2})-(\d{2})\/seg_(\d+)\.wav/); if (!m) return null; return `${m[1].replace(/-/g, '').slice(4)}_${m[2]}${m[3]}_${m[5]}`; })();
-                const idBadge = segId ? `<span class="rec-id" title="点击复制引用 ID" onclick="recCopyId('${segId}', event)">${segId}</span>${deviceBadge(_deviceFromPath(seg.segment_audio_path))}` : '';
+                const idBadge = segId ? `<span class="rec-id" title="点击复制引用 ID" onclick="recCopyId('${segId}', event)">${segId}</span>${deviceBadge(item.device || _deviceFromPath(seg.segment_audio_path))}` : '';
                 return `<div class="rec-seg" style="flex-direction:column;align-items:stretch">
                     <div class="rec-mrow" style="flex-wrap:wrap">
                         ${idBadge}<span class="rec-spk" style="background:${recSpkColor(seg.spk)}">${escapeHtml(spk)}</span>
@@ -2508,7 +2454,7 @@
             if (!name || !files.length) return;
             goBtn.disabled = true; goBtn.textContent = '上传中…';
             out.style.display = 'block';
-            let ok = 0; const errs = [];
+            let ok = 0; const errs = []; const sims = [];
             for (let i = 0; i < files.length; i++) {
                 out.innerHTML = `⏳ 正在上传 ${i + 1}/${files.length}：${escapeHtml(files[i].name)}`;
                 try {
@@ -2518,11 +2464,13 @@
                     const r = await fetch('/speaker/register', { method: 'POST', body: fd });
                     if (r.status === 401) { location.href = '/login'; return; }
                     const data = await r.json().catch(() => ({}));
-                    if (r.ok && !data.error) { ok++; } else { errs.push(`${files[i].name}: ${data.error || 'HTTP ' + r.status}`); }
+                    if (r.ok && !data.error) { ok++; if (data.similarity != null) sims.push(data.similarity); }
+                    else { errs.push(`${files[i].name}: ${data.error || 'HTTP ' + r.status}`); }
                 } catch (e) { errs.push(`${files[i].name}: ${e.message}`); }
             }
             goBtn.disabled = false; goBtn.textContent = '注册声纹';
-            out.innerHTML = (errs.length ? '⚠️' : '✅') + ` 成功 ${ok}/${files.length} 个（${escapeHtml(name)}）` +
+            const simTxt = sims.length ? ` · 相似度 ${sims.map(s => s.toFixed(2)).join('/')}` : '';
+            out.innerHTML = (errs.length ? '⚠️' : '✅') + ` 成功 ${ok}/${files.length} 个（${escapeHtml(name)}）${simTxt}` +
                 (errs.length ? `<br><span style="color:#f0847c">${errs.map(escapeHtml).join('<br>')}</span>` : '') +
                 `<br><span style="color:#8b95a7">声纹库已更新，后续转写即刻生效</span>`;
             if (ok) loadSpSpeakers();
@@ -2688,7 +2636,8 @@
                 if (resp.status === 401) { location.href = '/login'; return; }
                 const data = await resp.json().catch(() => ({}));
                 if (resp.ok) {
-                    showToast(`✓ 已注册到「${name}」的声纹样本（${data.mode === 'enhance' ? '增强' : '新注册'}）`, 'success');
+                    const simTxt = data.similarity != null ? ` · 与现有声纹相似度 ${data.similarity}` : '';
+                    showToast(`✓ 已注册到「${name}」${simTxt}`, 'success');
                     markRegistered(path, name);
                 } else if (resp.status === 409 && data.duplicate) {
                     showToast('⚠ ' + (data.error || '该音频已注册过声纹'), 'error');
@@ -2899,30 +2848,83 @@
                     <span class="parallel-light ${l.on ? 'on' : ''}" title="${l.label}: ${l.on ? '运行中' : '未运行'}">
                         <span class="pl-dot"></span><span class="pl-label">${l.label}</span>
                     </span>`).join('');
-                // 处理进度三态：黄=待处理(backfill队列) → 蓝=正在处理 → 绿=最近已处理
+                // 处理进度双列：补救队列(backfill) vs 实时流(audio_processor), 各列内 黄→蓝→绿
                 const pz = document.getElementById('processing-now');
                 if (pz) {
-                    const parts = [];
                     const bf = d.backfill;
-                    if (bf && bf.remaining > 0) {
-                        parts.push(`<span class="proc-chip proc-chip-pending" title="backfill队列 成功${bf.ok} 失败${bf.fail}">⏳ 待处理 ${bf.remaining} · ${bf.eta}</span>`);
-                        for (const f of (bf.pending_files || [])) {
-                            const short = f.replace('TermuxAudioRecording_', '').replace('.m4a', '');
-                            parts.push(`<span class="proc-chip proc-chip-pending">› ${short}</span>`);
+                    // 补跑 Tab 的「Pixel 转录补救」状态行（与 5~9 月哭声补跑是两条任务线）
+                    const pbLine = document.getElementById('pixelBackfillLine');
+                    if (pbLine) {
+                        if (bf && bf.running) {
+                            pbLine.innerHTML = `🟢 Pixel 转录补救：运行中 ${bf.done}/${bf.total}（${Math.round(bf.done / bf.total * 100)}%）· 剩约 ${bf.eta}`;
+                            pbLine.style.borderLeftColor = 'var(--success)';
+                        } else if (bf && bf.done > 0) {
+                            pbLine.innerHTML = `🟡 Pixel 转录补救：已停止（${bf.done}/${bf.total}）`;
+                            pbLine.style.borderLeftColor = 'var(--warning)';
+                        } else {
+                            pbLine.textContent = '⚪ Pixel 转录补救：未运行';
+                            pbLine.style.borderLeftColor = 'var(--warning)';
                         }
                     }
-                    const list = d.processing || [];
-                    for (const p of list) {
-                        const short = p.filename.replace('TermuxAudioRecording_', '').replace('.m4a', '');
-                        parts.push(`<span class="proc-chip">⚙ ${short} · ${p.elapsed_s}s</span>`);
+                    // 大分组=手机, 小分组=三状态(⏳待处理/⚙处理中/✅已完成), 胶囊带补救/实时来源标签
+                    const rt = d.rt || {};
+                    const byDev = {};
+                    const devOf = s => (s || '').includes('/') ? s.split('/')[0] : '?';
+                    const srcTag = src => src === '实时' ? ' <i style="font-size:9px;color:#86efac">实时</i>' : ' <i style="font-size:9px;color:#fbbf24">补救</i>';
+                    const getDev = (dev, key) => (byDev[dev] = byDev[dev] || { pending: [], proc: [], done: [] });
+                    // 待处理(补救队列+实时队列合并到各设备)
+                    if (bf && bf.remaining > 0) {
+                        for (const f of (bf.pending_files || [])) {
+                            const dv = devOf(f);
+                            getDev(dv).pending.push(`<span class="proc-chip proc-chip-pending">› ${f.split('/').pop()}</span>`);
+                        }
                     }
-                    const done = (d.completed || []).slice(-3).reverse();
-                    for (const c of done) {
-                        const short = c.filename.replace('TermuxAudioRecording_', '').replace('.m4a', '');
-                        parts.push(`<span class="proc-chip proc-chip-done">✅ ${short} · ${c.elapsed_s}s</span>`);
+                    for (const f of (rt.pending_files || [])) {
+                        const dv = devOf(f);
+                        getDev(dv).pending.push(`<span class="proc-chip proc-chip-pending">› ${f.split('/').pop()}</span>`);
                     }
-                    pz.innerHTML = parts.join('');
-                    pz.style.display = parts.length ? 'flex' : 'none';
+                    for (const p of (d.processing || [])) {
+                        const short = p.short || p.filename.replace('TermuxAudioRecording_', '').replace('.m4a', '');
+                        const dv = devOf(short);
+                        const name = dv !== '?' ? short.split('/').pop() : short;
+                        getDev(dv).proc.push(`<span class="proc-chip" title="${p.step || ''}">${name} · ${p.elapsed_s}s${p.step ? ` · <b>${p.step}</b>` : ''}${srcTag(p.src)}</span>`);
+                    }
+                    for (const c of (d.completed || []).slice(-4).reverse()) {
+                        const short = c.short || c.filename.replace('TermuxAudioRecording_', '').replace('.m4a', '');
+                        const dv = devOf(short);
+                        const name = dv !== '?' ? short.split('/').pop() : short;
+                        getDev(dv).done.push(`<span class="proc-chip proc-chip-done" title="${c.result || ''}">${name} · ${c.elapsed_s}s${c.result ? ` · ${c.result}` : ''}${srcTag(c.src)}</span>`);
+                    }
+                    // 全局汇总(补救/实时各一个)
+                    const summary = [];
+                    if (bf && bf.remaining > 0) summary.push(`<span class="proc-chip proc-chip-pending" title="backfill补救队列 成功${bf.ok} 失败${bf.fail}">⏳ 补救 ${bf.remaining} · ${bf.eta}</span>`);
+                    if (rt.count > 0) summary.push(`<span class="proc-chip proc-chip-pending" title="实时流待提交">⏳ 实时 ${rt.count} 个</span>`);
+                    else if (window._ovBacklog > 0) summary.push(`<span class="proc-chip proc-chip-pending">⏳ 实时积压 ${window._ovBacklog} 段</span>`);
+                    // 设备块: 有处理中的设备排前
+                    const devBlocks = Object.entries(byDev).sort((a, b) =>
+                        (b[1].proc.length ? 1 : 0) - (a[1].proc.length ? 1 : 0)).map(([dv, s]) => `
+                        <div class="proc-dev-block">
+                            <div class="proc-dev-name">📱 ${dv}</div>
+                            ${s.pending.length ? `<div class="proc-state-row"><span class="st-tag pend">⏳</span><div class="chips">${s.pending.join('')}</div></div>` : ''}
+                            ${s.proc.length ? `<div class="proc-state-row"><span class="st-tag go">⚙</span><div class="chips">${s.proc.join('')}</div></div>` : ''}
+                            ${s.done.length ? `<div class="proc-state-row"><span class="st-tag ok">✅</span><div class="chips">${s.done.join('')}</div></div>` : ''}
+                        </div>`).join('');
+                    pz.innerHTML = `<div class="proc-summary">${summary.join('') || '<span style="font-size:10px;color:#5b6472">队列为空</span>'}</div>${devBlocks || '<span style="font-size:10px;color:#5b6472">空闲</span>'}`;
+                    pz.style.display = 'block';
+                }
+                // 转写 Tab 的「历史补救进度」条
+                const bfBar = document.getElementById('bBackfillBar');
+                if (bfBar && d.backfill) {
+                    const bf = d.backfill;
+                    const bft = document.getElementById('bBackfillText');
+                    if (bf.total > 0) {
+                        const pct = Math.round(bf.done / bf.total * 100);
+                        bfBar.style.width = pct + '%';
+                        if (bft) bft.textContent = `${pct}% · ${bf.done.toLocaleString()}/${bf.total.toLocaleString()} · 剩${bf.remaining.toLocaleString()} · ${bf.eta}`;
+                    } else {
+                        bfBar.style.width = '0%';
+                        if (bft) bft.textContent = '无补救任务';
+                    }
                 }
             } catch (e) { /* 网络抖动时保留上次渲染 */ }
         }
@@ -3257,7 +3259,7 @@
                     <div class="cry-detail-header">
                         <h2>${data.reason || '未知诱因'} <span style="font-size:.55em;color:#a5b4fc;vertical-align:middle">#${data.id}</span></h2>
                         <div class="cry-detail-meta">
-                            <span style="color:#a5b4fc;font-weight:700">🆔 ${data.id}${deviceBadge(data.device || _deviceFromPath((data.event_files_json||[])[0]))}</span>
+                            <span style="color:#a5b4fc;font-weight:700">🆔 ${data.id}${deviceBadge(data.device || (data.event_files_json||[]).map(_deviceFromPath).find(Boolean))}</span>
                             <span>${icon} ${data.reason_category || '未分类'}</span>
                             <span>📅 ${dateStr} ${timeStr}</span>
                             <span>⏱ ${data.start_time||0}-${data.end_time||0}s</span>

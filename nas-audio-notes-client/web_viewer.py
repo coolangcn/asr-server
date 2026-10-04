@@ -69,13 +69,25 @@ CONFIG = {
 
 # 【2026-10-03 双源】B 轨数据源改为双 Pixel（客厅 Pixel-6 / 卧室 Pixel-5），
 # Sony 保留在候选尾部兼容历史录音。SOURCE_DIR 保留为兼容引用（config.json 覆盖仍生效）。
-RECORDS_ROOT = os.path.dirname(DEFAULT_SOURCE_DIR.rstrip("\\/"))
+# 【2026-10-04 rsync 本地镜像】主根 = 本地镜像（RECORDS_ROOT），NAS 根（RECORDS_ROOT_NAS）
+# 作为历史数据回退；RECORDS_ROOTS 按优先级排列，目录扫描/文件定位逐根尝试。
+RECORDS_ROOT = os.getenv("RECORDS_ROOT", os.path.dirname(DEFAULT_SOURCE_DIR.rstrip("\\/")))
+RECORDS_ROOT_NAS = os.getenv("RECORDS_ROOT_NAS", "/Volumes/download/records")
+RECORDS_ROOTS = [RECORDS_ROOT]
+if os.path.normpath(RECORDS_ROOT_NAS) != os.path.normpath(RECORDS_ROOT):
+    RECORDS_ROOTS.append(RECORDS_ROOT_NAS)
 SOURCE_DEVICES = ["Pixel-6", "Pixel-5", "Sony-2", "Sony-1", "Sony-3"]
 
 def _find_audio_segment(rel_clean):
-    """双源探测 audio_segments 切片：逐设备查找，返回绝对路径或 None（含穿越防护）"""
-    search_dirs = [os.path.join(RECORDS_ROOT, dev, "audio_segments") for dev in SOURCE_DEVICES]
-    search_dirs.append(os.path.join(CONFIG["SOURCE_DIR"], "audio_segments"))  # 单源直挂兼容
+    """多根探测 audio_segments 切片：本地镜像优先、NAS 历史回退，逐设备查找，
+    返回绝对路径或 None（含穿越防护）"""
+    for _root in RECORDS_ROOTS:
+        search_dirs = [os.path.join(_root, dev, "audio_segments") for dev in SOURCE_DEVICES]
+        for segments_dir in search_dirs:
+            full_path = os.path.abspath(os.path.join(segments_dir, rel_clean))
+            if full_path.startswith(os.path.abspath(segments_dir) + os.sep) and os.path.isfile(full_path):
+                return full_path
+    search_dirs = [os.path.join(CONFIG["SOURCE_DIR"], "audio_segments")]  # 单源直挂兼容
     for segments_dir in search_dirs:
         full_path = os.path.abspath(os.path.join(segments_dir, rel_clean))
         if full_path.startswith(os.path.abspath(segments_dir) + os.sep) and os.path.isfile(full_path):
@@ -240,25 +252,27 @@ def update_system_status():
     AUDIO_EXTS = ('.m4a', '.acc', '.aac', '.mp3', '.wav', '.ogg')
     try:
         count = 0
-        # 【双源】逐设备统计待处理文件
+        # 【双源】逐设备统计待处理文件；【2026-10-04 多根】本地镜像 + NAS 双根求和
+        #（pull 拉完即删 NAS 源，同一文件不会同时存在于两根，无重复计数）
         for dev in SOURCE_DEVICES:
-            source_dir = os.path.join(RECORDS_ROOT, dev)
-            if not (os.path.exists(source_dir) and os.path.isdir(source_dir)):
-                continue
-            for entry in os.listdir(source_dir):
-                if entry in SKIP_DIRS:
+            for _root in RECORDS_ROOTS:
+                source_dir = os.path.join(_root, dev)
+                if not (os.path.exists(source_dir) and os.path.isdir(source_dir)):
                     continue
-                entry_path = os.path.join(source_dir, entry)
-                if os.path.isfile(entry_path):
-                    if entry.lower().endswith(AUDIO_EXTS) and 'TEMP' not in entry:
-                        count += 1
-                elif os.path.isdir(entry_path):
-                    try:
-                        for f in os.listdir(entry_path):
-                            if f.lower().endswith(AUDIO_EXTS) and 'TEMP' not in f:
-                                count += 1
-                    except Exception:
-                        pass
+                for entry in os.listdir(source_dir):
+                    if entry in SKIP_DIRS:
+                        continue
+                    entry_path = os.path.join(source_dir, entry)
+                    if os.path.isfile(entry_path):
+                        if entry.lower().endswith(AUDIO_EXTS) and 'TEMP' not in entry:
+                            count += 1
+                    elif os.path.isdir(entry_path):
+                        try:
+                            for f in os.listdir(entry_path):
+                                if f.lower().endswith(AUDIO_EXTS) and 'TEMP' not in f:
+                                    count += 1
+                        except Exception:
+                            pass
         pending_count = count
     except Exception as e:
         logger_web.error(f"[StatusMonitor] 检查待处理文件失败: {e}")
@@ -1480,12 +1494,15 @@ def public_cry_preview_media(event_id, media_path):
         cands = []
         if len(parts) >= 3 and parts[0] in SOURCE_DEVICES:
             dev, rest = parts[0], '/'.join(parts[1:])
-            cands += [os.path.join(RECORDS_ROOT, dev, "processed", rest),
-                      os.path.join(RECORDS_ROOT, media_path)]
+            # 【2026-10-04 多根】本地镜像优先，NAS 历史回退
+            for _root in RECORDS_ROOTS:
+                cands += [os.path.join(_root, dev, "processed", rest),
+                          os.path.join(_root, media_path)]
         else:
             for dev in SOURCE_DEVICES:
-                cands += [os.path.join(RECORDS_ROOT, dev, "processed", media_path),
-                          os.path.join(RECORDS_ROOT, dev, media_path)]
+                for _root in RECORDS_ROOTS:
+                    cands += [os.path.join(_root, dev, "processed", media_path),
+                              os.path.join(_root, dev, media_path)]
         for cand in cands:
             if os.path.isfile(cand):
                 return send_file(cand)
@@ -1569,15 +1586,107 @@ def proxy_live_logs():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/overview', methods=['GET'])
+_last_rep_date_cache = {"ts": 0.0, "val": None}
+
+def _last_reprocess_date():
+    """哭声补跑上次重检推进到的录音日期（processed_files_a 最新 b_reprocess_success）。60s 缓存。"""
+    import re as _re
+    now = time.time()
+    if now - _last_rep_date_cache["ts"] < 60:
+        return _last_rep_date_cache["val"]
+    val = None
+    try:
+        import psycopg2 as _pg
+        conn = _pg.connect(CONFIG["DATABASE_URL"], connect_timeout=5)
+        cur = conn.cursor()
+        cur.execute("SELECT filename FROM processed_files_a WHERE status='b_reprocess_success' ORDER BY processed_at DESC LIMIT 1")
+        row = cur.fetchone()
+        if row:
+            m = _re.search(r'(20\d{2}-\d{2}-\d{2})', row[0])
+            val = m.group(1) if m else None
+        cur.close(); conn.close()
+    except Exception:
+        pass
+    _last_rep_date_cache.update(ts=now, val=val)
+    return val
+
+
 @login_required
 def proxy_overview():
     """系统总览：代理到 ASR 服务器（设备健康为服务端 5 分钟缓存，响应轻、可随轮询拉）"""
     try:
         response = requests.get(f"{ASR_SERVER_URL}/api/overview", timeout=8)
+        if response.ok:
+            try:
+                data = response.json()
+                a = data.get("a_track")
+                if isinstance(a, dict):
+                    a["last_reprocess_date"] = _last_reprocess_date()
+                return jsonify(data)
+            except Exception:
+                pass
         return Response(response.content, status=response.status_code, content_type=response.headers.get('Content-Type'))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+_dev_map_cache = {"ts": 0.0, "map": {}}
+
+def _build_device_map():
+    """文件名→设备 映射（近3天 watched+processed+failed）, 60s 缓存。
+    用于给 5008 日志里的纯文件名（无设备字段）补设备归属。"""
+    import datetime as _dt
+    now = time.time()
+    if now - _dev_map_cache["ts"] < 60 and _dev_map_cache["map"]:
+        return _dev_map_cache["map"]
+    m = {}
+    dates = [(_dt.date.today() - _dt.timedelta(days=k)).isoformat() for k in range(3)]
+    for dev in SOURCE_DEVICES[:2]:
+        for date in dates:
+            # 目录结构: <dev>/<日期>/(watched) 与 <dev>/processed|failed/<日期>/
+            # 【2026-10-04 多根】本地镜像（watched 瞬态+processed/failed）+ NAS（历史回退）
+            for _root in RECORDS_ROOTS:
+                for d in (os.path.join(_root, dev, date),
+                          os.path.join(_root, dev, "processed", date),
+                          os.path.join(_root, dev, "failed", date)):
+                    try:
+                        names = os.listdir(d)
+                    except Exception:
+                        continue
+                    for n in names:
+                        if n.endswith('.m4a'):
+                            m.setdefault(n, dev)  # watched 优先于 processed/failed
+    if m:
+        _dev_map_cache["ts"] = now
+        _dev_map_cache["map"] = m
+    return m
+
+
+def _short_with_dev(filename, dev_map):
+    """`Pixel-6/10-04_14-16-08` 短格式；设备未知时退回纯时间尾"""
+    base = _norm_task_name(filename)
+    dev = dev_map.get(os.path.basename(str(filename)))
+    return f"{dev}/{base}" if dev else base
+
+
+def _scan_rt_pending():
+    """实时流待提交文件: 今天日期目录(watched)里还没被 audio_processor 提交走的 m4a。
+    audio_processor 提交成功后会把文件移入 processed/, 所以目录里剩的即待处理队列。
+    返回 (每设备队头2个短格式, 总数)。SMB 异常时返回 ([], 0)。"""
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    result = []
+    total = 0
+    for dev in SOURCE_DEVICES[:2]:  # 实时流 = 双 Pixel (Sony 已停录)
+        dev_dir = os.path.join(RECORDS_ROOT, dev, today)
+        try:
+            names = sorted(n for n in os.listdir(dev_dir) if n.endswith('.m4a'))
+        except Exception:
+            continue
+        total += len(names)
+        for n in names[:2]:  # 每台设备显示队头 2 个（两台串行消化, 各自进度可见）
+            result.append(f"{dev}/{_norm_task_name(n)}")
+    return result, total
+
 
 @app.route('/api/parallel_lights', methods=['GET'])
 @login_required
@@ -1619,56 +1728,110 @@ def api_parallel_lights():
         pass
     lights.append({"key": "nano", "label": "Nano推理", "on": nano_on})
     processing, completed = _scan_processing_files()
+    backfill = _scan_backfill_progress()
+    try:
+        rt_files, rt_count = _scan_rt_pending()
+    except Exception:
+        rt_files, rt_count = [], 0
+    # 待处理 → 处理中 流转衔接: 正被 5008 处理的文件从「待处理列表」剔除（归一化比对,
+    # backfill 队列为 `设备/02-21-13-45` 短格式, 5008 日志为 `2026-10-02_02-21-13-45.m4a` 全名）
+    try:
+        proc_norms = {_norm_task_name(p["filename"]) for p in processing}
+        if backfill and backfill.get("pending_files"):
+            backfill["pending_files"] = [x for x in backfill["pending_files"]
+                                         if _norm_task_name(x.rsplit('/', 1)[-1]) not in proc_norms]
+        # 来源标签: 两条队列并行 —— 补救(backfill, 历史日期) / 实时(audio_processor, 今天)
+        import datetime as _dt
+        _today = _dt.datetime.now().strftime("%Y-%m-%d")
+        dev_map = _build_device_map()
+        for p in processing + completed:
+            import re as _re2
+            dm = _re2.search(r'TermuxAudioRecording_(\d{4}-\d{2}-\d{2})_', p.get("filename", ""))
+            p["src"] = "实时" if (dm and dm.group(1) == _today) else "补救"
+            p["short"] = _short_with_dev(p.get("filename", ""), dev_map)
+    except Exception:
+        pass
     return jsonify({"lights": lights, "processing": processing,
-                    "completed": completed, "backfill": _scan_backfill_progress()})
+                    "completed": completed, "backfill": backfill,
+                    "rt": {"pending_files": rt_files, "count": rt_count}})
+
+
+def _norm_task_name(s):
+    """文件名归一化为 `10-02_02-21-13-45` 短格式（剥设备前缀/录制器前缀/年份/扩展名, 保留月-日）"""
+    import re as _re
+    base = str(s).replace('\\', '/').rsplit('/', 1)[-1]
+    base = base.replace('TermuxAudioRecording_', '').replace('.m4a', '')
+    base = _re.sub(r'^\d{4}-', '', base)  # 去年份: 2026-10-02_... → 10-02_...
+    return base
 
 
 def _scan_processing_files():
-    """解析 5008 处理日志，找出正在处理的转录任务 + 最近已完成的任务（含耗时）。
-    「📥 收到转录任务」与完成标记配对，未闭合的即处理中。
-    完成标记有两种：
+    """解析 5008 处理日志，找出正在处理的转录任务 + 最近已完成的任务（含耗时与结论）。
+    配对闭合标记：
     - audio_processor 客户端的「✅ 转录完成: <文件名> (N 字)」
-    - 5008 服务端的「✅ 数据库保存成功 (recording_time: YYYY-MM-DD HH:MM:SS)」
-      （backfill_pixels.py 提交的文件没有前者，只能靠服务端标记闭合，
-       recording_time 由文件名 TermuxAudioRecording_日期_时分秒 推得）
-    返回 (processing, completed)：processing=收到未闭合，completed=最近闭合的任务（带处理耗时）"""
+    - 5008 服务端的「✅ 数据库保存成功 (recording_time: ...)」/「⭕ 无有效语音段 (recording_time: ...)」
+      （backfill_pixels.py 提交的文件没有前者，只能靠服务端标记闭合）
+    实时步骤归因：5008 的生命周期行（预处理/VAD/声纹）不含文件名，归属「最近收到的任务」，
+    双客户端并发交错时可能短暂归错，随下一行日志自动纠正——仅作状态展示可接受。
+    返回 (processing, completed)：
+      processing=[{filename, elapsed_s, step}], completed=[{filename, elapsed_s, result}]"""
     import re
     from datetime import datetime
     log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "log", "launchd-asr-server.err")
     processing, completed = [], []
     try:
-        active = {}          # filename -> 收到时刻 ts
+        active = {}          # filename -> {"ts": 收到时刻, "step": 当前步骤, "segs": 段数, "cry": 是否检出哭声, "chars": 字数}
         rec_time_map = {}    # recording_time字符串 -> filename
-        # 文件名中的时间戳 → recording_time（与 5008 日志中的 recording_time 格式一致）
+        latest = [None]      # 最近收到的文件名（生命周期行归因用, list 以便闭包内改写）
         rt_re = re.compile(r'(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})')
 
         def _close(fn, ts):
-            """闭合任务：从 active 移除并记入 completed（重复的完成标记自动去重）"""
-            recv_ts = active.pop(fn, None)
-            if recv_ts is None:
+            """闭合任务：生成结论摘要, 从 active 移除并记入 completed"""
+            info = active.pop(fn, None)
+            if info is None:
                 return
-            completed.append({"filename": fn, "elapsed_s": max(1, int(ts - recv_ts))})
+            parts = []
+            if info.get("cry"):
+                parts.append("🍼哭声")
+            if info.get("chars") is not None and info["chars"] > 0:
+                parts.append(f"{info['chars']}字")
+            elif info.get("segs"):
+                asg = info.get("assigned")
+                parts.append(f"{info['segs']}段" + (f"·归{asg}" if asg is not None else ""))
+            else:
+                parts.append("无语音")
+            completed.append({"filename": fn, "elapsed_s": max(1, int(ts - info["ts"])),
+                              "result": "·".join(parts)})
 
         with open(log_path, 'rb') as f:
             f.seek(0, 2)
             size = f.tell()
-            f.seek(max(0, size - 128 * 1024))  # 尾部 128KB 足够覆盖并发任务窗口
-            f.readline()  # 丢弃可能截断的首行
+            f.seek(max(0, size - 256 * 1024))  # 尾部 256KB 覆盖并发任务窗口
+            f.readline()
             for raw in f:
                 line = raw.decode('utf-8', errors='replace').strip()
                 m = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
                 if not m:
                     continue
                 ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
+                cur = active.get(latest[0]) if latest[0] else None
                 if '📥 收到转录任务: ' in line:
                     fn = line.split('📥 收到转录任务: ', 1)[1].strip()
-                    active[fn] = ts
+                    active[fn] = {"ts": ts, "step": "收到任务", "segs": 0, "cry": False, "chars": None}
+                    latest[0] = fn
                     rm = rt_re.search(fn)
                     if rm:
                         rec_time_map[f"{rm.group(1)} {rm.group(2)}:{rm.group(3)}:{rm.group(4)}"] = fn
                 elif '✅ 转录完成: ' in line:
-                    _close(line.split('✅ 转录完成: ', 1)[1].strip().rsplit(' (', 1)[0], ts)
+                    tail = line.split('✅ 转录完成: ', 1)[1]
+                    fn, _, nchar = tail.rpartition(' (')
+                    fn = fn.strip()
+                    if fn in active:
+                        cm = re.search(r'(\d+) 字', nchar)
+                        if cm:
+                            active[fn]["chars"] = int(cm.group(1))
+                    _close(fn, ts)
                 elif '✅ 数据库保存成功 (recording_time: ' in line:
                     rt = line.split('recording_time: ', 1)[1].rstrip(')').strip()
                     fn = rec_time_map.get(rt)
@@ -1681,10 +1844,42 @@ def _scan_processing_files():
                     if fn:
                         _close(fn, ts)
                         rec_time_map.pop(rt, None)
+                elif '📊 归属统计: ' in line:
+                    # 例: 📊 归属统计: 23段 · Unknown18 · 妈妈5
+                    if cur:
+                        am = re.search(r':\s*(\d+)段', line)
+                        if am:
+                            total = int(am.group(1))
+                            um = re.search(r'Unknown(\d+)', line)
+                            unk = int(um.group(1)) if um else 0
+                            cur["assigned"] = max(0, total - unk)
+                elif '🍼 [轨道A] 哭声确认' in line:
+                    if cur:
+                        cur["cry"] = True
+                        cur["step"] = "🍼 哭声确认"
+                elif '[生命周期: 1. 音频预处理] 开始' in line:
+                    if cur: cur["step"] = "预处理"
+                elif '[生命周期: 2. VAD & ASR] 开始' in line:
+                    if cur: cur["step"] = "切分+转写"
+                elif 'VAD检出 ' in line and ' 个分段' in line:
+                    if cur:
+                        sm = re.search(r'VAD检出 (\d+) 个分段', line)
+                        if sm:
+                            cur["segs"] = int(sm.group(1))
+                            cur["step"] = f"切出 {sm.group(1)} 段"
+                elif '[生命周期: 3. 逐段声纹识别] 开始' in line:
+                    if cur: cur["step"] = f"声纹识别 0/{cur.get('segs') or '?'}"
+                elif '[生命周期: 3. 逐段声纹识别] 完成' in line:
+                    if cur: cur["step"] = "声纹识别完成, 入库中"
+                elif re.search(r'\[3\.\d+\] 处理分段', line):
+                    if cur:
+                        nm = re.search(r'\[3\.(\d+)\]', line)
+                        if nm:
+                            cur["step"] = f"声纹识别 {nm.group(1)}/{cur.get('segs') or '?'}"
         now = time.time()
-        processing = [{"filename": fn, "elapsed_s": int(now - ts)}
-                      for fn, ts in sorted(active.items(), key=lambda x: -x[1])]
-        completed = completed[-6:]  # 只留最近 6 个
+        processing = [{"filename": fn, "elapsed_s": int(now - info["ts"]), "step": info["step"]}
+                      for fn, info in sorted(active.items(), key=lambda x: -x[1]["ts"])]
+        completed = completed[-6:]
     except Exception:
         pass
     return processing, completed
@@ -1700,7 +1895,9 @@ def _scan_backfill_progress():
     import re
     log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "log")
     prog_re = re.compile(r'进度 (\d+)/(\d+) \| 成功 (\d+) 失败 (\d+).*?剩余约 ([\d.]+) (小时|分钟)')
+    done_re = re.compile(r'回填完成: 成功 (\d+) / 失败 (\d+) / 总 (\d+)')
     batches = []  # 各批次（Pixel/Sony）独立解析后聚合，两客户端可能并存
+    result = None
     try:
         for name in ("backfill_rerun.log", "backfill_sony.log"):
             log_path = os.path.join(log_dir, name)
@@ -1715,7 +1912,7 @@ def _scan_backfill_progress():
                 f.readline()
                 for raw in f:
                     line = raw.decode('utf-8', errors='replace').strip()
-                    if '进度 ' in line:
+                    if '进度 ' in line or '回填完成: ' in line:
                         last_progress = line
                     elif '队列预览: ' in line:
                         # 每次预览行重置快照（新一轮启动）
@@ -1726,17 +1923,32 @@ def _scan_backfill_progress():
                             gone.add(line.rsplit(' ✔ ', 1)[1].split(' (')[0].strip())
                         elif ' ✗ ' in line:
                             gone.add(line.rsplit(' ✗ ', 1)[1].split(' HTTP')[0].strip())
+                        elif '📤 提交: ' in line:
+                            # 已提交=正被处理, 从待处理列表剔除（✔/✗ 要等响应回来才有）
+                            gone.add(line.split('📤 提交: ', 1)[1].strip())
             if last_progress:
                 m = prog_re.search(last_progress)
-                if m:
-                    done, total, ok, fail = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
-                    eta_val, eta_unit = float(m.group(5)), m.group(6)
+                m_done = None if m else done_re.search(last_progress)
+                if m or m_done:
+                    try:
+                        running = (time.time() - os.path.getmtime(log_path)) < 120  # 日志2分钟内有更新=进程活着
+                    except Exception:
+                        running = False
+                    if m:
+                        done, total, ok, fail = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+                        eta_val, eta_unit = float(m.group(5)), m.group(6)
+                    else:
+                        # 「回填完成: 成功 N / 失败 M / 总 T」——本轮全部推进完毕（done=total, remaining=0）
+                        ok, fail, total = int(m_done.group(1)), int(m_done.group(2)), int(m_done.group(3))
+                        done, eta_val, eta_unit = total, 0.0, '小时'
                     batches.append({
                         "done": done, "total": total,
                         "remaining": max(0, total - done),
                         "ok": ok, "fail": fail,
+                        "running": running,
                         "eta_h": eta_val if eta_unit == '小时' else eta_val / 60,
-                        "pending_files": [x for x in snapshot if x not in gone][:3],
+                        "pending_files": [f"{x.split('/', 1)[0]}/{_norm_task_name(x)}" if '/' in x else _norm_task_name(x)
+                                          for x in snapshot if x not in gone][:3],
                     })
         if batches:
             eta_sum = sum(b["eta_h"] for b in batches)
@@ -1747,6 +1959,7 @@ def _scan_backfill_progress():
                 "ok": sum(b["ok"] for b in batches),
                 "fail": sum(b["fail"] for b in batches),
                 "eta": f"约{eta_sum:.1f}h" if eta_sum >= 1 else f"约{eta_sum*60:.0f}min",
+                "running": any(b.get("running") for b in batches),
                 "pending_files": [f for b in batches for f in b["pending_files"]][:3],
             }
     except Exception:
@@ -2092,7 +2305,7 @@ def api_data_range():
             _total_in_range = _cur.fetchone()[0]
             _cur.execute(
                 """
-                SELECT id, filename, created_at, full_text, segments_json, recording_time
+                SELECT id, filename, created_at, full_text, segments_json, recording_time, device
                 FROM transcriptions
                 WHERE COALESCE(recording_time, created_at) >= %s
                   AND COALESCE(recording_time, created_at) <= %s
@@ -2112,6 +2325,7 @@ def api_data_range():
                     'created_at': row[2].isoformat() if row[2] else None,
                     'full_text': row[3], 'segments': _segs,
                     'recording_time': row[5].isoformat() if row[5] else None,
+                    'device': row[6],
                 })
             _cur.close()
         finally:
@@ -2607,15 +2821,19 @@ def serve_original_audio(filepath):
         parts = filepath.replace('\\', '/').split('/')
         if '..' in parts:
             return jsonify({"error": "Invalid path"}), 403
+        cands = []
         if len(parts) >= 3 and parts[0] in SOURCE_DEVICES:
             dev, rest = parts[0], '/'.join(parts[1:])
-            cands = [os.path.join(RECORDS_ROOT, dev, "processed", rest),
-                     os.path.join(RECORDS_ROOT, filepath)]
+            # 【2026-10-04 多根】本地镜像优先，NAS 历史回退
+            for _root in RECORDS_ROOTS:
+                cands += [os.path.join(_root, dev, "processed", rest),
+                          os.path.join(_root, filepath)]
         else:
             cands = []
             for dev in SOURCE_DEVICES:
-                cands += [os.path.join(RECORDS_ROOT, dev, "processed", filepath),
-                          os.path.join(RECORDS_ROOT, dev, filepath)]
+                for _root in RECORDS_ROOTS:
+                    cands += [os.path.join(_root, dev, "processed", filepath),
+                              os.path.join(_root, dev, filepath)]
 
         for cand in cands:
             if os.path.exists(cand) and os.path.isfile(cand):
@@ -2634,9 +2852,10 @@ def serve_original_audio(filepath):
                     date_found = f"{date_found[:4]}-{date_found[4:6]}-{date_found[6:8]}"
 
                 for dev in SOURCE_DEVICES:
-                    search_path = os.path.join(RECORDS_ROOT, dev, "processed", date_found, filepath)
-                    if os.path.exists(search_path):
-                        return send_file(search_path)
+                    for _root in RECORDS_ROOTS:
+                        search_path = os.path.join(_root, dev, "processed", date_found, filepath)
+                        if os.path.exists(search_path):
+                            return send_file(search_path)
 
         return jsonify({"error": f"Audio file not found: {filepath}"}), 404
     except Exception as e:

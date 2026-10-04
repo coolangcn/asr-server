@@ -127,7 +127,13 @@ class Config:
 FileMonitorConfig = audio_processor.FileMonitorConfig
 
 # =================【 多源路径工具（双 Pixel 双源架构）】=================
-RECORDS_ROOT = "/Volumes/download/records"
+# 【2026-10-04 rsync 本地镜像】实时管线主根 = 本地镜像（mirror_sync.sh 每分钟从 NAS 拉取、
+# 每5分钟把 processed/failed 推回 NAS）。NAS 根保留用于：历史数据/旧切片回退读取。
+RECORDS_ROOT = os.getenv("RECORDS_ROOT", "/Volumes/download/records")
+RECORDS_ROOT_NAS = os.getenv("RECORDS_ROOT_NAS", "/Volumes/download/records")
+RECORDS_ROOTS = [RECORDS_ROOT]
+if os.path.normpath(RECORDS_ROOT_NAS) != os.path.normpath(RECORDS_ROOT):
+    RECORDS_ROOTS.append(RECORDS_ROOT_NAS)
 SOURCE_DEVICES = [os.path.basename(s.rstrip("/")) for s in FileMonitorConfig.SOURCES]
 # Sony 设备保留在兼容候选尾部：历史录音/旧标记仍可能落到 Sony 的 processed/
 _LEGACY_DEVICES = [d for d in ("Sony-2", "Sony-1", "Sony-3") if d not in SOURCE_DEVICES]
@@ -152,21 +158,23 @@ def _rel_to_records(p):
 
 def _resolve_under_records(p):
     """records 相对路径 → 绝对路径。
+    按 RECORDS_ROOTS 优先级逐根尝试：本地镜像（新数据）→ NAS（历史回退）。
     新式（带设备前缀 Pixel-6/...）直接拼；旧式（裸文件名等）先查新源再查 Sony 兼容源。
     找不到返回 None。"""
     p = str(p).lstrip("/").replace("\\", "/")
     if not p or p.startswith(".."):
         return None
-    direct = os.path.join(RECORDS_ROOT, p)
-    if os.path.exists(direct):
-        return direct
-    first = p.split("/", 1)[0]
-    # 旧式相对路径（audio_segments/<日期>/... 或纯文件名）逐设备尝试
-    if first not in SOURCE_DEVICES and first not in _LEGACY_DEVICES:
-        for dev in SOURCE_DEVICES + _LEGACY_DEVICES:
-            cand = os.path.join(RECORDS_ROOT, dev, p)
-            if os.path.exists(cand):
-                return cand
+    for _root in RECORDS_ROOTS:
+        direct = os.path.join(_root, p)
+        if os.path.exists(direct):
+            return direct
+        first = p.split("/", 1)[0]
+        # 旧式相对路径（audio_segments/<日期>/... 或纯文件名）逐设备尝试
+        if first not in SOURCE_DEVICES and first not in _LEGACY_DEVICES:
+            for dev in SOURCE_DEVICES + _LEGACY_DEVICES:
+                cand = os.path.join(_root, dev, p)
+                if os.path.exists(cand):
+                    return cand
     return None
 
 
@@ -393,7 +401,9 @@ _b_stats_lock = threading.Lock()
 # 不能跟随前端 30 秒轮询——后台线程每 5 分钟扫一轮，API 只读缓存快照。
 # 状态判定对齐 silence_check.sh：全零(<-80dB)红 / 6分钟无新文件红 / 响度偏低(<-50dB)黄 / 间隔偏长(>4分钟)黄
 OVERVIEW_DEVICES = ["Pixel-6", "Pixel-5"]  # 2026-10-03 起全面转向双 Pixel，Sony 停录移出总览（历史数据保留可回放）
-OVERVIEW_RECORDS_ROOT = "/Volumes/download/records"
+# 【2026-10-04 rsync 本地镜像】该常量现仅用于 SMB 挂载健康探针（始终指 NAS）；
+# 设备录音健康扫描改用 RECORDS_ROOT（本地镜像 watched+processed 双目录取最新文件）
+OVERVIEW_RECORDS_ROOT = os.getenv("RECORDS_ROOT_NAS", "/Volumes/download/records")
 _overview_cache = {"devices": [], "infra": {}, "updated_at": None,
                    "total_today": None, "prev_total_today": None,  # 今日现存总数及上一轮值→积压趋势
                    "db_stats": None}  # DB 真实入库/哭声统计（进程计数会因重启清零，以此为准）
@@ -439,28 +449,34 @@ def _ffmpeg_max_volume(path, timeout=25):
 
 
 def _scan_overview_device(dev, today_str):
-    """扫描单台设备今日目录（含 NAS IO + ffmpeg，必须在带超时的子线程中调用）"""
+    """扫描单台设备今日最新录音（本地镜像 watched+processed 双目录，ffmpeg 解码最新文件，
+    必须在带超时的子线程中调用）。
+    【2026-10-04 rsync 本地镜像】新录音先落镜像 watched（≤1分钟）→ 处理后移入 processed，
+    两目录合并取 mtime 最新者即最新录音；mtime 为 rsync -a 保留的上传时刻，age 语义不变。"""
     info = {"name": dev, "latest_file": None, "latest_time": None, "age_sec": None,
             "max_volume": None, "today_count": 0, "status": "bad", "detail": "今日无录音"}
-    ddir = os.path.join(OVERVIEW_RECORDS_ROOT, dev, today_str)
-    entries = audio_processor._safe_listdir(ddir, timeout=8) or []
-    m4as = [e for e in entries if e.endswith(".m4a")]
-    if not m4as:
+    dirs = [os.path.join(RECORDS_ROOT, dev, today_str),
+            os.path.join(RECORDS_ROOT, dev, FileMonitorConfig.PROCESSED_DIR, today_str)]
+    file_items = []  # [(mtime, 绝对路径, 文件名)]
+    for ddir in dirs:
+        entries = audio_processor._safe_listdir(ddir, timeout=8) or []
+        for e in entries:
+            if e.endswith(".m4a"):
+                p = os.path.join(ddir, e)
+                try:
+                    file_items.append((os.path.getmtime(p), p, e))
+                except OSError:
+                    continue
+    if not file_items:
         return info
-    info["today_count"] = len(m4as)
-    try:
-        latest = max(m4as, key=lambda n: os.path.getmtime(os.path.join(ddir, n)))
-    except Exception:
-        info["detail"] = "目录读取异常（挂载病态？）"
-        return info
+    info["today_count"] = len(file_items)
+    file_items.sort(reverse=True)  # mtime 最新在前
+    _, latest_path, latest = file_items[0]
     info["latest_file"] = latest
-    try:
-        mt = os.path.getmtime(os.path.join(ddir, latest))
-        info["age_sec"] = int(time.time() - mt)
-        info["latest_time"] = datetime.fromtimestamp(mt).strftime("%H:%M")
-    except Exception:
-        pass
-    vol = _ffmpeg_max_volume(os.path.join(ddir, latest))
+    mt, _, _ = file_items[0]
+    info["age_sec"] = int(time.time() - mt)
+    info["latest_time"] = datetime.fromtimestamp(mt).strftime("%H:%M")
+    vol = _ffmpeg_max_volume(latest_path)
     info["max_volume"] = vol
     age = info["age_sec"]
     if vol is not None and vol < -80:
@@ -1481,33 +1497,44 @@ def process_baby_cry_async(filename, audio_path, start_time, end_time, placehold
 
     if record_dt:
         # 【双源】优先扫描 audio_path 归属设备的 processed/，无命中再依次尝试其余设备
+        # 【2026-10-04 多根】本地镜像优先，NAS 历史回退；(设备,文件名) 去重防双根重复注入
         _dev = _device_from_path(audio_path) or (SOURCE_DEVICES[0] if SOURCE_DEVICES else "")
         _dev_order = ([_dev] if _dev else []) + [d for d in SOURCE_DEVICES + _LEGACY_DEVICES if d != _dev]
+        _seen_ctx = set()
+        _ctx_found = False
         for _scan_dev in _dev_order:
-            date_dir = os.path.join(RECORDS_ROOT, _scan_dev, FileMonitorConfig.PROCESSED_DIR,
-                                    record_dt.strftime("%Y-%m-%d"))
-            if not os.path.exists(date_dir):
-                continue
-            candidates = []
-            for f in os.listdir(date_dir):
-                if f.endswith(tuple(FileMonitorConfig.SUPPORTED_FORMATS)):
-                    f_dt = parse_recording_time(f)
-                    if f_dt:
-                        f_path = os.path.join(date_dir, f)
-                        time_diff = (f_dt - record_dt).total_seconds()
-                        # 前后5分钟（300秒）
-                        if -300 <= time_diff <= 300:
-                            candidates.append((time_diff, f_path))
+            if _ctx_found:
+                break
+            for _root in RECORDS_ROOTS:
+                date_dir = os.path.join(_root, _scan_dev, FileMonitorConfig.PROCESSED_DIR,
+                                        record_dt.strftime("%Y-%m-%d"))
+                if not os.path.exists(date_dir):
+                    continue
+                candidates = []
+                for f in os.listdir(date_dir):
+                    if f.endswith(tuple(FileMonitorConfig.SUPPORTED_FORMATS)):
+                        f_dt = parse_recording_time(f)
+                        if f_dt:
+                            f_path = os.path.join(date_dir, f)
+                            time_diff = (f_dt - record_dt).total_seconds()
+                            # 前后5分钟（300秒）
+                            if -300 <= time_diff <= 300:
+                                candidates.append((time_diff, f_path))
 
-            # 按时间排序：先前的文件 → 主文件 → 后来的文件
-            candidates.sort(key=lambda x: x[0])
-            for time_diff, f_path in candidates:
-                if f_path not in audio_paths_to_send and os.path.exists(f_path):
-                    audio_paths_to_send.append(f_path)
+                # 按时间排序：先前的文件 → 主文件 → 后来的文件
+                candidates.sort(key=lambda x: x[0])
+                for time_diff, f_path in candidates:
+                    _key = (_scan_dev, os.path.basename(f_path))
+                    if _key in _seen_ctx:
+                        continue
+                    if f_path not in audio_paths_to_send and os.path.exists(f_path):
+                        _seen_ctx.add(_key)
+                        audio_paths_to_send.append(f_path)
 
-            logger_a.info(f"👶 [BabyCry] 在 {date_dir} 中找到 {len(candidates)} 个上下文文件")
-            if candidates:
-                break  # 优先设备命中即止，避免跨设备重复注入上下文
+                logger_a.info(f"👶 [BabyCry] 在 {date_dir} 中找到 {len(candidates)} 个上下文文件")
+                if candidates:
+                    _ctx_found = True
+                    break  # 优先设备命中即止，避免跨设备重复注入上下文
 
     context_len = len(audio_paths_to_send) - 1
     logger_a.info(f"👶 [BabyCry] 收集完毕，共附带 {context_len} 个相邻时段记录作为多模态上下文 (总计 {len(audio_paths_to_send)} 个文件)")
@@ -2547,7 +2574,7 @@ def api_get_cry_event(event_id):
         event_files = event.get("event_files_json", [])
         audio_urls = []
         for f in event_files:
-            if f.startswith(RECORDS_ROOT):
+            if any(f.startswith(_r) for _r in RECORDS_ROOTS):
                 f = _rel_to_records(f)  # 绝对路径 → 设备级相对路径（双源）
             elif f.startswith('/'):
                 f = f.lstrip('/')
@@ -3711,12 +3738,13 @@ def _locate_and_copy_event_audio(event, copy=True):
         if _rec and fname:
             _date_str = _rec.strftime("%Y-%m-%d")
             for _dev in SOURCE_DEVICES + _LEGACY_DEVICES:
-                for _cand in (
-                    os.path.join(RECORDS_ROOT, _dev, _date_str, fname),
-                    os.path.join(RECORDS_ROOT, _dev, "processed", _date_str, fname),
-                ):
-                    if _cand not in candidates:
-                        candidates.append(_cand)
+                for _root in RECORDS_ROOTS:
+                    for _cand in (
+                        os.path.join(_root, _dev, _date_str, fname),
+                        os.path.join(_root, _dev, "processed", _date_str, fname),
+                    ):
+                        if _cand not in candidates:
+                            candidates.append(_cand)
     except Exception:
         pass
 
@@ -4381,6 +4409,51 @@ def _find_voiceprint_duplicate(fp):
             logger_b.warning(f"声纹库指纹懒补落盘失败（不影响本次注册）: {e}")
     return hit_spk, hit_s
 
+
+# =================== 声纹注册质量守门 ===================
+# 铁律: 单人清晰说话短音频入库; 太短嵌入不稳, 太长/错人样本会稀释声纹
+VP_MIN_DURATION_S = 1.5    # 低于此长度嵌入不稳定
+VP_MAX_DURATION_S = 30.0   # 过长可能混入多人
+VP_MIN_SIMILARITY = 0.5    # 增强模式: 新样本与现有平均的最低余弦相似度（同域同人实测 0.7+）
+
+def _vp_wav_duration(path):
+    """读 wav 时长（秒），异常返回 0"""
+    import wave as _wave
+    try:
+        with _wave.open(path, 'rb') as w:
+            return w.getnframes() / max(1, w.getframerate())
+    except Exception:
+        return 0.0
+
+def _vp_cosine(a, b):
+    a, b = np.asarray(a, dtype=np.float32), np.asarray(b, dtype=np.float32)
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
+
+def _voiceprint_quality_gate(proc_temp, speaker_name, sample_embeddings, enhance_mode):
+    """注册质量守门: ①时长门槛 ②增强模式相似度防稀释。
+    返回 (ok, similarity, error_dict, http_status)；ok=True 时 error_dict 为 None。"""
+    dur = _vp_wav_duration(proc_temp)
+    if dur < VP_MIN_DURATION_S:
+        return False, None, {"error": f"切片太短（{dur:.1f}s），嵌入不稳定。请选 3 秒以上的清晰单人说话片段"}, 400
+    if dur > VP_MAX_DURATION_S:
+        return False, None, {"error": f"切片过长（{dur:.1f}s），可能混入多人。请选 5~10 秒的单人清晰片段"}, 400
+    if enhance_mode and speaker_name in speaker_db:
+        avg_embs = speaker_db[speaker_name].get("avg_embeddings") or {}
+        sims = [_vp_cosine(sample_embeddings[m], avg_embs[m]) for m in sample_embeddings if m in avg_embs]
+        if sims:
+            best = max(sims)
+            if best < VP_MIN_SIMILARITY:
+                logger_b.warning(f"🚫 声纹质量守门拒绝: 「{speaker_name}」新样本相似度 {best:.2f} < {VP_MIN_SIMILARITY}")
+                return False, round(best, 3), {
+                    "error": f"该样本与「{speaker_name}」现有声纹相似度仅 {best:.2f}，疑似不是同一人。为防稀释已拒绝注册；若确属本人请换清晰片段重试",
+                    "similarity": round(best, 3), "below_threshold": True
+                }, 409
+            return True, round(best, 3), None, 0
+    return True, None, None, 0
+
 @app.route("/speaker/register", methods=["POST"])
 @admin_required
 def register_speaker_web():
@@ -4451,6 +4524,11 @@ def register_speaker_web():
             if not sample_embeddings:
                 return jsonify({"error": "Failed to extract embeddings from audio file"}), 500
 
+            # 质量守门: 时长 + 增强模式相似度（防稀释）
+            ok, sim, qerr, qstatus = _voiceprint_quality_gate(proc_temp, speaker_name, sample_embeddings, enhance_mode)
+            if not ok:
+                return jsonify(qerr), qstatus
+
             # 生成唯一的样本ID
             sample_id = f"{int(time.time())}_{hash(audio_file.filename) % 10000}"
 
@@ -4519,10 +4597,13 @@ def register_speaker_web():
                 with open(Config.SPEAKER_DB_FILE, 'w', encoding='utf-8') as f:
                     json.dump(speaker_db, f, indent=2, ensure_ascii=False)
 
-            return jsonify({
+            resp = {
                 "message": f"Speaker '{speaker_name}' {'enhanced' if enhance_mode else 'registered'} successfully.",
                 "sample_count": len(speaker_db[speaker_name]["samples"])
-            })
+            }
+            if sim is not None:
+                resp["similarity"] = sim  # 与现有平均嵌入的余弦相似度, 供前端建立手感
+            return jsonify(resp)
 
         except Exception as e:
             logger_b.error(f"注册声纹失败: {str(e)}")
@@ -4777,6 +4858,8 @@ def register_speaker():
             # 收集新样本数据
             new_samples = []
             skipped_dup = []
+            skipped_quality = []   # 质量守门不合格（太短/太长/相似度过低）
+            batch_sims = {}        # filename -> 与现有声纹的相似度（增强模式）
             batch_fps = {}
             model_embeddings = {model_name: [] for model_name in sv_pipelines.keys()}
 
@@ -4811,6 +4894,16 @@ def register_speaker():
                         model_embeddings[model_name].append(emb)
                     else:
                         logger_b.warning(f"⚠️ 从 {file.filename} 提取 {model_name} embedding 失败。")
+
+                # 质量守门: 时长门槛 + 增强模式相似度防稀释（不合格跳过该文件, 不拖累其余）
+                if sample_embeddings:
+                    ok, sim, qerr, qstatus = _voiceprint_quality_gate(proc_temp, speaker_name, sample_embeddings, enhance_mode)
+                    if not ok:
+                        logger_b.info(f"🚫 质量守门跳过 {file.filename}: {qerr.get('error', '')[:80]}")
+                        skipped_quality.append(f"{file.filename}（{qerr.get('error', '').split('。')[0]}）")
+                        continue
+                    if sim is not None:
+                        batch_sims[file.filename] = sim
 
                 # 保存样本信息和音频文件
                 if sample_embeddings:  # 只有当至少有一个模型成功提取嵌入时才保存样本
@@ -4847,6 +4940,11 @@ def register_speaker():
                     return jsonify({
                         "error": f"全部 {len(skipped_dup)} 个文件都是重复样本（已存在于声纹库），未做任何修改",
                         "duplicate": True, "duplicates_skipped": skipped_dup
+                    }), 409
+                if skipped_quality and not new_samples:
+                    return jsonify({
+                        "error": f"全部 {len(skipped_quality)} 个文件未通过质量守门: {'; '.join(skipped_quality[:3])}",
+                        "quality_skipped": skipped_quality
                     }), 409
                 return jsonify({"error": "Failed to extract embeddings from any samples"}), 500
 
@@ -4895,6 +4993,13 @@ def register_speaker():
             if skipped_dup:
                 resp["duplicates_skipped"] = skipped_dup
                 resp["message"] += f"（跳过 {len(skipped_dup)} 个重复文件: {', '.join(skipped_dup[:3])}{'...' if len(skipped_dup) > 3 else ''}）"
+            if skipped_quality:
+                resp["quality_skipped"] = skipped_quality
+                resp["message"] += f"（质量守门跳过 {len(skipped_quality)} 个: {'; '.join(skipped_quality[:2])}{'...' if len(skipped_quality) > 2 else ''}）"
+            if batch_sims:
+                resp["similarities"] = batch_sims
+                avg_sim = sum(batch_sims.values()) / len(batch_sims)
+                resp["similarity"] = round(avg_sim, 3)
             return jsonify(resp)
 
         except Exception as e:
@@ -5100,7 +5205,8 @@ def transcribe_audio():
                                 reason_category="analyzing", event_files=[],
                                 audio_path=_persist_audio_path,
                                 confidence=cry_confidence,
-                                details=cry_details
+                                details=cry_details,
+                                device=source_device or None
                             )
 
                             # 更新持久文件名包含 placeholder_id
@@ -5608,10 +5714,18 @@ def transcribe_audio():
                     # 解析录音时间
                     recording_time = parse_recording_time(file.filename)
 
-                    # 保存到数据库
-                    success = save_to_db(file.filename, full_text, processed_segments, recording_time, summary)
+                    # 保存到数据库（device: 上传来源设备, 供前端标注）
+                    success = save_to_db(file.filename, full_text, processed_segments, recording_time, summary,
+                                         device=source_device or None)
 
                     if success:
+                        # 归属统计: 让仪表盘结论能区分「切片总数」与「已归属注册人」
+                        _spk_cnt = {}
+                        for _s in processed_segments:
+                            _sp = (_s.get("spk") or "Unknown") if isinstance(_s, dict) else "Unknown"
+                            _spk_cnt[_sp] = _spk_cnt.get(_sp, 0) + 1
+                        _spk_detail = " · ".join(f"{k}{v}" for k, v in sorted(_spk_cnt.items(), key=lambda x: -x[1]))
+                        logger_b.info(f"📊 归属统计: {len(processed_segments)}段 · {_spk_detail}")
                         logger_b.info(f"✅ 数据库保存成功 (recording_time: {recording_time})")
                         if summary:
                             logger_b.info(f"  智能摘要: {summary['speaker_count']}位说话人, {summary['total_segments']}个分段")
@@ -5686,16 +5800,17 @@ def get_sample_audio(speaker_name, sample_id):
 
 @app.route('/audio_segments/<path:filename>')
 def serve_audio_segment(filename):
-    """提供音频片段静态文件服务（双源：逐设备 audio_segments/ 探测）"""
+    """提供音频片段静态文件服务（多根：本地镜像优先，NAS 历史回退）"""
     from werkzeug.exceptions import NotFound
     try:
         rel = filename.lstrip('/')
-        for dev in SOURCE_DEVICES + _LEGACY_DEVICES:
-            audio_segments_dir = os.path.join(RECORDS_ROOT, dev, 'audio_segments')
-            try:
-                return send_from_directory(audio_segments_dir, rel)
-            except NotFound:
-                continue
+        for _root in RECORDS_ROOTS:
+            for dev in SOURCE_DEVICES + _LEGACY_DEVICES:
+                audio_segments_dir = os.path.join(_root, dev, 'audio_segments')
+                try:
+                    return send_from_directory(audio_segments_dir, rel)
+                except NotFound:
+                    continue
         # 兼容单源直挂（--source-path 覆盖等场景）
         return send_from_directory(os.path.join(FileMonitorConfig.SOURCE_DIR, 'audio_segments'), rel)
     except Exception as e:
@@ -5737,7 +5852,8 @@ def serve_event_audio(event_id):
         audio_urls = []
         for f in event_files:
             # 转换为相对 records 根的路径（含设备级；旧式路径保持原样由 serve 端探测）
-            if f.startswith(RECORDS_ROOT):
+            # 【2026-10-04 多根】兼容本地镜像与 NAS 两种绝对路径前缀
+            if any(f.startswith(_r) for _r in RECORDS_ROOTS):
                 f = _rel_to_records(f)
             elif f.startswith('/'):
                 f = f.lstrip('/')
@@ -5837,8 +5953,17 @@ if __name__ == "__main__":
     logger_sys.info(f"未完成哭声分析自动重试已启动 (间隔{RETRY_INCOMPLETE_INTERVAL}秒)")
 
     # 启动文件监控模块 (已解耦)
-    _track_b_running = True
-    audio_processor.start_monitor()
+    # 【2026-10-04 修复】原逻辑在 app.run() 之前直接启动, catch-up 请求会打在
+    # 尚未 listen 的端口上 → Connection refused → 文件被误归档 failed/（历史已积累 169 个）。
+    # 改为延迟启动: 等 Flask 就绪后 catch-up 才能成功提交。
+    def _deferred_start_monitor():
+        time.sleep(50)  # 实测 5008 从启动到可接收请求约 45s（模型加载+listen）
+        global _track_b_running
+        _track_b_running = True
+        audio_processor.start_monitor()
+        logger_sys.info("B 轨文件监控已延迟启动（等待 Flask 就绪后）")
+
+    threading.Thread(target=_deferred_start_monitor, daemon=True).start()
 
     # 启动多设备恢复上传监控（仅监控停滞和自动恢复，不参与识别）
     # 内部会扫描 NAS 目录，可能挂起，用线程+超时保护，避免阻塞启动

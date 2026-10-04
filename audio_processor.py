@@ -160,6 +160,8 @@ def _safe_listdir(path, timeout=3.0):
     def _do():
         try:
             result.extend(os.listdir(path))
+        except FileNotFoundError:
+            pass  # 目录尚不存在（如当日无归档文件）视为空目录，不刷告警
         except Exception as e:
             logger.warning(f"⚠️ 读取目录异常 {path}: {e}")
 
@@ -411,7 +413,7 @@ def _monitor_loop():
                             success = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
                             if success:
                                 mark_file_processed_a(filename, status="b_realtime_success", device=device)
-                            known.add(filename)
+                                known.add(filename)  # 只有成功才入缓存；失败（网络异常等）下一轮重扫自动重试
                         except Exception as e:
                             logger.error(f"处理文件 {filename} 失败: {e}")
 
@@ -479,6 +481,10 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
             _move_file(filepath, filename, failed_dir, recording_time)
             return False
             
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        # 5008 重启窗口/网络抖动不是文件的问题——保留原处等下轮重试, 绝不能归档 failed/
+        logger.warning(f"⏳ 5008 不可达（{type(e).__name__}），文件保留在原处等待重试: {filename}")
+        return False
     except Exception as e:
         logger.error(f"❌ 处理文件 {filename} 时发生异常: {e}")
         _move_file(filepath, filename, failed_dir, recording_time)

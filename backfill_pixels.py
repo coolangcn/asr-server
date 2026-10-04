@@ -142,13 +142,19 @@ def main():
         if not mount_healthy():
             log(f"⛔ 挂载中途失联，中止（exit 3）。已成功 {ok} 失败 {fail}，剩余 {len(jobs)-i+1} 个待续传。")
             sys.exit(3)
+        if (i - 1) % 15 == 0 and i > 1:
+            # 每推进 15 个重打队列预览: web_viewer 的快照只有 20 个, 耗尽后待办列表会空
+            log("队列预览: " + ", ".join(f"{d2}/{f2}" for d2, _, f2, _ in jobs[i - 1:i + 14]))
         try:
+            log(f"📤 提交: {dev}/{fn}")  # web_viewer 用本行把文件从「待处理」移入「处理中」
             with open(fp, 'rb') as f:
                 resp = requests.post(f"{ASR}/transcribes", headers=HEADERS, timeout=7200,
                                      files={'audio_file': (fn, f, 'audio/mpeg')},
                                      data={'source_device': dev, 'is_history': 'true'})
-        except requests.exceptions.RequestException as e:
-            log(f"⚠️ {dev}/{fn} 网络异常（{e.__class__.__name__}），保留原处下轮重试")
+        except (requests.exceptions.RequestException, OSError) as e:
+            # OSError: requests 内部 fp.read() 读 SMB 文件可能抛 Errno 5 I/O error，
+            # 不捕获会让整个 backfill 崩溃退出（2026-10-04 实际发生）
+            log(f"⚠️ {dev}/{fn} 网络/IO异常（{e.__class__.__name__}: {e}），保留原处下轮重试")
             continue
 
         processed_dir = os.path.join(RECORDS_ROOT, dev, "processed", date)

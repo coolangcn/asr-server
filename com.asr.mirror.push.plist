@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.asr.mirror.push</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/mac/asr_env/bin/python3</string><string>/Users/mac/asr-server/mirror_sync.py</string><string>push</string></array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>StandardOutPath</key><string>/Users/mac/asr-server/log/mirror_push.out</string>
+  <key>StandardErrorPath</key><string>/Users/mac/asr-server/log/mirror_push.out</string>
+</dict></plist>

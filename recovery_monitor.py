@@ -156,7 +156,20 @@ def _get_latest_file_mtime(device):
             item_path = os.path.join(source_dir, item)
 
             items_to_check = []
-            if os.path.isfile(item_path):
+            if item == 'watched':
+                # 2026-10-04 镜像架构: APK 上传至 <source>/watched/<日期>/，
+                # 本地镜像被 mirror_sync 拉取后很快清空，mtime 检测需穿透 watched 层
+                try:
+                    for sub in os.listdir(item_path):
+                        if sub in recent_folders and not sub.startswith('.'):
+                            sub_path = os.path.join(item_path, sub)
+                            if os.path.isdir(sub_path):
+                                for f in os.listdir(sub_path):
+                                    if not f.startswith('.'):
+                                        items_to_check.append(os.path.join(sub_path, f))
+                except Exception:
+                    pass
+            elif os.path.isfile(item_path):
                 items_to_check.append(item_path)
             elif os.path.isdir(item_path) and item in recent_folders:
                 try:

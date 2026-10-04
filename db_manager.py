@@ -220,17 +220,19 @@ def init_db():
         if conn:
             return_connection(conn)
 
-def save_to_db(filename: str, full_text: str, segments_list: List[Dict], 
-               recording_time: Optional[datetime] = None, summary: Optional[Dict] = None) -> bool:
+def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
+               recording_time: Optional[datetime] = None, summary: Optional[Dict] = None,
+               device: Optional[str] = None) -> bool:
     """
     保存转录记录到数据库（如果文件已存在则覆盖）
-    
+
     Args:
         filename: 文件名
         full_text: 完整文本
         segments_list: 分段列表
         recording_time: 录音时间（可选，如果为None则尝试从文件名解析）
         summary: 智能摘要（可选）
+        device: 录音来源设备（可选，由 5008 从上传请求 source_device 透传）
     """
     conn = None
     try:
@@ -259,8 +261,8 @@ def save_to_db(filename: str, full_text: str, segments_list: List[Dict],
         
         # 插入新记录
         cursor.execute(
-            "INSERT INTO transcriptions (filename, created_at, full_text, segments_json, recording_time, summary_json) VALUES (%s, %s, %s, %s, %s, %s)",
-            (filename, created_at, full_text, segments_json, recording_time, summary_json)
+            "INSERT INTO transcriptions (filename, created_at, full_text, segments_json, recording_time, summary_json, device) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (filename, created_at, full_text, segments_json, recording_time, summary_json, device)
         )
         
         conn.commit()
@@ -403,8 +405,8 @@ def get_baby_cry_events(offset: int = 0, limit: int = 100,
         cursor.execute(count_query, tuple(params))
         total_count = cursor.fetchone()[0]
         
-        # 查询分页数据（device: 从 event_files_json 首个文件路径提取 records/<设备名>/，裸路径历史数据显示 NULL）
-        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, LEFT(reason, 80) as reason_preview, reason_category, LEFT(advice, 120) as suggestion_preview, jsonb_array_length(event_files_json::jsonb) as file_count, CASE WHEN illustration_url IS NOT NULL THEN true ELSE FALSE END as has_illustration, substring(event_files_json::jsonb->>0 from '/records/([^/]+)/') as device FROM baby_cry_events"
+        # 查询分页数据（device: 优先读 device 列（新事件由 5008 透传写入）, 兜底从 event_files_json 文件路径正则提取）
+        query = "SELECT id, filename, created_at, recording_time, start_time, end_time, LEFT(reason, 80) as reason_preview, reason_category, LEFT(advice, 120) as suggestion_preview, jsonb_array_length(event_files_json::jsonb) as file_count, CASE WHEN illustration_url IS NOT NULL THEN true ELSE FALSE END as has_illustration, COALESCE(device, substring(event_files_json::text from 'records/([^/\"]+)/')) as device FROM baby_cry_events"
         query += where_sql + " ORDER BY COALESCE(recording_time, created_at) DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
         
@@ -509,24 +511,24 @@ def get_baby_cry_event_by_id(event_id: int) -> Dict:
         if conn:
             return_connection(conn)
 
-def save_cry_analysis(filename: str, start_time: float, end_time: float, reason: str, advice: str, 
-                      reason_category: str = None, event_files: list = None, audio_path = None, confidence: float = 0.0, details: list = None, illustration_url: str = None) -> bool:
-    """保存宝宝哭声分析结果"""
+def save_cry_analysis(filename: str, start_time: float, end_time: float, reason: str, advice: str,
+                      reason_category: str = None, event_files: list = None, audio_path = None, confidence: float = 0.0, details: list = None, illustration_url: str = None, device: str = None) -> bool:
+    """保存宝宝哭声分析结果（device: 录音来源设备, 由 5008 从上传请求 source_device 透传）"""
     conn = None
     try:
         conn = get_connection()
         if not conn:
             return False
-            
+
         cursor = conn.cursor()
         recording_time = parse_recording_time(filename)
         created_at = datetime.now(UTC_PLUS_8)
         event_files_json = json.dumps(event_files, ensure_ascii=False) if event_files else None
         details_json = json.dumps(details, ensure_ascii=False) if details else None
-        
+
         cursor.execute(
-            "INSERT INTO baby_cry_events (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url)
+            "INSERT INTO baby_cry_events (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url, device) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (filename, created_at, recording_time, start_time, end_time, reason, advice, reason_category, event_files_json, audio_path, confidence, details_json, illustration_url, device)
         )
         
         conn.commit()
