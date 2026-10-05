@@ -14,9 +14,8 @@
 # ==============================================
 
 MOUNT_POINT="/Volumes/download"
-SMB_URL="smb://admin:74123698cN@192.168.1.188/download"
-SMB_URL_CLI="//admin:74123698cN@192.168.1.188/download"
 CHECK_PATH="/Volumes/download/records"
+ENV_FILE="/Users/mac/asr-server/.env"
 PROBE_TIMEOUT=60
 UNMOUNT_TIMEOUT=30
 FAILS_NEEDED=5
@@ -32,6 +31,22 @@ trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"; }
 
+# ---- NAS SMB 凭据：从 .env 读取，绝不硬编码（.env 已 gitignore）----
+# 注：不用 source（.env 含引号/特殊字符、且 source 会执行任意内容），
+# 只按 key 精确取 4 个字段。
+_env_get() { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d '\r'; }
+NAS_HOST=$(_env_get NAS_SMB_HOST)
+NAS_SHARE=$(_env_get NAS_SMB_SHARE)
+NAS_USER=$(_env_get NAS_SMB_USER)
+NAS_PASS=$(_env_get NAS_SMB_PASSWORD)
+if [ -z "$NAS_HOST" ] || [ -z "$NAS_USER" ] || [ -z "$NAS_PASS" ]; then
+    log "❌ 无法从 $ENV_FILE 读取 NAS SMB 凭据（NAS_SMB_HOST/USER/PASSWORD），本轮跳过"
+    exit 1
+fi
+SMB_URL="smb://${NAS_USER}:${NAS_PASS}@${NAS_HOST}/${NAS_SHARE}"          # 仅内部使用，勿写日志/邮件
+SMB_URL_CLI="//${NAS_USER}:${NAS_PASS}@${NAS_HOST}/${NAS_SHARE}"
+SMB_URL_REDACTED="smb://${NAS_USER}:***@${NAS_HOST}/${NAS_SHARE}"        # 日志/告警用（脱敏）
+
 send_alert() {
     local now=$(date +%s)
     local last=$(cat "$ALERT_STATE" 2>/dev/null || echo 0)
@@ -42,7 +57,7 @@ import sys
 sys.path.insert(0, '/Users/mac/asr-server')
 from email_utils import send_email_sync
 send_email_sync('NAS 挂载自动重挂失败', '''SMB 看门狗连续重挂失败：
-目标: $SMB_URL
+目标: $SMB_URL_REDACTED
 日志: $LOG_FILE
 录音文件仍在上传到 NAS（不受影响），但 Mac 侧暂时无法读取处理。
 请检查 NAS SMB 服务。''')
