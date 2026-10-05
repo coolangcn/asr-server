@@ -44,6 +44,7 @@ LIST_TIMEOUT = 10        # 目录列举硬超时（秒）
 LOCK_FILE = "/tmp/asr_mirror_sync.lock"
 SEG_STATE = os.path.join(MIRROR, ".segments_pushed.json")  # 切片增量推送状态
 PROC_STATE = os.path.join(MIRROR, ".proc_pushed.json")     # processed/failed 备份推送状态
+FLUSH_EVERY = 200        # 每成功推送 N 个文件即增量落盘状态（push 被卡死/杀也不丢进度）
 
 _log_fh = None
 
@@ -253,7 +254,13 @@ def do_push():
         log("PUSH", "⛔ NAS 挂载无响应，本轮跳过（本地数据继续累积，恢复后自动补推）")
         return
 
+    # 状态只在循环外加载一次、跨设备合并（原实现把 load/save 放在设备循环内，
+    # 且 save 只保留当前设备的 alive 键，导致后处理的设备把先处理的整文件抹掉
+    # → 两台设备每轮互相清零 → 全量重推。见 do_push 内 seg 段注释。）
     proc_state = _load_state(PROC_STATE)
+    seg_state = _load_seg_state()
+    proc_dirty = 0   # 自上次落盘以来新增的成功推送数
+    seg_dirty = 0
 
     for dev in DEVICES:
         # 1. processed/failed 推 NAS 备份；本地保留 KEEP_LOCAL_DAYS 天
@@ -289,12 +296,19 @@ def do_push():
                 for n, rel, size in pending:
                     if copy_with_verify(os.path.join(date_dir, n), os.path.join(nas_date_dir, n)):
                         proc_state[rel] = size
+                        proc_dirty += 1
+                        if proc_dirty >= FLUSH_EVERY:
+                            _save_state(PROC_STATE, proc_state)
+                            proc_dirty = 0
 
         # 2. audio_segments 增量归档（本地保留 KEEP_LOCAL_DAYS 天作播放缓存）
+        # 【2026-10-05 修复】原实现有两处缺陷，导致两台设备的片段记录每轮互相清零 → 全量重推：
+        #   (a) 状态键不含设备前缀：rel 相对 MIRROR/<dev>/audio_segments，Pixel-5/6 共用命名空间；
+        #   (b) state 的 load/save 都在设备循环内，且 save 只保留"当前设备"的 alive 键
+        #       → 后处理的设备把先处理的整文件抹掉（DEVICES=[Pixel-6,Pixel-5] 时尤甚）。
+        # 现改为：键带设备前缀 dev/rel；循环外统一 load/save；每 FLUSH_EVERY 个增量落盘。
         seg = os.path.join(MIRROR, dev, "audio_segments")
         if os.path.isdir(seg):
-            state = _load_seg_state()
-            state_changed = False
             for date in sorted(d for d in os.listdir(seg) if not d.startswith(".")):
                 date_dir = os.path.join(seg, date)
                 if not os.path.isdir(date_dir):
@@ -308,32 +322,33 @@ def do_push():
                         if n.endswith(".part"):
                             continue
                         src = os.path.join(root, n)
-                        rel = os.path.join(rel_root, n).lstrip("./")
+                        rel = os.path.join(rel_root, n).lstrip("./")  # NAS 目标相对路径
+                        key = f"{dev}/{rel}"                          # 状态键：带设备前缀
                         try:
                             size = os.path.getsize(src)
                         except OSError:
                             continue
-                        if state.get(rel) == size:
+                        if seg_state.get(key) == size:
                             continue  # 已确认推送过，跳过（省掉大量 NAS 操作）
-                        pending.append((src, rel, size))
+                        pending.append((src, rel, key, size))
                 if not pending:
                     continue
-                os.makedirs(os.path.join(NAS, dev, "audio_segments", date), exist_ok=True)
-                for src, rel, size in pending:
+                for src, rel, key, size in pending:
                     dst = os.path.join(NAS, dev, "audio_segments", rel)
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    if copy_with_verify(src, dst):
-                        state[rel] = size
-                        state_changed = True
-            if state_changed:
-                # 只保留本地现存文件的记录，防状态无限膨胀
-                alive = set()
-                for root, _dirs, files in os.walk(seg):
-                    rel_root = os.path.relpath(root, seg)
-                    for n in files:
-                        if not n.endswith(".part"):
-                            alive.add(os.path.join(rel_root, n).lstrip("./"))
-                _save_seg_state({k: v for k, v in state.items() if k in alive})
+                    # 对账：NAS 已有同名同尺寸文件 → 直接补记状态、跳过重传
+                    # （一次性回收历史积压：如 Pixel-5 那批早已归档却被丢状态的片段）
+                    st = _stat_fp(dst)
+                    if st is not None and st[1] == size:
+                        seg_state[key] = size
+                        seg_dirty += 1
+                    else:
+                        os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        if copy_with_verify(src, dst):
+                            seg_state[key] = size
+                            seg_dirty += 1
+                    if seg_dirty >= FLUSH_EVERY:
+                        _save_seg_state(seg_state)
+                        seg_dirty = 0
 
     # processed/failed 状态：修剪到本地现存文件，防无限膨胀
     alive_proc = set()
@@ -348,6 +363,21 @@ def do_push():
                     for n in os.listdir(dd):
                         if n.endswith(".m4a"):
                             alive_proc.add(f"{dev}/{sub}/{date}/{n}")
+
+    # audio_segments 状态：同样修剪到本地现存文件（键含设备前缀）
+    alive_seg = set()
+    for dev in DEVICES:
+        seg = os.path.join(MIRROR, dev, "audio_segments")
+        if not os.path.isdir(seg):
+            continue
+        for root, _dirs, files in os.walk(seg):
+            rel_root = os.path.relpath(root, seg)
+            for n in files:
+                if not n.endswith(".part"):
+                    alive_seg.add(f"{dev}/{os.path.join(rel_root, n).lstrip('./')}")
+
+    # 末次落盘：修剪 + 补齐未达 FLUSH_EVERY 的尾部增量
+    _save_seg_state({k: v for k, v in seg_state.items() if k in alive_seg})
     _save_state(PROC_STATE, {k: v for k, v in proc_state.items() if k in alive_proc})
     log("PUSH", "✔ 推送轮完成")
 
