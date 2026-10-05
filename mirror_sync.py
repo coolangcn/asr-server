@@ -152,14 +152,6 @@ def _stat_fp(fp, timeout=5):
     return None if v is _TIMEOUT else v
 
 
-def is_upload_stable(fp, size_now):
-    """双 stat 稳定确认：间隔 STABILITY_PROBE_SEC 再测一次尺寸，
-    与 size_now 一致才认定上传完成（兜底防拉走上传中的半截文件）"""
-    time.sleep(STABILITY_PROBE_SEC)
-    st = _stat_fp(fp)
-    return st is not None and st[1] == size_now
-
-
 def free_gb():
     try:
         return shutil.disk_usage("/").free / (1024 ** 3)
@@ -191,15 +183,26 @@ def do_pull():
             os.makedirs(dst_dir, exist_ok=True)
 
             names = sorted(n for n in entries if n.endswith(".m4a"))
-            stale = []
+            # 2026-10-05 性能修复：稳定确认由"逐文件各 sleep(3)"改为"整批 sleep 一次"。
+            # 旧实现循环内调用 is_upload_stable()（内含 time.sleep(STABILITY_PROBE_SEC)），
+            # 284 个文件需约 852s 才完成一轮，表现为"拉取卡住零产出"。
+            # 语义不变：仍是"间隔 STABILITY_PROBE_SEC 两次 stat 尺寸一致"才认定上传完成。
+            cand = []
             for n in names:
-                fp = os.path.join(src_dir, n)
-                st = _stat_fp(fp)
+                st = _stat_fp(os.path.join(src_dir, n))
                 if st is None:
                     continue
                 mtime, size = st
-                if time.time() - mtime > PULL_MIN_AGE_SEC and is_upload_stable(fp, size):
-                    stale.append((n, fp))
+                if time.time() - mtime > PULL_MIN_AGE_SEC:
+                    cand.append((n, size))
+            if not cand:
+                continue
+            time.sleep(STABILITY_PROBE_SEC)
+            stale = []
+            for n, size in cand:
+                st = _stat_fp(os.path.join(src_dir, n))
+                if st is not None and st[1] == size:
+                    stale.append((n, os.path.join(src_dir, n)))
             if not stale:
                 continue
 

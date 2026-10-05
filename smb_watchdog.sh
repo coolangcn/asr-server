@@ -53,7 +53,11 @@ with_timeout() {
     local t="$1"; shift
     "$@" &
     local pid=$!
-    ( sleep "$t"; kill -9 $pid 2>/dev/null ) & local killer=$!
+    # 【2026-10-05】killer 子 shell 必须重定向 stdout/stderr：否则它会继承调用方
+    # （如 `with_timeout ... | tr` 或 $(...) 命令替换）的管道写端，python 早已退出，
+    # 但读端要等 killer 的 sleep 结束（最长 $t 秒）才见到 EOF——每次探测白等一整个
+    # 超时时长（实测 60s）。重定向后写端随 python 退出即关闭。
+    ( sleep "$t"; kill -9 $pid 2>/dev/null ) >/dev/null 2>&1 & local killer=$!
     # 轮询等待：SMB 卡死时子进程处于 D 状态（不可中断），kill -9 无法终止，
     # 传统 wait 会无限等下去拖死整个看门狗 —— 超时后必须放弃等待继续走
     local waited=0
@@ -78,6 +82,11 @@ probe_alive() {
     # 因此探测必须用 python3 而非 ls。此前探测 100% 假失败，导致看门狗每 7.5 分钟
     # 强拆重挂一次健康挂载（截断病反复发作的重大嫌疑）。
     # 注：mount_smbfs/unmount 走内核 syscall 不受 TCC 限制，无需更换。
+    # 【2026-10-05 加固】先判挂载表：挂载掉线后 /Volumes/download 会残留空壳目录
+    # （records 下仍有 Pixel-5/6、Sony-1/2 等 ≥3 个条目），仅靠"列举条目数≥3"
+    # 会把空壳误判为健康——2026-10-05 03:58 卸载后 4.5h 无人自愈的根因。
+    # mount 判定才是真信号（is_mounted）。
+    is_mounted || return 1
     with_timeout $PROBE_TIMEOUT /Users/mac/asr_env/bin/python3 -c "import os; os.listdir('$CHECK_PATH')" > /dev/null 2>&1 || return 1
     # 目录枚举探测：SMB 会话半损坏时会"列表截断"（能看到挂载但条目骤减，
     # 且截断状态稳定不恢复）。records/ 正常有 Sony-1/2/3 等条目，
@@ -127,8 +136,14 @@ send_email_sync('B 轨监听假死已自动恢复', '''检测到 5008 B 轨监�
     # 拉起服务：kickstart 仅对已加载服务有效（bootout 后找不到），失败则 bootstrap 兜底
     launchctl kickstart -k gui/501/com.asr.server 2>>"$LOG_FILE" || \
         launchctl bootstrap gui/501 "$HOME/Library/LaunchAgents/com.asr.server.plist" >> "$LOG_FILE" 2>&1
-    touch "$B_HEARTBEAT"   # 给新进程宽限期（模型加载 ~60s 后监听线程接管心跳）
-    log "✅ [B轨心跳] 自愈动作完成（杀5008+重挂+拉起），等待新进程接管心跳"
+    # 【2026-10-05 加固】仅当挂载确实恢复才刷新心跳：重挂失败时刷新心跳会伪造"一切正常"，
+    # 让 B 轨假死探测器在挂载仍死的情况下被刷活、不再触发（2026-10-05 03:58 实际发生）。
+    if is_mounted; then
+        touch "$B_HEARTBEAT"   # 给新进程宽限期（模型加载 ~60s 后监听线程接管心跳）
+        log "✅ [B轨心跳] 自愈动作完成（杀5008+重挂+拉起），等待新进程接管心跳"
+    else
+        log "❌ [B轨心跳] 重挂仍未成功，心跳保持停滞，交由主流程修复挂载"
+    fi
 }
 
 check_btrack_heartbeat() {

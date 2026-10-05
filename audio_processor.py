@@ -337,9 +337,10 @@ def _monitor_loop():
                             continue
 
                     logger.info(f"  📤 [{file_idx}/{len(files)}] {filename} — 开始处理")
-                    success = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
-                    if success:
-                        mark_file_processed_a(filename, status="b_catchup_success", device=device)
+                    result = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
+                    if result:
+                        mark_file_processed_a(filename, status=_b_result_status(result, "b_catchup_success"),
+                                              device=device)
                     catchup_processed += 1
                 except Exception as e:
                     logger.error(f"  ❌ [{file_idx}/{len(files)}] {filename} — 处理失败: {e}")
@@ -410,9 +411,10 @@ def _monitor_loop():
                     logger.info(f"🔍 [Real-time·{device}] 发现 {len(files_to_process)} 个新文件")
                     for filename, filepath in files_to_process:
                         try:
-                            success = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
-                            if success:
-                                mark_file_processed_a(filename, status="b_realtime_success", device=device)
+                            result = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
+                            if result:
+                                mark_file_processed_a(filename, status=_b_result_status(result, "b_realtime_success"),
+                                                      device=device)
                                 known.add(filename)  # 只有成功才入缓存；失败（网络异常等）下一轮重扫自动重试
                         except Exception as e:
                             logger.error(f"处理文件 {filename} 失败: {e}")
@@ -423,8 +425,27 @@ def _monitor_loop():
 
         time.sleep(FileMonitorConfig.SCAN_INTERVAL)
 
+# 【2026-10-04】B 轨处理结果 → A 轨标记状态映射。
+# dropped（掉队防线，>6h 归档但从未送检）才是真·待补救；no_speech/night_skip 表示
+# 文件已按预期送检处理完（只是无声或夜间降级未转写），绝不能计入待补救——否则每天
+# 新增的静音录音会让 web_viewer 的「待补救」数单调增长且永远降不到 0（用户反馈）。
+_B_RESULT_STATUS = {
+    "no_speech": "b_no_speech",
+    "night_skip": "b_night_skip",
+    "dropped": "b_dropped_history",
+}
+
+
+def _b_result_status(result, base_success):
+    """把 _process_one_file_b 的返回值翻译成 A 轨标记状态。
+    base_success 为 'b_catchup_success'（catch-up）或 'b_realtime_success'（实时）。"""
+    return _B_RESULT_STATUS.get(result, base_success)
+
+
 def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
-    """处理单个音频文件（B轨），返回是否成功"""
+    """处理单个音频文件（B轨）。
+    返回 str 表示已处理完（'success' 有语音入库 / 'no_speech' 无声 / 'night_skip' 夜间降级 /
+    'dropped' 历史掉队归档未送检）；返回 False 表示失败，文件保留原处等下轮重试。"""
     # 1. 检查录音时间
     recording_time = parse_recording_time(filename)
     _skip_asr = False
@@ -448,7 +469,7 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
         if _age_sec > 6 * 3600:
             logger.info(f"⏭️ 跳过历史掉队文件 (录音于 {_age_sec/3600:.1f} 小时前): {filename}")
             _move_file(filepath, filename, processed_dir, recording_time)
-            return True
+            return "dropped"  # 归档但从未送检 —— 唯一真·待补救来源，用 b_dropped_history 显式标记
 
     logger.info(f"📤 开始处理: {filename}")
     
@@ -469,7 +490,11 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
             result = response.json()
             logger.info(f"✅ 转录完成: {filename} ({len(result.get('full_text', ''))} 字)")
             _move_file(filepath, filename, processed_dir, recording_time)
-            return True
+            if _skip_asr:
+                return "night_skip"  # 夜间降级：已送检（哭声检测照跑），但未转写，不算待补救
+            if not (result.get('segments') or []):
+                return "no_speech"  # 已送检、VAD 0 段：分析已完成，只是无声，不算待补救
+            return "success"
         elif response.status_code == 401:
             # 鉴权失败属配置问题，绝非文件本身有问题——绝不能把录音挪进 failed/ 隔离
             logger.error(

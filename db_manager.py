@@ -57,28 +57,66 @@ def init_pool(db_url: str = None):
                 return False
     return False
 
+def _conn_alive(conn):
+    """探活：连接未关闭且能跑通最小查询（SELECT 1）。
+    【2026-10-04 事故】NAS(192.168.1.188:5433) 网络抖动后池内存活连接全部失效，
+    若不探活，SimpleConnectionPool 会把死连接反复发出去，导致所有写入持续超时且
+    永不恢复（只能重启 5008）。"""
+    try:
+        if conn is None or conn.closed:
+            return False
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        conn.rollback()  # 清掉 SELECT 开启的事务，避免把连接留在事务中
+        return True
+    except Exception:
+        return False
+
 def get_connection(max_retries=3, retry_delay=0.5):
-    """从连接池获取连接，带重试机制"""
-    if connection_pool:
-        for attempt in range(max_retries):
-            try:
-                return connection_pool.getconn()
-            except psycopg2.pool.PoolError as e:
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(retry_delay * (attempt + 1))
-                    continue
-                print(f"[DB Error] 连接池耗尽，无法获取连接 (重试{max_retries}次后)")
-                return None
-            except Exception as e:
-                print(f"[DB Error] 获取连接异常: {e}")
-                return None
+    """从连接池获取连接，带重试机制；池内死连接就地丢弃，不返回给调用方。"""
+    if not connection_pool:
+        return None
+    for attempt in range(max_retries):
+        conn = None
+        try:
+            conn = connection_pool.getconn()
+        except psycopg2.pool.PoolError:
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+            print(f"[DB Error] 连接池耗尽，无法获取连接 (重试{max_retries}次后)")
+            return None
+        except Exception as e:
+            print(f"[DB Error] 获取连接异常: {e}")
+            return None
+        if _conn_alive(conn):
+            return conn
+        # 死连接：立即销毁并从池中移除，换一条重试
+        print(f"[DB] 检测到失效连接，已丢弃并重试 ({attempt + 1}/{max_retries})")
+        try:
+            connection_pool.putconn(conn, close=True)
+        except Exception:
+            pass
+        if attempt < max_retries - 1:
+            import time
+            time.sleep(retry_delay * (attempt + 1))
     return None
 
 def return_connection(conn):
-    """归还连接到连接池"""
-    if connection_pool and conn:
-        connection_pool.putconn(conn)
+    """归还连接到连接池；已关闭/失效的连接直接销毁，绝不把死连接塞回池里。"""
+    if not connection_pool or conn is None:
+        return
+    try:
+        if conn.closed:
+            connection_pool.putconn(conn, close=True)
+        else:
+            connection_pool.putconn(conn)
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 def parse_recording_time(filename: str) -> Optional[datetime]:
     """
