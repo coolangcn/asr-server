@@ -14,7 +14,11 @@
 
 断点续传：已分析/已打标的文件自动跳过。
 --dates 默认 auto：自动发现各设备下已存在的日期目录（不再写死日期，避免扫过期范围）。
-挂载守卫：SMB 不健康时立即中止（exit 3），绝不假跑。
+源目录：默认 auto=本地镜像优先、NAS 兜底（同名文件本地存在就读本地，省 NAS IO；本地
+        没有的旧归档才读 NAS）。镜像 push 已改为留档近 KEEP_LOCAL_DAYS 天 processed/，
+        故新归档本地即可读，留档前的旧归档仍从 NAS 兜底（并集，待补救数不虚低）。
+        --source local 仅本地；--source nas 仅 NAS。
+守卫：主源不可读时立即中止（exit 3），绝不假跑。
 """
 import os, sys, glob, re, time, argparse, shutil, subprocess
 from datetime import datetime
@@ -30,7 +34,11 @@ from db_manager import is_file_processed_a, mark_file_processed_a, init_pool, DA
 ASR = "http://localhost:5008"
 TOKEN = (os.getenv("ADMIN_TOKEN") or "").strip()
 HEADERS = {"X-Admin-Token": TOKEN} if TOKEN else {}
-RECORDS_ROOT = "/Volumes/download/records"
+MIRROR_ROOT = "/Users/mac/asr_mirror/records"   # 本地镜像（首选源，无 SMB 依赖）
+NAS_ROOT = "/Volumes/download/records"          # NAS 归档（兜底 + --source nas 单源）
+# 顺序 = 优先级：auto 先读本地镜像，本地没有的文件（留档前的旧归档）再回退 NAS
+SOURCE_ROOTS = [MIRROR_ROOT, NAS_ROOT]
+RECORDS_ROOT = MIRROR_ROOT                       # 主源（默认模式收件箱 / 日志展示）
 
 LOG = os.path.join(RECORDS_ROOT, "..", "asr_backup") if False else None  # 日志走 stdout
 
@@ -39,22 +47,27 @@ def log(msg):
     print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 
-def mount_healthy():
-    """挂载守卫：必须是真正的挂载点 + records 根可列举（子线程超时防卡死）。
-    仅列目录会被残留空壳目录骗过——SMB 卸载后 /Volumes/download 仍在、records/ 下
-    仍有 Pixel-5/6 等条目，脚本会继续"假跑"、每个文件各报一次 I/O 错（2026-10-05
-    08:48 一次刷出 1262 条错误）。故先判挂载表（os.path.ismount），再列目录。"""
+def _effective_roots():
+    """auto 模式下 NAS 掉线不应阻断本地补救：未真挂载则剔除 NAS，只留本地镜像。
+    仅列目录会被残留空壳目录骗过（SMB 卸载后 /Volumes/download 仍在、records/ 下仍有
+    Pixel-5/6 等条目，2026-10-05 一次刷出 1262 条假 I/O 错），故用 os.path.ismount 判真挂载。"""
+    roots = list(SOURCE_ROOTS)
+    if NAS_ROOT in roots and not os.path.ismount(os.path.dirname(NAS_ROOT)):
+        roots = [r for r in roots if r != NAS_ROOT]
+    return roots
+
+
+def source_healthy():
+    """主源可用性守卫（子线程超时防卡死）。主源不可读即中止，绝不假跑。"""
     import threading
-    result = {"ok": False}
-    mount_point = os.path.dirname(RECORDS_ROOT)
+    roots = _effective_roots()
+    result = {"ok": bool(roots)}
 
     def _probe():
         try:
-            if not os.path.ismount(mount_point):
-                result["ok"] = False
-                return
-            os.listdir(RECORDS_ROOT)
-            result["ok"] = True
+            for root in roots:
+                os.listdir(root)
+            result["ok"] = bool(roots)
         except Exception:
             result["ok"] = False
 
@@ -86,33 +99,38 @@ def load_analyzed_pairs():
 
 
 def gather_jobs(devices, dates):
-    """收集待回填文件：在位（未归档）、未打标、日期匹配"""
+    """收集待回填文件：在位（未归档）、未打标、日期匹配。多源按优先级去重（本地镜像优先）"""
     jobs = []
     for dev in devices:
         for date in dates:
-            d = os.path.join(RECORDS_ROOT, dev, date)
-            files = sorted(glob.glob(os.path.join(d, "*.m4a")))
-            for fp in files:
-                fn = os.path.basename(fp)
-                if is_file_processed_a(fn, device=dev):
-                    continue
-                jobs.append((dev, date, fn, fp))
+            seen = set()
+            for root in _effective_roots():
+                d = os.path.join(root, dev, date)
+                for fp in sorted(glob.glob(os.path.join(d, "*.m4a"))):
+                    fn = os.path.basename(fp)
+                    if fn in seen:
+                        continue
+                    seen.add(fn)
+                    if is_file_processed_a(fn, device=dev):
+                        continue
+                    jobs.append((dev, date, fn, fp))
     jobs.sort(key=lambda x: (x[1], x[2]))  # 按日期+文件名时间顺序
     return jobs
 
 
 def discover_dates(devices, from_processed):
-    """auto 模式：列出各设备目录下形如 YYYY-MM-DD 的子目录（去重升序）。
+    """auto 模式：列出各设备目录下形如 YYYY-MM-DD 的子目录（多源去重升序）。
     默认模式看 <设备>/<日期>/，补救模式看 <设备>/processed/<日期>/。"""
     dates = set()
-    for dev in devices:
-        base = os.path.join(RECORDS_ROOT, dev, "processed" if from_processed else "")
-        try:
-            for item in os.listdir(base):
-                if re.match(r"^\d{4}-\d{2}-\d{2}$", item):
-                    dates.add(item)
-        except Exception:
-            continue
+    for root in _effective_roots():
+        for dev in devices:
+            base = os.path.join(root, dev, "processed" if from_processed else "")
+            try:
+                for item in os.listdir(base):
+                    if re.match(r"^\d{4}-\d{2}-\d{2}$", item):
+                        dates.add(item)
+            except Exception:
+                continue
     return sorted(dates)
 
 
@@ -138,7 +156,9 @@ def load_status_map():
 
 
 def gather_jobs_processed(devices, dates):
-    """收集已归档但「从未送检」的积压文件（catch-up 掉队防线归档后的补救场景）"""
+    """收集已归档但「从未送检」的积压文件（catch-up 掉队防线归档后的补救场景）。
+    多源按优先级去重：同名文件本地镜像存在就读本地路径（省 NAS IO），本地没有的
+    （push 留档前的旧归档）回退 NAS——并集保证待补救数不虚低。"""
     analyzed = load_analyzed_pairs()
     statuses = load_status_map()
     log(f"transcriptions 已分析文件名: {len(analyzed)} 个 | processed_files_a 标记: {len(statuses)} 条")
@@ -146,16 +166,21 @@ def gather_jobs_processed(devices, dates):
     jobs = []
     for dev in devices:
         for date in dates:
-            d = os.path.join(RECORDS_ROOT, dev, "processed", date)
-            for fp in sorted(glob.glob(os.path.join(d, "*.m4a"))):
-                fn = os.path.basename(fp)
-                if fn in analyzed:
-                    continue  # 已入库，跳过
-                st = statuses.get(f"{dev}/{fn}", statuses.get(fn))
-                if st is not None and st != "b_dropped_history":
-                    skipped_handled += 1  # 已送检处理完（无声/夜间/成功），非待补救
-                    continue
-                jobs.append((dev, date, fn, fp))
+            seen = set()
+            for root in _effective_roots():
+                d = os.path.join(root, dev, "processed", date)
+                for fp in sorted(glob.glob(os.path.join(d, "*.m4a"))):
+                    fn = os.path.basename(fp)
+                    if fn in seen:
+                        continue
+                    seen.add(fn)   # 去重：先到的源优先（本地镜像在前）
+                    if fn in analyzed:
+                        continue  # 已入库，跳过
+                    st = statuses.get(f"{dev}/{fn}", statuses.get(fn))
+                    if st is not None and st != "b_dropped_history":
+                        skipped_handled += 1  # 已送检处理完（无声/夜间/成功），非待补救
+                        continue
+                    jobs.append((dev, date, fn, fp))
     if skipped_handled:
         log(f"其中已正确处理（无声/夜间/已入库标记）不计入待补救: {skipped_handled} 个")
     jobs.sort(key=lambda x: (x[1], x[2]))
@@ -170,9 +195,20 @@ def main():
     ap.add_argument("--from-processed", action="store_true",
                     help="扫 processed/ 已归档积压（重启后补救模式），文件不移动")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--source", choices=["auto", "local", "nas"], default="auto",
+                    help="录音源：auto=本地镜像优先+NAS兜底(默认)；local=仅本地；nas=仅NAS")
     args = ap.parse_args()
 
+    global RECORDS_ROOT, SOURCE_ROOTS
+    if args.source == "local":
+        SOURCE_ROOTS = [MIRROR_ROOT]
+    elif args.source == "nas":
+        SOURCE_ROOTS = [NAS_ROOT]
+    else:
+        SOURCE_ROOTS = [MIRROR_ROOT, NAS_ROOT]
+    RECORDS_ROOT = SOURCE_ROOTS[0]
     devices = [d.strip() for d in args.devices.split(',') if d.strip()]
+    log(f"录音源: {args.source} → {', '.join(SOURCE_ROOTS)}")
 
     # 【2026-10-04 修复】本脚本是独立进程，之前从未调用 init_pool()，导致
     # db_manager.connection_pool 为 None → mark_file_processed_a / is_file_processed_a
@@ -181,8 +217,8 @@ def main():
     if not init_pool():
         log("⚠️ 数据库连接池初始化失败——本次补救将无法写回处理标记，无声文件会重复滞留。")
 
-    if not mount_healthy():
-        log("⛔ SMB 挂载不健康，中止（exit 3）。挂载恢复后重跑本脚本断点续传。")
+    if not source_healthy():
+        log(f"⛔ 源目录不可读（{RECORDS_ROOT}），中止（exit 3）。恢复后重跑本脚本断点续传。")
         sys.exit(3)
 
     if args.dates.strip().lower() == "auto":
@@ -209,8 +245,8 @@ def main():
     ok = fail = 0
     t0 = time.time()
     for i, (dev, date, fn, fp) in enumerate(jobs, 1):
-        if not mount_healthy():
-            log(f"⛔ 挂载中途失联，中止（exit 3）。已成功 {ok} 失败 {fail}，剩余 {len(jobs)-i+1} 个待续传。")
+        if not source_healthy():
+            log(f"⛔ 源目录中途不可读，中止（exit 3）。已成功 {ok} 失败 {fail}，剩余 {len(jobs)-i+1} 个待续传。")
             sys.exit(3)
         if (i - 1) % 15 == 0 and i > 1:
             # 每推进 15 个重打队列预览: web_viewer 的快照只有 20 个, 耗尽后待办列表会空

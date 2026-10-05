@@ -43,6 +43,7 @@ COPY_TIMEOUT = 180       # 单文件复制硬超时（秒）
 LIST_TIMEOUT = 10        # 目录列举硬超时（秒）
 LOCK_FILE = "/tmp/asr_mirror_sync.lock"
 SEG_STATE = os.path.join(MIRROR, ".segments_pushed.json")  # 切片增量推送状态
+PROC_STATE = os.path.join(MIRROR, ".proc_pushed.json")     # processed/failed 备份推送状态
 
 _log_fh = None
 
@@ -221,22 +222,30 @@ def do_pull():
 
 
 # ==================== push：本地 → NAS 备份 ====================
-def _load_seg_state():
+def _load_state(path):
     try:
-        with open(SEG_STATE, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
 
 
-def _save_seg_state(state):
+def _save_state(path, state):
     try:
-        tmp = SEG_STATE + ".tmp"
+        tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f)
-        os.replace(tmp, SEG_STATE)
+        os.replace(tmp, path)
     except Exception as e:
-        log("PUSH", f"⚠️ 切片状态保存失败: {e}")
+        log("PUSH", f"⚠️ 状态保存失败 {path}: {e}")
+
+
+def _load_seg_state():
+    return _load_state(SEG_STATE)
+
+
+def _save_seg_state(state):
+    _save_state(SEG_STATE, state)
 
 
 def do_push():
@@ -244,8 +253,15 @@ def do_push():
         log("PUSH", "⛔ NAS 挂载无响应，本轮跳过（本地数据继续累积，恢复后自动补推）")
         return
 
+    proc_state = _load_state(PROC_STATE)
+
     for dev in DEVICES:
-        # 1. processed/failed 推 NAS，校验通过后删本地
+        # 1. processed/failed 推 NAS 备份；本地保留 KEEP_LOCAL_DAYS 天
+        # 【2026-10-05】不再"推完即删"：backfill_pixels.py 已改读本地镜像 processed/，
+        # 需本地留档，否则补救无源可读。本地过期由 do_cleanup() 按 mtime 兜底清理。
+        # 幂等靠本地状态文件（不是 NAS stat）：已备份的直接跳过，稳态下本轮对 NAS
+        # 零访问；且有新文件才 makedirs——否则每 5 分钟重复 NAS 调用会推活挂死的
+        # SMB 会话（2026-10-05 09:07/09:26 各卡死一个 push 进程）。
         for sub in ("processed", "failed"):
             base = os.path.join(MIRROR, dev, sub)
             if not os.path.isdir(base):
@@ -254,20 +270,25 @@ def do_push():
                 date_dir = os.path.join(base, date)
                 if not os.path.isdir(date_dir):
                     continue
-                nas_date_dir = os.path.join(NAS, dev, sub, date)
-                os.makedirs(nas_date_dir, exist_ok=True)
+                pending = []
                 for n in sorted(os.listdir(date_dir)):
                     if not n.endswith(".m4a"):
                         continue
-                    src = os.path.join(date_dir, n)
-                    if copy_with_verify(src, os.path.join(nas_date_dir, n)):
-                        _silent_rm(src)  # 已安全落 NAS，删本地
-                # 清空日期目录
-                try:
-                    if not os.listdir(date_dir):
-                        os.rmdir(date_dir)
-                except OSError:
-                    pass
+                    try:
+                        size = os.path.getsize(os.path.join(date_dir, n))
+                    except OSError:
+                        continue
+                    rel = f"{dev}/{sub}/{date}/{n}"
+                    if proc_state.get(rel) == size:
+                        continue  # 已备份（本地记录），跳过——不碰 NAS
+                    pending.append((n, rel, size))
+                if not pending:
+                    continue  # 该日期无新文件 → 本轮完全不访问 NAS
+                nas_date_dir = os.path.join(NAS, dev, sub, date)
+                os.makedirs(nas_date_dir, exist_ok=True)
+                for n, rel, size in pending:
+                    if copy_with_verify(os.path.join(date_dir, n), os.path.join(nas_date_dir, n)):
+                        proc_state[rel] = size
 
         # 2. audio_segments 增量归档（本地保留 KEEP_LOCAL_DAYS 天作播放缓存）
         seg = os.path.join(MIRROR, dev, "audio_segments")
@@ -278,8 +299,9 @@ def do_push():
                 date_dir = os.path.join(seg, date)
                 if not os.path.isdir(date_dir):
                     continue
-                nas_date_dir = os.path.join(NAS, dev, "audio_segments", date)
-                os.makedirs(nas_date_dir, exist_ok=True)
+                # 先本地筛出待推文件；无新增则整目录跳过，不再对 NAS 做任何调用
+                # （原实现每轮都 makedirs，稳态下纯属空转，还会推活挂死的 SMB 会话）
+                pending = []
                 for root, _dirs, files in os.walk(date_dir):
                     rel_root = os.path.relpath(root, seg)
                     for n in files:
@@ -292,12 +314,17 @@ def do_push():
                         except OSError:
                             continue
                         if state.get(rel) == size:
-                            continue  # 已确认推送过，跳过（省掉大量 SMB stat）
-                        dst = os.path.join(NAS, dev, "audio_segments", rel)
-                        os.makedirs(os.path.dirname(dst), exist_ok=True)
-                        if copy_with_verify(src, dst):
-                            state[rel] = size
-                            state_changed = True
+                            continue  # 已确认推送过，跳过（省掉大量 NAS 操作）
+                        pending.append((src, rel, size))
+                if not pending:
+                    continue
+                os.makedirs(os.path.join(NAS, dev, "audio_segments", date), exist_ok=True)
+                for src, rel, size in pending:
+                    dst = os.path.join(NAS, dev, "audio_segments", rel)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    if copy_with_verify(src, dst):
+                        state[rel] = size
+                        state_changed = True
             if state_changed:
                 # 只保留本地现存文件的记录，防状态无限膨胀
                 alive = set()
@@ -307,6 +334,21 @@ def do_push():
                         if not n.endswith(".part"):
                             alive.add(os.path.join(rel_root, n).lstrip("./"))
                 _save_seg_state({k: v for k, v in state.items() if k in alive})
+
+    # processed/failed 状态：修剪到本地现存文件，防无限膨胀
+    alive_proc = set()
+    for dev in DEVICES:
+        for sub in ("processed", "failed"):
+            base = os.path.join(MIRROR, dev, sub)
+            if not os.path.isdir(base):
+                continue
+            for date in os.listdir(base):
+                dd = os.path.join(base, date)
+                if os.path.isdir(dd):
+                    for n in os.listdir(dd):
+                        if n.endswith(".m4a"):
+                            alive_proc.add(f"{dev}/{sub}/{date}/{n}")
+    _save_state(PROC_STATE, {k: v for k, v in proc_state.items() if k in alive_proc})
     log("PUSH", "✔ 推送轮完成")
 
     do_cleanup()

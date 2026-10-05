@@ -1795,9 +1795,20 @@ def _pixel_backlog_scan_once():
 
 
 def _pixel_backlog_loop():
+    """【2026-10-05】由"每 5 分钟盲扫"改为"事件驱动 + 每小时兜底"。
+    单次 dry-run 要拉 transcriptions(~4万行)+processed_files_a(~27万行) 全表比对，
+    5 分钟一次纯属重复浪费；待补救数只在两个时机变化——补救批次跑完、或新归档产生。
+    故：批次 running→结束 时立即刷新，另加 1 小时兜底刷新。"""
+    _pixel_backlog_scan_once()
+    was_running = _pixel_backfill_running()
     while True:
-        _pixel_backlog_scan_once()
-        time.sleep(300)  # 5 分钟一次；值本身廉价，只为避频繁扫 NAS
+        time.sleep(60)
+        running = _pixel_backfill_running()
+        if was_running and not running:
+            _pixel_backlog_scan_once()   # 补救批次刚结束 → 立刻刷新
+        elif time.time() - _pixel_backlog_snapshot()["scanned_at"] >= 3600:
+            _pixel_backlog_scan_once()   # 兜底：至少每小时一次
+        was_running = running
 
 
 def _pixel_backlog_snapshot():
@@ -3536,7 +3547,7 @@ if __name__ == "__main__":
         
         # 启动后台状态监控
         start_status_monitor()
-        # 启动 Pixel 待补救数后台扫描（5 分钟一次，供「Pixel 转录补救」卡亮黄提醒）
+        # 启动 Pixel 待补救数后台扫描（事件驱动+每小时兜底，供「Pixel 转录补救」卡亮黄提醒）
         threading.Thread(target=_pixel_backlog_loop, daemon=True).start()
 
         logger_web.info(f"🌐 [Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}")
