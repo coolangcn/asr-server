@@ -111,6 +111,114 @@
         .parallel-light.on .pl-label { color: #d1d5db; }
         @keyframes plPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
 
+        /* ===== 任务卡架构【2026-10-04 补跑/转写 Tab 重设计】===== */
+        .task-card {
+            position: relative;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 12px 32px -14px rgba(0,0,0,0.5);
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+        /* 每张卡一条左侧主题色，提升辨识度【2026-10-04 视觉重做】 */
+        .task-card::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 3px;
+            background: var(--accent, rgba(148,163,184,0.45));
+            opacity: .9;
+        }
+        .task-card.cry    { --accent: #a78bfa; }
+        .task-card.pixel  { --accent: #38bdf8; }
+        .task-card.btrack { --accent: #22d3ee; }
+        .task-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0));
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .task-head .pulse-ring { width: 36px; height: 36px; flex-shrink: 0; }
+        .task-head .pulse-ring i { font-size: 0.9rem; }
+        .task-head .pulse-ring.stopped { background: rgba(255,255,255,0.05); }
+        .task-head .pulse-ring.stopped i { color: var(--accent, var(--text-secondary)); }
+        .task-head .status-badge { padding: 4px 8px; font-size: 0.56rem; flex-shrink: 0; }
+        .task-head .status-badge.running { background: rgba(16,185,129,.16); color: #34d399; }
+        .task-head .status-badge.paused  { background: rgba(245,158,11,.16); color: #fbbf24; }
+        .task-head .status-badge.stopped { background: rgba(148,163,184,.13); color: #94a3b8; }
+        .task-head .status-badge.done    { background: rgba(16,185,129,.15); color: #34d399; }
+        /* 摘要行彩色战绩数字，替代原来的 ✅⏭❌ emoji 堆叠 */
+        .task-summary .s-ok   { color: #34d399; font-weight: 600; }
+        .task-summary .s-skip { color: #fbbf24; font-weight: 600; }
+        .task-summary .s-err  { color: #f87171; font-weight: 600; }
+        /* 长值（如时间 21:07）自动收小，避免撑破 chip */
+        .info-chip-value.sm { font-size: 0.98rem; letter-spacing: -0.2px; }
+        .task-title-wrap { flex: 1; min-width: 0; }
+        .task-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+        .task-sub {
+            font-size: 0.66rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .task-chevron {
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            transition: transform 0.25s ease;
+            flex-shrink: 0;
+            margin-left: 4px;
+        }
+        .task-card.open .task-chevron { transform: rotate(180deg); }
+        .task-summary { padding: 0 14px 10px 60px; font-size: 0.72rem; color: var(--text-secondary); }
+        /* 【2026-10-04】折叠改用 max-height（此前的 grid-template-rows:0fr→1fr 在
+           overflow:hidden 子元素上实测不展开，点击后 open 类生效但高度恒为 0） */
+        .task-body { overflow: hidden; max-height: 0; transition: max-height 0.32s ease; }
+        .task-card.open .task-body { max-height: 1600px; }
+        .task-body-inner { padding: 0 14px; }
+        .task-card.open .task-body-inner { padding-bottom: 14px; }
+        /* 卡内组件轻量化：去掉外层卡片自带的外壳 */
+        .task-card .status-card, .task-card .content-card {
+            background: transparent;
+            backdrop-filter: none;
+            border: none;
+            box-shadow: none;
+            border-radius: 0;
+            padding: 12px 0 0;
+            margin-bottom: 0;
+        }
+        .task-card .eta-card { margin-bottom: 10px; padding: 12px 16px; }
+        .task-card .eta-icon { width: 38px; height: 38px; font-size: 1rem; border-radius: 10px; }
+        .task-card .eta-value { font-size: 1.15rem; }
+        .task-card .action-buttons { margin: 12px 14px 14px; }
+        /* 【2026-10-04】Pixel 待补救告警条：放在 .task-body 之外，折叠态也能看到真实待补救数 */
+        .backlog-bar {
+            display: flex; align-items: center; gap: 8px;
+            padding: 0 14px 10px 60px;
+            font-size: 0.72rem; color: var(--text-secondary);
+        }
+        .backlog-bar .backlog-text { flex: 1; min-width: 0; line-height: 1.3; }
+        .backlog-bar.warn { color: #fbbf24; }
+        .backlog-bar .action-btn.sm { flex: 0 0 auto; padding: 6px 10px; font-size: 0.7rem; border-radius: 9px; }
+        /* B轨 6 chip 紧凑网格 */
+        .track-b-info.compact .info-chip { min-width: 30%; }
+
         .header h1 {
             font-size: 1.5rem;
             font-weight: 700;
@@ -553,49 +661,64 @@
             text-transform: uppercase;
         }
 
-        /* 操作按钮 */
+        /* 操作按钮：紧凑统一的分段控件风格【2026-10-04 视觉重做】
+           旧版是三个大色块（含 .refresh 无背景 → 回退到浏览器默认白底），在高饱和渐变下廉价感重 */
         .action-buttons {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             margin-bottom: 16px;
         }
 
         .action-btn {
             flex: 1;
-            padding: 14px 16px;
-            border-radius: 14px;
-            border: none;
+            padding: 10px 12px;
+            border-radius: 11px;
+            border: 1px solid rgba(255,255,255,0.10);
+            background: rgba(255,255,255,0.05);
+            color: var(--text-secondary);
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
+            letter-spacing: 0.2px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            transition: all 0.3s ease;
+            gap: 6px;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+            -webkit-tap-highlight-color: transparent;
         }
+        .action-btn:active:not(:disabled) { transform: scale(0.97); }
 
         .action-btn.start {
-            background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
-            color: white;
+            background: rgba(16, 185, 129, 0.14);
+            border-color: rgba(16, 185, 129, 0.34);
+            color: #34d399;
+        }
+
+        .action-btn.refresh {
+            background: rgba(148, 163, 184, 0.10);
+            border-color: rgba(148, 163, 184, 0.24);
+            color: #cbd5e1;
         }
 
         .action-btn.stop {
-            background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);
-            color: white;
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.30);
+            color: #f87171;
         }
 
         .action-btn.pause {
-            background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
-            color: white;
+            background: rgba(245, 158, 11, 0.14);
+            border-color: rgba(245, 158, 11, 0.32);
+            color: #fbbf24;
         }
 
         .action-btn:disabled {
-            opacity: 0.5;
+            opacity: 0.35;
             cursor: not-allowed;
         }
 
-        .action-btn i { font-size: 1rem; }
+        .action-btn i { font-size: 0.85rem; }
 
         /* 日志 */
         .log-card {
@@ -1179,128 +1302,187 @@
             </button>
         </div>
 
-        <!-- A轨内容 -->
+        <!-- A轨内容：任务卡架构【2026-10-04 重设计】 -->
         <div id="track-a-content" class="track-content active">
-            <div class="rec-count" style="margin:0 2px 6px">😢 哭声补跑：每晚 01:05 自动补跑 5~9 月历史录音的哭声检测，也可手动启动（GPU 密集）</div>
-            <div class="rec-count" id="pixelBackfillLine" style="margin:0 2px 10px;border-left:3px solid var(--warning);padding-left:8px">⚪ Pixel 转录补救：未运行</div>
-            <!-- 操作按钮 -->
-            <div class="action-buttons">
-                <button class="action-btn start" id="aStartBtn" onclick="startHistoryTask()">
-                    <i class="fa-solid fa-play"></i> 启动
-                </button>
-                <button class="action-btn refresh" id="aRefreshBtn" onclick="refreshFileCache()">
-                    <i class="fa-solid fa-rotate"></i> 刷盘
-                </button>
-                <button class="action-btn stop" id="aStopBtn" onclick="stopHistoryTask()" disabled>
-                    <i class="fa-solid fa-stop"></i> 停止
-                </button>
-            </div>
+            <!-- 任务卡1：哭声补跑（5~9月历史） -->
+            <div class="task-card cry" id="cryTaskCard">
+                <div class="task-head" onclick="toggleTaskCard('cryTaskCard')">
+                    <div class="pulse-ring stopped" id="aStatusRing">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </div>
+                    <div class="task-title-wrap">
+                        <div class="task-title">哭声补跑 <span class="status-badge stopped" id="aStatusBadge">IDLE</span></div>
+                        <div class="task-sub" id="aTaskSub">每晚 01:05 自动 · 窗口加载中…</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-down task-chevron"></i>
+                </div>
+                <div class="task-summary" id="aTaskSummary">等待任务…</div>
+                <div class="task-body">
+                    <div class="task-body-inner">
+                        <div class="status-card">
+                            <div class="progress-section">
+                                <div class="progress-header">
+                                    <span class="progress-percent" id="aProgressPercent">0%</span>
+                                    <div class="progress-label">
+                                        <span id="aProcessedNum">0</span> / <span id="aTotalNum">0</span>
+                                    </div>
+                                </div>
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar-fill" id="aProgressBar" style="width: 0%"></div>
+                                </div>
+                            </div>
 
-            <div class="status-card">
-                <div class="status-header">
-                    <div class="status-indicator">
-                        <div class="pulse-ring stopped" id="aStatusRing">
-                            <i class="fa-solid fa-folder-open"></i>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <div class="stat-value success" id="aSuccessCount">0</div>
+                                    <div class="stat-label">成功</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value danger" id="aErrorCount">0</div>
+                                    <div class="stat-label">错误</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value warning" id="aSkipCount">0</div>
+                                    <div class="stat-label">跳过</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value primary" id="aAvgTime">0s</div>
+                                    <div class="stat-label">平均</div>
+                                </div>
+                            </div>
                         </div>
-                        <span class="status-label" id="aStatusLabel">等待任务</span>
-                    </div>
-                    <span class="status-badge stopped" id="aStatusBadge">IDLE</span>
-                </div>
 
-                <div class="progress-section">
-                    <div class="progress-header">
-                        <span class="progress-percent" id="aProgressPercent">0%</span>
-                        <div class="progress-label">
-                            <span id="aProcessedNum">0</span> / <span id="aTotalNum">0</span>
+                        <div class="eta-card">
+                            <div class="eta-icon">
+                                <i class="fa-solid fa-clock"></i>
+                            </div>
+                            <div>
+                                <div class="eta-value" id="aEtaValue">--</div>
+                                <div class="eta-label">预计剩余时间</div>
+                            </div>
+                        </div>
+
+                        <div class="content-card date-block-container">
+                            <div class="date-block-label"><i class="fa-solid fa-calendar-days"></i> 日期队列</div>
+                            <div class="date-block-scroll">
+                                <div class="date-block-list" id="aDateBlocks">
+                                    <div class="text-xs text-gray-500 py-2">等待分析任务...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar-fill" id="aProgressBar" style="width: 0%"></div>
-                    </div>
                 </div>
-
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-value success" id="aSuccessCount">0</div>
-                        <div class="stat-label">成功</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value danger" id="aErrorCount">0</div>
-                        <div class="stat-label">错误</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value warning" id="aSkipCount">0</div>
-                        <div class="stat-label">跳过</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value primary" id="aAvgTime">0s</div>
-                        <div class="stat-label">平均</div>
-                    </div>
+                <!-- 操作按钮：始终可见，空闲态也能直接启动 -->
+                <div class="action-buttons">
+                    <button class="action-btn start" id="aStartBtn" onclick="startHistoryTask()">
+                        <i class="fa-solid fa-play"></i> 启动
+                    </button>
+                    <button class="action-btn refresh" id="aRefreshBtn" onclick="refreshFileCache()">
+                        <i class="fa-solid fa-rotate"></i> 刷盘
+                    </button>
+                    <button class="action-btn stop" id="aStopBtn" onclick="stopHistoryTask()" disabled>
+                        <i class="fa-solid fa-stop"></i> 停止
+                    </button>
                 </div>
             </div>
 
-            <div class="eta-card">
-                <div class="eta-icon">
-                    <i class="fa-solid fa-clock"></i>
+            <!-- 任务卡2：Pixel 转录补救（processed 未入库文件补救，与哭声补跑是两条任务线） -->
+            <div class="task-card pixel" id="pixelTaskCard">
+                <div class="task-head" onclick="toggleTaskCard('pixelTaskCard')">
+                    <div class="pulse-ring stopped" id="pbStatusRing">
+                        <i class="fa-solid fa-mobile-screen"></i>
+                    </div>
+                    <div class="task-title-wrap">
+                        <div class="task-title">Pixel 转录补救 <span class="status-badge stopped" id="pbStatusBadge">IDLE</span></div>
+                        <div class="task-sub">已处理但未入库的录音，补救入库</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-down task-chevron"></i>
                 </div>
-                <div>
-                    <div class="eta-value" id="aEtaValue">--</div>
-                    <div class="eta-label">预计剩余时间</div>
+                <div class="task-summary" id="pbTaskSummary">未运行</div>
+                <!-- 真实待补救数（processed 未入库，后端 5 分钟扫描）+ 手动启动【2026-10-04】 -->
+                <div class="backlog-bar" id="pbBacklogBar">
+                    <span class="backlog-text" id="pbBacklogText">待补救：扫描中…</span>
+                    <button class="action-btn start sm" id="pbStartBtn" onclick="startPixelBackfill()" style="display:none">
+                        <i class="fa-solid fa-play"></i> 启动补救
+                    </button>
                 </div>
-            </div>
+                <div class="task-body">
+                    <div class="task-body-inner">
+                        <div class="progress-section" style="padding-top:12px;">
+                            <div class="progress-header">
+                                <span class="progress-percent" id="pbProgressPercent">0%</span>
+                                <div class="progress-label">
+                                    <span id="pbDoneNum">0</span> / <span id="pbTotalNum">0</span>
+                                </div>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" id="pbProgressBar" style="width: 0%"></div>
+                            </div>
+                        </div>
 
-            <div class="content-card date-block-container">
-                <div class="date-block-label"><i class="fa-solid fa-calendar-days"></i> 日期队列</div>
-                <div class="date-block-scroll">
-                    <div class="date-block-list" id="aDateBlocks">
-                        <div class="text-xs text-gray-500 py-2">等待分析任务...</div>
+                        <div class="eta-card">
+                            <div class="eta-icon">
+                                <i class="fa-solid fa-hourglass-half"></i>
+                            </div>
+                            <div>
+                                <div class="eta-value" id="pbEtaValue">--</div>
+                                <div class="eta-label">预计剩余</div>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+                            <div class="date-block-label"><i class="fa-solid fa-list"></i> 接下来待处理</div>
+                            <div class="chips" id="pbPendingChips" style="display:flex;flex-wrap:wrap;gap:4px 6px;">
+                                <span style="font-size:10px;color:#5b6472">队列为空</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- B轨内容 -->
+        <!-- B轨内容：实时管线卡【2026-10-04 重设计】 -->
         <div id="track-b-content" class="track-content">
-            <div class="rec-count" style="margin:0 2px 10px">🎙️ 双 Pixel 实时转写：Pixel-6（客厅）+ Pixel-5（卧室）录音自动转写 + 哭声检测 + 声纹入库，由 launchd 托管常驻运行</div>
-
-            <div class="status-card">
-                <div class="status-header">
-                    <div class="status-indicator">
-                        <div class="pulse-ring stopped" id="bStatusRing">
-                            <i class="fa-solid fa-microphone"></i>
+            <div class="task-card btrack open" id="bTaskCard">
+                <div class="task-head" onclick="toggleTaskCard('bTaskCard')">
+                    <div class="pulse-ring stopped" id="bStatusRing">
+                        <i class="fa-solid fa-microphone"></i>
+                    </div>
+                    <div class="task-title-wrap">
+                        <div class="task-title">双 Pixel 实时转写 <span class="status-badge stopped" id="bStatusBadge">IDLE</span></div>
+                        <div class="task-sub" id="bTaskSub">Pixel-6（客厅）+ Pixel-5（卧室）· launchd 托管常驻</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-down task-chevron"></i>
+                </div>
+                <div class="task-body">
+                    <div class="task-body-inner">
+                        <div class="track-b-info compact" style="padding-top:12px;">
+                            <div class="info-chip">
+                                <div class="info-chip-value" id="bCryCount">0</div>
+                                <div class="info-chip-label">今日哭声</div>
+                            </div>
+                            <div class="info-chip">
+                                <div class="info-chip-value" id="bRecordCount">0</div>
+                                <div class="info-chip-label">今日录音</div>
+                            </div>
+                            <div class="info-chip">
+                                <div class="info-chip-value" id="bBacklog">--</div>
+                                <div class="info-chip-label">转写积压</div>
+                            </div>
+                            <div class="info-chip">
+                                <div class="info-chip-value" id="bThroughput">--</div>
+                                <div class="info-chip-label">吞吐/时</div>
+                            </div>
+                            <div class="info-chip">
+                                <div class="info-chip-value" id="bIngest">--</div>
+                                <div class="info-chip-label">今日入库</div>
+                            </div>
+                            <div class="info-chip">
+                                <div class="info-chip-value sm" id="bLastEvent">--</div>
+                                <div class="info-chip-label">最近事件</div>
+                            </div>
                         </div>
-                        <span class="status-label" id="bStatusLabel">实时监听中</span>
                     </div>
-                    <span class="status-badge stopped" id="bStatusBadge">IDLE</span>
-                </div>
-
-                <div class="track-b-info">
-                    <div class="info-chip">
-                        <div class="info-chip-value" id="bCryCount">0</div>
-                        <div class="info-chip-label">今日哭声</div>
-                    </div>
-                    <div class="info-chip">
-                        <div class="info-chip-value" id="bRecordCount">0</div>
-                        <div class="info-chip-label">今日录音</div>
-                    </div>
-                    <div class="info-chip">
-                        <div class="info-chip-value" id="bBacklog">--</div>
-                        <div class="info-chip-label">转写积压</div>
-                    </div>
-                    <div class="info-chip">
-                        <div class="info-chip-value" id="bLastEvent">--</div>
-                        <div class="info-chip-label">最近事件</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="content-card" style="margin-bottom:10px;">
-                <h3><i class="fa-solid fa-boxes-stacked"></i> 历史补救进度</h3>
-                <div style="display:flex;align-items:center;gap:10px;">
-                    <div style="flex:1;height:8px;border-radius:4px;background:rgba(148,163,184,.2);overflow:hidden;">
-                        <div id="bBackfillBar" style="height:100%;width:0%;border-radius:4px;background:linear-gradient(90deg,#38bdf8,#3b82f6);transition:width .5s;"></div>
-                    </div>
-                    <span id="bBackfillText" style="font-size:.72rem;color:var(--text-secondary);white-space:nowrap;">加载中…</span>
                 </div>
             </div>
 
@@ -1695,6 +1877,26 @@
             }
 
             // 基础设施: SMB/5009面板/静音巡检/GPU 胶囊灯
+            // 【2026-10-04】任务卡副标题同步（数据同源，零额外请求）
+            const _aSub = document.getElementById('aTaskSub');
+            if (_aSub && a) {
+                const lastDate = a.last_reprocess_date || '--';
+                _aSub.textContent = `每晚 01:05 自动 · 上次推进到 ${lastDate}`;
+                _aSub.title = `每晚 01:05 自动${a.window ? ` · 窗口 ${a.window}` : ''} · 下次 ${a.next_run || '--'} · 上次推进到 ${lastDate}`;
+            }
+            const _bSub = document.getElementById('bTaskSub');
+            if (_bSub && b) {
+                const hbAge = b.heartbeat_age_sec == null ? null : Math.round(b.heartbeat_age_sec);
+                const hbPart = hbAge == null ? '无心跳' : `心跳 ${hbAge}s前`;
+                _bSub.textContent = `${hbPart} · Pixel-6（客厅）+ Pixel-5（卧室）`;
+                _bSub.title = `${hbPart}${b.runtime ? ` · 已运行 ${b.runtime}` : ''} · Pixel-6（客厅）+ Pixel-5（卧室）`;
+                _bSub.style.color = (b.running && (hbAge == null || hbAge > 240)) ? 'var(--danger)' : '';
+            }
+            // 【2026-10-04】仅在字段有值时更新，避免 overview 单次抖动把 chip 打回 "--"
+            const _bTp = document.getElementById('bThroughput');
+            if (_bTp && rate != null) _bTp.textContent = rate;
+            const _bIn = document.getElementById('bIngest');
+            if (_bIn && b.today_transcribed != null) _bIn.textContent = b.today_transcribed;
             const inf = d.infra || {};
             const pill = (label, ok, extra = '') => `
                 <div class="ov-row">
@@ -1712,7 +1914,7 @@
             const isRunning = statusData.a_running;
             const progress = statusData.a_progress;  // 结构化进度数据
             const aRing = document.getElementById('aStatusRing');
-            const aLabel = document.getElementById('aStatusLabel');
+            const aSummary = document.getElementById('aTaskSummary');
             const aBadge = document.getElementById('aStatusBadge');
             const aStartBtn = document.getElementById('aStartBtn');
             const aStopBtn = document.getElementById('aStopBtn');
@@ -1721,35 +1923,42 @@
             if (aStartBtn) aStartBtn.disabled = isRunning;
             if (aStopBtn) aStopBtn.disabled = !isRunning;
 
+            // 任务卡自动展开/收起：运行态展开，空闲收起；状态翻转时清除用户手动覆盖
+            if (window._cryPrevRunning !== undefined && window._cryPrevRunning !== isRunning) {
+                if (window._taskCardManual) delete window._taskCardManual.cryTaskCard;
+            }
+            window._cryPrevRunning = isRunning;
+            setTaskCardAuto('cryTaskCard', isRunning);
+
+            // 摘要行战绩（来自结构化进度）——彩色数字替代 emoji 堆叠
+            const hasScore = progress && (progress.success_count != null || progress.skip_count != null || progress.error_count != null);
+            const scoreHtml = hasScore
+                ? ` · <span class="s-ok">${progress.success_count || 0}</span> 成功 <span class="s-skip">${progress.skip_count || 0}</span> 跳过 <span class="s-err">${progress.error_count || 0}</span> 失败`
+                : '';
+
             if (isRunning) {
                 aRing.className = 'pulse-ring running';
                 aRing.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-                aLabel.textContent = '处理中';
+                aSummary.textContent = '处理中…';
                 aBadge.textContent = 'RUNNING';
                 aBadge.className = 'status-badge running';
-            } else if (progress && progress.status === 'completed') {
+            } else if ((progress && progress.status === 'completed') || logs.includes('任务已结束') || logs.includes('已完成')) {
                 aRing.className = 'pulse-ring stopped';
                 aRing.innerHTML = '<i class="fa-solid fa-check"></i>';
-                aLabel.textContent = '已完成';
+                aSummary.innerHTML = `上次补跑完成${scoreHtml}`;
                 aBadge.textContent = 'DONE';
-                aBadge.className = 'status-badge stopped';
-            } else if (logs.includes('任务已结束') || logs.includes('已完成')) {
-                aRing.className = 'pulse-ring stopped';
-                aRing.innerHTML = '<i class="fa-solid fa-check"></i>';
-                aLabel.textContent = '已完成';
-                aBadge.textContent = 'DONE';
-                aBadge.className = 'status-badge stopped';
+                aBadge.className = 'status-badge done';
             } else if (progress && progress.status === 'stopped' && progress.total > 0) {
                 aRing.className = 'pulse-ring stopped';
                 aRing.innerHTML = '<i class="fa-solid fa-pause"></i>';
                 const pct = Math.round((progress.processed || 0) / progress.total * 100);
-                aLabel.textContent = `上次任务已停止 (${pct}%)`;
+                aSummary.innerHTML = `上次任务已停止（${pct}%）${scoreHtml}`;
                 aBadge.textContent = 'STOPPED';
                 aBadge.className = 'status-badge stopped';
             } else {
                 aRing.className = 'pulse-ring stopped';
                 aRing.innerHTML = '<i class="fa-solid fa-folder-open"></i>';
-                aLabel.textContent = '等待任务';
+                aSummary.textContent = '空闲 · 点「启动」手动补跑，或等 01:05 自动窗口';
                 aBadge.textContent = 'IDLE';
                 aBadge.className = 'status-badge stopped';
             }
@@ -1960,25 +2169,21 @@
             const isPaused = statusData.b_paused;
             const bStats = statusData.b_stats;  // 结构化B轨统计
             const bRing = document.getElementById('bStatusRing');
-            const bLabel = document.getElementById('bStatusLabel');
             const bBadge = document.getElementById('bStatusBadge');
 
             if (!isRunning) {
                 bRing.className = 'pulse-ring stopped';
                 bRing.innerHTML = '<i class="fa-solid fa-microphone-slash"></i>';
-                bLabel.textContent = '未启动';
                 bBadge.textContent = 'STOPPED';
                 bBadge.className = 'status-badge stopped';
             } else if (isPaused) {
                 bRing.className = 'pulse-ring paused';
                 bRing.innerHTML = '<i class="fa-solid fa-pause"></i>';
-                bLabel.textContent = '已暂停';
                 bBadge.textContent = 'PAUSED';
                 bBadge.className = 'status-badge paused';
             } else {
                 bRing.className = 'pulse-ring running';
                 bRing.innerHTML = '<i class="fa-solid fa-microphone"></i>';
-                bLabel.textContent = '实时监听中';
                 bBadge.textContent = 'LIVE';
                 bBadge.className = 'status-badge running';
             }
@@ -1988,6 +2193,8 @@
             }
 
             // B 轨统计：优先使用结构化字段，兜底用日志正则
+            // 【2026-10-04】时间类只显示 时:分（chip 窄，秒是噪声）
+            const hhmm = (t) => (typeof t === 'string' && /^\d{2}:\d{2}/.test(t)) ? t.slice(0, 5) : (t || '--');
             if (bStats) {
                 // 今日哭声
                 const cryCount = bStats.today_cry_count || statusData.today_cry_count || 0;
@@ -1997,7 +2204,7 @@
                 document.getElementById('bRecordCount').textContent = bStats.today_record_count || '0';
                 
                 // 最近事件
-                document.getElementById('bLastEvent').textContent = bStats.last_event_time || bStats.last_cry_time || '--';
+                document.getElementById('bLastEvent').textContent = hhmm(bStats.last_event_time || bStats.last_cry_time);
                 
                 // 最近哭声检测
                 if (bStats.last_cry_time) {
@@ -2015,7 +2222,7 @@
 
                 document.getElementById('bRecordCount').textContent = todayRecordings || liveLogs.includes('收到转录任务') ? '1+' : '0';
                 document.getElementById('bCryCount').textContent = todayCry > 0 ? todayCry : '0';
-                document.getElementById('bLastEvent').textContent = recentEvent ? recentEvent[1] : '--';
+                document.getElementById('bLastEvent').textContent = recentEvent ? hhmm(recentEvent[1]) : '--';
                 document.getElementById('bLastCry').textContent = liveLogs.includes('检测到') ? '最近有哭声' : (liveLogs.includes('哭声') ? '有哭声记录' : '暂无哭声');
             }
         }
@@ -2836,6 +3043,105 @@
             }
         }
         
+        // ===== 任务卡折叠交互【2026-10-04 重设计】=====
+        // 用户手动开合后记忆本次会话选择；任务状态翻转时由渲染方清除覆盖
+        function toggleTaskCard(id) {
+            const card = document.getElementById(id);
+            if (!card) return;
+            card.classList.toggle('open');
+            (window._taskCardManual = window._taskCardManual || {})[id] = true;
+        }
+        function setTaskCardAuto(id, open) {
+            const card = document.getElementById(id);
+            if (!card) return;
+            if (window._taskCardManual && window._taskCardManual[id]) return;
+            card.classList.toggle('open', !!open);
+        }
+
+        // Pixel 转录补救任务卡渲染（数据源: /api/parallel_lights backfill 字段）
+        function renderPixelTaskCard(bf, pb) {
+            const card = document.getElementById('pixelTaskCard');
+            if (!card) return;
+            const ring = document.getElementById('pbStatusRing');
+            const badge = document.getElementById('pbStatusBadge');
+            const summary = document.getElementById('pbTaskSummary');
+            const chips = document.getElementById('pbPendingChips');
+            const running = !!(bf && bf.running);
+            // 状态翻转时清除手动覆盖
+            if (window._pbPrevRunning !== undefined && window._pbPrevRunning !== running) {
+                if (window._taskCardManual) delete window._taskCardManual.pixelTaskCard;
+            }
+            window._pbPrevRunning = running;
+            setTaskCardAuto('pixelTaskCard', running);
+            if (running) {
+                ring.className = 'pulse-ring running';
+                ring.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                badge.textContent = 'RUNNING';
+                badge.className = 'status-badge running';
+                const pct = bf.total > 0 ? Math.round(bf.done / bf.total * 100) : 0;
+                summary.textContent = `补救中 ${bf.done.toLocaleString()}/${bf.total.toLocaleString()} · 剩 ${bf.eta}`;
+                document.getElementById('pbProgressPercent').textContent = pct + '%';
+                document.getElementById('pbDoneNum').textContent = (bf.done || 0).toLocaleString();
+                document.getElementById('pbTotalNum').textContent = (bf.total || 0).toLocaleString();
+                document.getElementById('pbProgressBar').style.width = pct + '%';
+                document.getElementById('pbEtaValue').textContent = (bf.eta || '--').replace(/^约/, '');
+                chips.innerHTML = (bf.pending_files || []).map(f =>
+                    `<span class="proc-chip proc-chip-pending">› ${f.split('/').pop()}</span>`).join('')
+                    || '<span style="font-size:10px;color:#5b6472">队列为空</span>';
+            } else {
+                // 【2026-10-04】非运行态不再展示日志里上次运行的陈旧 done/total——那只是历史快照
+                // （曾长期显示「已完成 4435/4435」，而真实待补救其实是 4888），会跟 .backlog-bar
+                // 的真实扫描值打架。真实待补救数一律以 .backlog-bar 为准，进度区清零。
+                ring.className = 'pulse-ring stopped';
+                ring.innerHTML = '<i class="fa-solid fa-mobile-screen"></i>';
+                badge.textContent = 'IDLE';
+                badge.className = 'status-badge stopped';
+                summary.textContent = '就绪';
+                document.getElementById('pbProgressPercent').textContent = '0%';
+                document.getElementById('pbDoneNum').textContent = '0';
+                document.getElementById('pbTotalNum').textContent = '0';
+                document.getElementById('pbProgressBar').style.width = '0%';
+                document.getElementById('pbEtaValue').textContent = '--';
+                chips.innerHTML = '<span style="font-size:10px;color:#5b6472">队列为空</span>';
+            }
+            // 待补救告警条：真实扫描值（后端 5 分钟缓存），折叠态也可见；运行中隐藏（卡头已显示 RUNNING）
+            const bar = document.getElementById('pbBacklogBar');
+            const barTxt = document.getElementById('pbBacklogText');
+            const startBtn = document.getElementById('pbStartBtn');
+            if (bar && barTxt) {
+                const n = (pb && pb.count != null) ? pb.count : null;
+                if (running) {
+                    bar.style.display = 'none';
+                } else {
+                    bar.style.display = 'flex';
+                    bar.classList.toggle('warn', n > 0);
+                    barTxt.textContent = n == null
+                        ? '待补救：扫描中…（NAS 未就绪时可能显示不出）'
+                        : (n > 0 ? `⚠️ 发现 ${n.toLocaleString()} 个掉队未分析的录音（已归档但从未送检）`
+                                 : '✅ 无待补救（已归档文件均已送检处理）');
+                }
+                if (startBtn) startBtn.style.display = (n > 0 && !running) ? '' : 'none';
+            }
+        }
+
+        // 启动 Pixel 转录补救（后端起 backfill_pixels.py --from-processed，进度复用本卡展示）
+        async function startPixelBackfill() {
+            if (!confirm('启动 Pixel 转录补救？\n把 processed/ 中掉队未分析的录音重新送检（GPU 密集）。')) return;
+            const btn = document.getElementById('pbStartBtn');
+            const old = btn ? btn.innerHTML : '';
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 启动中'; }
+            try {
+                const r = await fetch('/api/pixel_backfill/start', { method: 'POST' });
+                const d = await r.json();
+                if (r.ok) showToast(d.message || '补救任务已启动', 'success');
+                else showToast(d.error || '启动失败', 'error');
+            } catch (e) {
+                showToast('启动失败: ' + e.message, 'error');
+            }
+            if (btn) { btn.disabled = false; btn.innerHTML = old; }
+            refreshParallelLights();
+        }
+
         // 并行任务信号灯: 随主轮询刷新
         async function refreshParallelLights() {
             try {
@@ -2852,20 +3158,8 @@
                 const pz = document.getElementById('processing-now');
                 if (pz) {
                     const bf = d.backfill;
-                    // 补跑 Tab 的「Pixel 转录补救」状态行（与 5~9 月哭声补跑是两条任务线）
-                    const pbLine = document.getElementById('pixelBackfillLine');
-                    if (pbLine) {
-                        if (bf && bf.running) {
-                            pbLine.innerHTML = `🟢 Pixel 转录补救：运行中 ${bf.done}/${bf.total}（${Math.round(bf.done / bf.total * 100)}%）· 剩约 ${bf.eta}`;
-                            pbLine.style.borderLeftColor = 'var(--success)';
-                        } else if (bf && bf.done > 0) {
-                            pbLine.innerHTML = `🟡 Pixel 转录补救：已停止（${bf.done}/${bf.total}）`;
-                            pbLine.style.borderLeftColor = 'var(--warning)';
-                        } else {
-                            pbLine.textContent = '⚪ Pixel 转录补救：未运行';
-                            pbLine.style.borderLeftColor = 'var(--warning)';
-                        }
-                    }
+                    // 补跑 Tab 的「Pixel 转录补救」任务卡（与 5~9 月哭声补跑是两条任务线）
+                    renderPixelTaskCard(bf, d.pixel_backlog);
                     // 大分组=手机, 小分组=三状态(⏳待处理/⚙处理中/✅已完成), 胶囊带补救/实时来源标签
                     const rt = d.rt || {};
                     const byDev = {};
@@ -2911,20 +3205,6 @@
                         </div>`).join('');
                     pz.innerHTML = `<div class="proc-summary">${summary.join('') || '<span style="font-size:10px;color:#5b6472">队列为空</span>'}</div>${devBlocks || '<span style="font-size:10px;color:#5b6472">空闲</span>'}`;
                     pz.style.display = 'block';
-                }
-                // 转写 Tab 的「历史补救进度」条
-                const bfBar = document.getElementById('bBackfillBar');
-                if (bfBar && d.backfill) {
-                    const bf = d.backfill;
-                    const bft = document.getElementById('bBackfillText');
-                    if (bf.total > 0) {
-                        const pct = Math.round(bf.done / bf.total * 100);
-                        bfBar.style.width = pct + '%';
-                        if (bft) bft.textContent = `${pct}% · ${bf.done.toLocaleString()}/${bf.total.toLocaleString()} · 剩${bf.remaining.toLocaleString()} · ${bf.eta}`;
-                    } else {
-                        bfBar.style.width = '0%';
-                        if (bft) bft.textContent = '无补救任务';
-                    }
                 }
             } catch (e) { /* 网络抖动时保留上次渲染 */ }
         }

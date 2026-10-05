@@ -1611,9 +1611,12 @@ def _last_reprocess_date():
     return val
 
 
+@app.route('/api/overview', methods=['GET'])
 @login_required
 def proxy_overview():
-    """系统总览：代理到 ASR 服务器（设备健康为服务端 5 分钟缓存，响应轻、可随轮询拉）"""
+    """系统总览：代理到 ASR 服务器（设备健康为服务端 5 分钟缓存，响应轻、可随轮询拉）
+    【2026-10-04】修复：本函数此前只挂了 @login_required，漏了 @app.route → /api/overview 恒 404，
+    导致 A 轨补跑卡副标题（下次运行/上次推进到）与 B 轨积压/吞吐/今日入库 chip 永远拿不到数据。"""
     try:
         response = requests.get(f"{ASR_SERVER_URL}/api/overview", timeout=8)
         if response.ok:
@@ -1751,9 +1754,93 @@ def api_parallel_lights():
             p["short"] = _short_with_dev(p.get("filename", ""), dev_map)
     except Exception:
         pass
-    return jsonify({"lights": lights, "processing": processing,
+    resp = jsonify({"lights": lights, "processing": processing,
                     "completed": completed, "backfill": backfill,
+                    "pixel_backlog": _pixel_backlog_snapshot(),
                     "rt": {"pending_files": rt_files, "count": rt_count}})
+    resp.headers['Cache-Control'] = 'no-store'  # 【2026-10-04】防 Safari 缓存旧轮询导致补救/处理状态滞后
+    return resp
+
+
+# ==================== Pixel 转录补救：真实待补救数 + 手动启动【2026-10-04】====================
+# 待补救 = processed/<日期>/ 下已归档、但 transcriptions 表里没有的文件（重启后 catch-up
+# 「历史掉队防线」归档但未分析的积压）。用 backfill_pixels.py --from-processed --dry-run
+# 实测得出，确保与真正启动补救时的判定完全同一套，不重复实现避免口径分叉。
+_ASR_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_pixel_backlog = {"count": None, "scanned_at": 0, "error": None}
+_pixel_backlog_lock = threading.Lock()
+_pixel_backfill_proc = None
+
+
+def _pixel_backlog_scan_once():
+    """子进程 dry-run 实测待补救数（NAS 扫描 + transcriptions 比对），结果写缓存。"""
+    global _pixel_backlog
+    script = os.path.join(_ASR_ROOT, "backfill_pixels.py")
+    count, err = None, None
+    try:
+        p = subprocess.run(
+            [sys.executable, "-u", script, "--from-processed", "--dates", "auto", "--dry-run"],
+            cwd=_ASR_ROOT, capture_output=True, text=True, timeout=120)
+        m = re.search(r"待回填:\s*(\d+)\s*个文件", p.stdout or "")
+        if m:
+            count = int(m.group(1))
+        else:
+            err = ((p.stdout or "") + (p.stderr or "")).strip()[-200:] or "扫描无输出"
+    except subprocess.TimeoutExpired:
+        err = "扫描超时（NAS 可能不可达）"
+    except Exception as e:
+        err = str(e)
+    with _pixel_backlog_lock:
+        _pixel_backlog = {"count": count, "scanned_at": time.time(), "error": err}
+
+
+def _pixel_backlog_loop():
+    while True:
+        _pixel_backlog_scan_once()
+        time.sleep(300)  # 5 分钟一次；值本身廉价，只为避频繁扫 NAS
+
+
+def _pixel_backlog_snapshot():
+    with _pixel_backlog_lock:
+        return dict(_pixel_backlog)
+
+
+def _pixel_backfill_running():
+    """补救进程存活 = Popen 未退出 或 日志 120s 内有更新（与 _scan_backfill_progress 同口径）"""
+    if _pixel_backfill_proc is not None and _pixel_backfill_proc.poll() is None:
+        return True
+    try:
+        log_path = os.path.join(_ASR_ROOT, "log", "backfill_rerun.log")
+        return (time.time() - os.path.getmtime(log_path)) < 120
+    except Exception:
+        return False
+
+
+@app.route('/api/pixel_backfill/start', methods=['POST'])
+@login_required
+def start_pixel_backfill():
+    """启动 Pixel 转录补救（backfill_pixels.py --from-processed），输出追加到
+    log/backfill_rerun.log —— 仪表盘「Pixel 转录补救」任务卡即解析该日志展示进度。"""
+    global _pixel_backfill_proc
+    if _pixel_backfill_running():
+        return jsonify({"error": "补救任务已在运行中"}), 409
+    script = os.path.join(_ASR_ROOT, "backfill_pixels.py")
+    if not os.path.exists(script):
+        return jsonify({"error": f"脚本不存在: {script}"}), 500
+    try:
+        log_dir = os.path.join(_ASR_ROOT, "log")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "backfill_rerun.log")
+        f = open(log_path, "a", encoding="utf-8")
+        f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 手机端启动 Pixel 转录补救\n")
+        f.flush()
+        # start_new_session: 脱离 5009 进程组，5009 重启不牵连已在跑的补救
+        _pixel_backfill_proc = subprocess.Popen(
+            [sys.executable, "-u", script, "--from-processed", "--dates", "auto"],
+            cwd=_ASR_ROOT, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+        return jsonify({"message": "Pixel 转录补救已在后台启动"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def _norm_task_name(s):
@@ -1903,6 +1990,9 @@ def _scan_backfill_progress():
     log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "log")
     prog_re = re.compile(r'进度 (\d+)/(\d+) \| 成功 (\d+) 失败 (\d+).*?剩余约 ([\d.]+) (小时|分钟)')
     done_re = re.compile(r'回填完成: 成功 (\d+) / 失败 (\d+) / 总 (\d+)')
+    batch_re = re.compile(r'待回填:\s*(\d+)\s*个文件')
+    ts_re = re.compile(r'\[(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\]')
+    perfile_re = re.compile(r'\((\d+)/(\d+)\)')
     batches = []  # 各批次（Pixel/Sony）独立解析后聚合，两客户端可能并存
     result = None
     try:
@@ -1910,8 +2000,23 @@ def _scan_backfill_progress():
             log_path = os.path.join(log_dir, name)
             if not os.path.exists(log_path):
                 continue
+            try:
+                # 日志过旧=该批次早已结束（如已退役并取消的 Sony 日志），不计入聚合，
+                # 否则其陈旧的「回填完成…总 N」会把当前 Pixel 批次的总数算大（曾 78+2757=2835）。
+                if time.time() - os.path.getmtime(log_path) > 6 * 3600:
+                    continue
+            except Exception:
+                pass
             snapshot, gone = [], set()
-            last_progress = None
+            # 以「待回填: N 个文件」为新批次起点，之后只认本批次的 ✔/✗ 与「进度」行。
+            # 【2026-10-04】旧实现只看最后一条「进度/回填完成」行，而脚本每 20 个文件才打一次
+            # 「进度」，新一轮首条进度行出现前会一直回退显示上一轮的陈旧数字——曾出现
+            # 「补救中 4,435/4,435 · 剩约0min」但实际只跑了 78 个（用户当场看到并质疑）。
+            b_started, b_total, b_ok, b_fail, b_done = False, 0, 0, 0, 0
+            b_start_epoch = None
+            b_prog = None       # (done,total,ok,fail,eta_h) 来自「进度」行
+            b_completed = None  # (ok,fail,total) 来自「回填完成」行
+            legacy = None       # 无「待回填」行时（旧格式日志）的兜底
             with open(log_path, 'rb') as f:
                 f.seek(0, 2)
                 size = f.tell()
@@ -1919,13 +2024,43 @@ def _scan_backfill_progress():
                 f.readline()
                 for raw in f:
                     line = raw.decode('utf-8', errors='replace').strip()
-                    if '进度 ' in line or '回填完成: ' in line:
-                        last_progress = line
-                    elif '队列预览: ' in line:
+                    if '队列预览: ' in line:
                         # 每次预览行重置快照（新一轮启动）
                         snapshot = [x.strip() for x in line.split('队列预览: ', 1)[1].split(',') if x.strip()]
                         gone = set()
-                    elif snapshot:
+                        continue
+                    mb = batch_re.search(line)
+                    if mb:
+                        # 新批次开始：重置本批次计数，丢弃上一批次的进度
+                        b_started = True
+                        b_total, b_ok, b_fail, b_done = int(mb.group(1)), 0, 0, 0
+                        b_prog = b_completed = None
+                        mt = ts_re.search(line)
+                        b_start_epoch = None
+                        if mt:
+                            try:
+                                b_start_epoch = time.mktime((2026,) + tuple(map(int, mt.groups())) + (0, 0, -1))
+                            except Exception:
+                                b_start_epoch = None
+                        continue
+                    m = prog_re.search(line)
+                    if m:
+                        vals = (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)),
+                                float(m.group(5)) if m.group(6) == '小时' else float(m.group(5)) / 60)
+                        if b_started:
+                            b_prog = vals
+                        else:
+                            legacy = vals
+                        continue
+                    m = done_re.search(line)
+                    if m:
+                        if b_started:
+                            b_completed = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                        else:
+                            t = int(m.group(3))
+                            legacy = (t, t, int(m.group(1)), int(m.group(2)), 0.0)
+                        continue
+                    if snapshot:
                         if ' ✔ ' in line:
                             gone.add(line.rsplit(' ✔ ', 1)[1].split(' (')[0].strip())
                         elif ' ✗ ' in line:
@@ -1933,30 +2068,48 @@ def _scan_backfill_progress():
                         elif '📤 提交: ' in line:
                             # 已提交=正被处理, 从待处理列表剔除（✔/✗ 要等响应回来才有）
                             gone.add(line.split('📤 提交: ', 1)[1].strip())
-            if last_progress:
-                m = prog_re.search(last_progress)
-                m_done = None if m else done_re.search(last_progress)
-                if m or m_done:
-                    try:
-                        running = (time.time() - os.path.getmtime(log_path)) < 120  # 日志2分钟内有更新=进程活着
-                    except Exception:
-                        running = False
-                    if m:
-                        done, total, ok, fail = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
-                        eta_val, eta_unit = float(m.group(5)), m.group(6)
-                    else:
-                        # 「回填完成: 成功 N / 失败 M / 总 T」——本轮全部推进完毕（done=total, remaining=0）
-                        ok, fail, total = int(m_done.group(1)), int(m_done.group(2)), int(m_done.group(3))
-                        done, eta_val, eta_unit = total, 0.0, '小时'
-                    batches.append({
-                        "done": done, "total": total,
-                        "remaining": max(0, total - done),
-                        "ok": ok, "fail": fail,
-                        "running": running,
-                        "eta_h": eta_val if eta_unit == '小时' else eta_val / 60,
-                        "pending_files": [f"{x.split('/', 1)[0]}/{_norm_task_name(x)}" if '/' in x else _norm_task_name(x)
-                                          for x in snapshot if x not in gone][:3],
-                    })
+                    if b_started and (' ✔ ' in line or ' ✗ ' in line):
+                        if ' ✔ ' in line:
+                            b_ok += 1
+                        else:
+                            b_fail += 1
+                        mp = perfile_re.search(line)
+                        if mp:
+                            b_done = max(b_done, int(mp.group(1)))
+                            b_total = int(mp.group(2)) or b_total
+            vals = None
+            if b_started:
+                if b_completed:
+                    ok, fail, total = b_completed
+                    vals = (total, total, ok, fail, 0.0)
+                elif b_prog:
+                    p_done, p_total, p_ok, p_fail, p_eta = b_prog
+                    vals = (max(p_done, b_done), p_total or b_total,
+                            max(p_ok, b_ok), max(p_fail, b_fail), p_eta)
+                else:
+                    eta_h = 0.0
+                    if b_start_epoch and b_done > 0 and b_total > b_done:
+                        secs = time.time() - b_start_epoch
+                        if secs > 0:
+                            eta_h = (b_total - b_done) / (b_done / secs) / 3600
+                    vals = (b_done, b_total, b_ok, b_fail, eta_h)
+            elif legacy:
+                vals = legacy
+            if vals:
+                done, total, ok, fail, eta_h = vals
+                try:
+                    running = (time.time() - os.path.getmtime(log_path)) < 120  # 日志2分钟内有更新=进程活着
+                except Exception:
+                    running = False
+                batches.append({
+                    "done": done, "total": total,
+                    "remaining": max(0, total - done),
+                    "ok": ok, "fail": fail,
+                    "running": running,
+                    "eta_h": eta_h,
+                    "pending_files": [f"{x.split('/', 1)[0]}/{_norm_task_name(x)}" if '/' in x else _norm_task_name(x)
+                                      for x in snapshot if x not in gone][:3],
+                })
         if batches:
             eta_sum = sum(b["eta_h"] for b in batches)
             result = {
@@ -3383,6 +3536,8 @@ if __name__ == "__main__":
         
         # 启动后台状态监控
         start_status_monitor()
+        # 启动 Pixel 待补救数后台扫描（5 分钟一次，供「Pixel 转录补救」卡亮黄提醒）
+        threading.Thread(target=_pixel_backlog_loop, daemon=True).start()
 
         logger_web.info(f"🌐 [Web Viewer] 启动在端口 {CONFIG['WEB_PORT']}")
         app.run(host='0.0.0.0', port=CONFIG["WEB_PORT"], debug=False)
