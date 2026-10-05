@@ -331,16 +331,22 @@ def _monitor_loop():
                         hour = recording_time.hour
                         if 1 <= hour < 6:
                             logger.info(f"  ⏭️ [{file_idx}/{len(files)}] {filename} — 凌晨录音，跳过")
-                            _move_file(filepath, filename, processed_dir, recording_time)
-                            mark_file_processed_a(filename, status="skipped_night", device=device)
+                            # 先标记再归档（同 _process_one_file_b 调用点）：标记失败则文件留原处重试
+                            if mark_file_processed_a(filename, status="skipped_night", device=device):
+                                _move_file(filepath, filename, processed_dir, recording_time)
                             catchup_processed += 1
                             continue
 
                     logger.info(f"  📤 [{file_idx}/{len(files)}] {filename} — 开始处理")
                     result = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
                     if result:
-                        mark_file_processed_a(filename, status=_b_result_status(result, "b_catchup_success"),
-                                              device=device)
+                        # 【2026-10-05】先标记再归档：标记成功才 move，失败则文件留在原处下轮重试，
+                        # 杜绝"已进 processed/ 却无 DB 标记"的孤儿（待补救虚增根因）。
+                        if mark_file_processed_a(filename, status=_b_result_status(result, "b_catchup_success"),
+                                                 device=device):
+                            _move_file(filepath, filename, processed_dir, parse_recording_time(filename))
+                        else:
+                            logger.warning(f"⚠️ A轨标记失败，文件保留原处等下轮重试: {filename}")
                     catchup_processed += 1
                 except Exception as e:
                     logger.error(f"  ❌ [{file_idx}/{len(files)}] {filename} — 处理失败: {e}")
@@ -413,9 +419,14 @@ def _monitor_loop():
                         try:
                             result = _process_one_file_b(filename, filepath, processed_dir, failed_dir)
                             if result:
-                                mark_file_processed_a(filename, status=_b_result_status(result, "b_realtime_success"),
-                                                      device=device)
-                                known.add(filename)  # 只有成功才入缓存；失败（网络异常等）下一轮重扫自动重试
+                                # 【2026-10-05】先标记再归档：标记成功才 move 并入缓存；
+                                # 标记失败则文件留原处、不入 known，下一轮重扫自动重试（不再产生无标记孤儿）。
+                                if mark_file_processed_a(filename, status=_b_result_status(result, "b_realtime_success"),
+                                                         device=device):
+                                    _move_file(filepath, filename, processed_dir, parse_recording_time(filename))
+                                    known.add(filename)
+                                else:
+                                    logger.warning(f"⚠️ A轨标记失败，文件保留原处等下轮重试: {filename}")
                         except Exception as e:
                             logger.error(f"处理文件 {filename} 失败: {e}")
 
@@ -489,7 +500,9 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
         if response.status_code == 200:
             result = response.json()
             logger.info(f"✅ 转录完成: {filename} ({len(result.get('full_text', ''))} 字)")
-            _move_file(filepath, filename, processed_dir, recording_time)
+            # 【2026-10-05】归档（_move_file）改由调用方在 DB 标记成功之后执行，本函数只返回结果状态。
+            # 原因：原来"先 move 再 mark"，一旦 mark 失败/进程在两步之间被打断，文件已躺在
+            # processed/ 却无任何标记 → 被补救扫描判为"从未送检"，成为待补救虚增的来源。
             if _skip_asr:
                 return "night_skip"  # 夜间降级：已送检（哭声检测照跑），但未转写，不算待补救
             if not (result.get('segments') or []):
