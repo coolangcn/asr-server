@@ -580,17 +580,22 @@ class CryDetectionConfig:
 
     # 声纹阈值 (远低于语音识别的 0.60)
     # 2026-09-18 基于 381 条已知哭声 + 129 条干扰音回放校准 (calibrate_rules.py)
+    # 2026-10-06 复核：对当前声纹库重放 12 条标记正样本 + 33 条负样本
+    # 发现旧阈值 (0.81/0.72) 对当前 "Baby" 参考向量严重偏严，TPR 仅 1/12；
+    # 且 eres2net_large 对正样本最高仅 0.635（永远不投票），2/3 票实际退化为
+    # "rdino AND cam++ 同时过阈"。据实测重标：正样本 rdino≥0.678 / cam≥0.575，
+    # 负样本 cam≤0.520，故取 0.66/0.55（留安全边际）→ 实测 TPR 8/8、FPR 0/33。
     VOICEPRINT_THRESHOLD = 0.65     # 模型专用阈值未覆盖时的兜底门槛
-    VOICEPRINT_GAP = 0.15           # 置信度间隔 (校准结果 gap=0.15 最优)
+    VOICEPRINT_GAP = float(os.getenv("CRY_GAP", "0.15"))  # 置信度间隔 (校准结果 gap=0.15 最优)
 
-    # 分模型阈值 (校准最优: 2/3票制 TPR=98.4%, FPR=2/129)
+    # 分模型阈值。全部支持 env 覆盖，便于线上出问题时一键回滚（无需改代码）。
     MODEL_THRESHOLDS = {
-        "eres2net_large": 0.83,
-        "rdino_ecapa": 0.81,
-        "camplusplus": 0.72,
+        "eres2net_large": float(os.getenv("CRY_TH_ERES2NET", "0.83")),
+        "rdino_ecapa": float(os.getenv("CRY_TH_RDINO", "0.66")),
+        "camplusplus": float(os.getenv("CRY_TH_CAMPP", "0.55")),
     }
 
-    MIN_VOTES = 2
+    MIN_VOTES = int(os.getenv("CRY_MIN_VOTES", "2"))
     MIN_AVG_CONFIDENCE = 0.0       # 已停用 (2票制下由分模型阈值把关)
     STRONG_MODEL_SCORE = 0.85      # 仅用于日志统计
     MIN_STRONG_MODELS = 0
@@ -5181,6 +5186,13 @@ def transcribe_audio():
                                 logger_b.warning(f"      ⚠️ [回合合并] 文件追加失败，按新回合处理")
                                 _merge_target = None  # 追加失败走新回合，避免丢事件
 
+                        # 【2026-10-06 根因修复】原代码此处 `else:` 缩进为 24 空格，误绑定到
+                        # `if not _merge_target:`（而非 `if in_cooldown:`）。后果：下面整段
+                        # "正式报警"（写占位事件 + 发即时邮件 + Webhook + 延迟深度分析）
+                        # 只在"找到可并入回合"时执行；而全新哭闹回合（无 analyzing 事件可并入）
+                        # 是最常见情形 → 永远不入库、不报警。这正是 10 月"一次没提醒"的根因。
+                        # 正确语义：无回合可并入 且 不在冷却期 → 走正式报警。
+                        _do_cry_alert = False
                         if not _merge_target:
                             # 冷却机制
                             global _last_cry_trigger_time
@@ -5193,7 +5205,10 @@ def transcribe_audio():
                             if in_cooldown:
                                 elapsed = int(now - _last_cry_trigger_time)
                                 logger_b.info(f"      [冷却中] 距上次哭声分析 {elapsed}s，冷却期 {CryDetectionConfig.COOLDOWN_SEC}s 内跳过")
-                        else:
+                            else:
+                                _do_cry_alert = True
+
+                        if _do_cry_alert:
                             # ── 正式报警：先保存占位，后续在分析和插图生成后发送邮件 ──
 
                             # 注意：proc_temp 会在请求结束后被 finally 清理，需要先复制到持久位置
