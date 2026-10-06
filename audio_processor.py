@@ -479,7 +479,7 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
         # 补跑跑到对应月份时会正常补检。
         if _age_sec > 6 * 3600:
             logger.info(f"⏭️ 跳过历史掉队文件 (录音于 {_age_sec/3600:.1f} 小时前): {filename}")
-            _move_file(filepath, filename, processed_dir, recording_time)
+            # 归档由调用方在标记成功后执行（同成功路径），此处不再自行 move，避免重复移动
             return "dropped"  # 归档但从未送检 —— 唯一真·待补救来源，用 b_dropped_history 显式标记
 
     logger.info(f"📤 开始处理: {filename}")
