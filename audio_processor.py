@@ -36,6 +36,11 @@ class FileMonitorConfig:
     SCAN_INTERVAL = 3
     SUPPORTED_FORMATS = ['.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg', '.acc']
     ASR_TRANSCRIBE_URL = os.getenv("ASR_TRANSCRIBE_URL", "http://localhost:5008/transcribes")
+    # 【2026-10-06】历史掉队判定阈值（小时）：录音时间早于该值的文件不进实时管线（仅归档），
+    # 哭声由补跑链路兜底。原为硬编码 6h，会吃掉手机离线数小时后补传的真实哭闹；
+    # 回合合并 + 冷却已能压制重复告警，故默认放宽到 24h，支持 env 覆盖便于回滚。
+    # 需与 asr_server.py 侧同名变量保持一致（同一环境变量）。
+    HISTORY_DROP_AGE_HOURS = float(os.getenv("HISTORY_DROP_AGE_HOURS", "24"))
 
 
 def _admin_headers():
@@ -470,14 +475,15 @@ def _process_one_file_b(filename, filepath, processed_dir, failed_dir):
             _skip_asr = True
             logger.info(f"🌙 夜间降级 (仅哭声检测): {filename}")
 
-        # 【2026-09-21】历史掉队文件防线：录音时间超过 6 小时的文件不进实时管线。
+        # 【2026-09-21】历史掉队文件防线：录音时间超过 HISTORY_DROP_AGE_HOURS（默认 24h，
+        # env 可覆盖）的文件不进实时管线。
         # 手机端积压队列补传会让几天前的录音此刻才落到 NAS（如 Sony-1 在 09-09
         # 傍晚停滞期的积压），若照常送 ASR，A 轨会把它们逐个当成"实时哭声"触发
         # 即时报警+Webhook，造成凌晨轰炸式"重复告警"。
         # 历史文件的哭声检测由补跑脚本（reprocess_history_cries.py）统一负责，
         # 那条链路不会触发报警。文件仍归档到 processed/，未打 DB 标记，
         # 补跑跑到对应月份时会正常补检。
-        if _age_sec > 6 * 3600:
+        if _age_sec > FileMonitorConfig.HISTORY_DROP_AGE_HOURS * 3600:
             logger.info(f"⏭️ 跳过历史掉队文件 (录音于 {_age_sec/3600:.1f} 小时前): {filename}")
             # 归档由调用方在标记成功后执行（同成功路径），此处不再自行 move，避免重复移动
             return "dropped"  # 归档但从未送检 —— 唯一真·待补救来源，用 b_dropped_history 显式标记

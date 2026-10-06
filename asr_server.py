@@ -596,6 +596,12 @@ class CryDetectionConfig:
     }
 
     MIN_VOTES = int(os.getenv("CRY_MIN_VOTES", "2"))
+
+    # 【2026-10-06】历史掉队判定阈值（小时）：录音早于该值的文件按历史处理——不发即时邮件/
+    # Webhook/不写实时事件（由补跑链路兜底）。原硬编码 6h 会吃掉手机离线数小时后补传的
+    # 真实哭闹；回合合并+冷却已能压制重复告警，故默认放宽到 24h，env 可覆盖便于回滚。
+    # 与 audio_processor.FileMonitorConfig.HISTORY_DROP_AGE_HOURS 使用同一环境变量。
+    HISTORY_DROP_AGE_HOURS = float(os.getenv("HISTORY_DROP_AGE_HOURS", "24"))
     MIN_AVG_CONFIDENCE = 0.0       # 已停用 (2票制下由分模型阈值把关)
     STRONG_MODEL_SCORE = 0.85      # 仅用于日志统计
     MIN_STRONG_MODELS = 0
@@ -5141,7 +5147,7 @@ def transcribe_audio():
             try:
                 from db_manager import parse_recording_time as _prt
                 _rec_t = _prt(file.filename)
-                if _rec_t and (datetime.now() - _rec_t).total_seconds() > 6 * 3600:
+                if _rec_t and (datetime.now() - _rec_t).total_seconds() > CryDetectionConfig.HISTORY_DROP_AGE_HOURS * 3600:
                     skip_cry_flag = True
             except Exception:
                 pass
