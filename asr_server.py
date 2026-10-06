@@ -5396,9 +5396,9 @@ def transcribe_audio():
                                     time_range=event_time_range
                                 )
 
-                                # 【2026-09-20】深度分析 + AI 插图完成后，向外部 Webhook 推送"分析报告"（第二推）
-                                # 仅在插图成功生成时才推送（无图不发）；插图直链带预览令牌
-                                if image_url:
+                                # 【2026-09-20】深度分析完成后，向外部 Webhook 推送"分析报告"（第二推）
+                                # 无论插图是否生成成功，均如实上报分析报告（有图带图，无图亦推送原因与安抚建议）
+                                if analysis_ok or image_url:
                                     send_cry_analysis_webhook(
                                         event_id=p_id,
                                         status="ok" if analysis_ok else "failed",

@@ -196,8 +196,11 @@ def send_cry_webhook(confidence, message="检测到婴儿啼哭", advice="请尽
         "event_type": "宝宝大哭报警",
         "timestamp": timestamp or _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
         "confidence": f"{confidence * 100:.0f}%",
+        "confidence_line": f" (置信度: {confidence * 100:.0f}%)",
         "message": message,
         "advice": advice,
+        "analysis_block": "\n• **当前状态**：⏳ 深度分析中（录音合并窗口关闭后将自动更新原因与插图）\n• **安抚建议**：" + (advice or "请尽快前往查看"),
+        "illustration_block": "",
     }
     # 可选扩展字段：有值才携带，方便对接方按需取用
     if event_id is not None:
@@ -237,18 +240,21 @@ def send_cry_analysis_webhook(event_id, status="ok", category=None, reason=None,
     room = _resolve_room(device, room)
     preview_url, illu_url = _preview_links(event_id)
 
+    cat_str = category or "情绪发泄/未满足"
+    rsn_str = reason or "结合上下文深度分析完毕"
+    adv_str = advice or "请结合实际情境予以安抚"
     payload = {
         "event_type": "宝宝哭声分析报告",
         "timestamp": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
         "event_id": event_id,
         "status": status,  # ok=分析完成 / failed=分析失败
+        "category": cat_str,
+        "reason": rsn_str,
+        "advice": adv_str,
+        "confidence_line": f" (置信度: {confidence * 100:.0f}%)" if confidence is not None else "",
+        "analysis_block": f"\n• **分类判决**：{cat_str}\n• **原因分析**：{rsn_str}\n• **安抚建议**：{adv_str}",
+        "illustration_block": "",
     }
-    if category:
-        payload["category"] = category
-    if reason:
-        payload["reason"] = reason
-    if advice:
-        payload["advice"] = advice
     if confidence is not None:
         payload["confidence"] = f"{confidence * 100:.0f}%"
     if filename:
@@ -265,4 +271,5 @@ def send_cry_analysis_webhook(event_id, status="ok", category=None, reason=None,
         payload["preview_url"] = preview_url
     if illustration_path and illu_url and str(illustration_path).startswith("/api/illustration/"):
         payload["illustration_url"] = illu_url
+        payload["illustration_block"] = f"\n• **分析插图**：[点击查看分析插图]({illu_url})"
     return _post_cry_payload_async(payload)
