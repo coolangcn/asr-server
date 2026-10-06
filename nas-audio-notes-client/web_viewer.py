@@ -695,6 +695,10 @@ def build_growth_dictionary(items, speaker_filter=None):
             if not text:
                 continue
 
+            # 【2026-10-06】Unknown 不归属任何家人，成长词典不展示（同时不入词条/金句/口头禅）
+            if speaker.lower() == 'unknown':
+                continue
+
             speaker_counts[speaker] += 1
             if speaker_filter and speaker != speaker_filter:
                 continue
