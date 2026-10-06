@@ -264,7 +264,7 @@ function renderDetail(b) {
     el.innerHTML = `
       <div class="h-full flex rounded-3xl border-2 border-line bg-gradient-to-r from-[#16243c] via-[#101c30] to-[#0c1526] shadow-2xl overflow-hidden">
         <div class="cover-img h-full shrink-0 bd-cover" style="width:38vh">
-            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" src="/api/picturebook/${b.date}/thumb${qv(b)}" alt=""`
+            ${b.has_image ? `<img decoding="async" class="w-full h-full object-cover" src="/api/picturebook/${b.date}/thumb${qv(b)}" alt="">`
                           : `<div class="w-full h-full flex items-center justify-center text-6xl text-slate-700"><i class="fa-solid fa-feather"></i></div>`}
         </div>
         <div class="flex-1 min-w-0 py-4 pr-6 pl-6 flex flex-col justify-center overflow-hidden">
