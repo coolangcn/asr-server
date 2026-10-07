@@ -1206,7 +1206,7 @@
             return items.map(item => {
                 // 优先使用后端解析好的 parsed_time，其次 recording_time，最后 created_at
                 const timeStr = item.parsed_time || item.recording_time || item.created_at;
-                item.date_group = timeStr ? timeStr.split('T')[0] : 'Unknown';
+                item.date_group = timeStr ? timeStr.split('T')[0] : '未知日期';
                 return item;
             });
         }
@@ -4103,7 +4103,7 @@
             
             const groups = {};
             items.forEach(item => {
-                const date = item.timestamp ? item.timestamp.split('T')[0] : (item.recording_time ? item.recording_time.split('T')[0] : 'Unknown');
+                const date = item.timestamp ? item.timestamp.split('T')[0] : (item.recording_time ? item.recording_time.split('T')[0] : '未知日期');
                 if (!groups[date]) groups[date] = [];
                 groups[date].push(item);
             });

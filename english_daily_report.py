@@ -86,12 +86,16 @@ def fetch_day_segments(day: date):
             text = (s.get('text') or s.get('sensevoice_text') or '').strip()
             if not text:
                 continue
+            speaker = str(s.get('spk') or '').strip()
+            # 2026-10-06: Unknown 不归属任何家人, 任何场景(含英文日报)都不展示
+            if speaker.lower() == 'unknown':
+                continue
             metrics = s.get('speech_metrics') or {}
             dur = metrics.get('duration_seconds')
             if not dur:
                 dur = ((s.get('end') or 0) - (s.get('start') or 0)) / 1000.0
             segs_out.append({
-                'spk': '大可' if (s.get('spk') or 'Unknown') in CHILD_SPEAKERS else (s.get('spk') or 'Unknown'),
+                'spk': '大可' if speaker in CHILD_SPEAKERS else speaker,
                 'text': text,
                 'duration': float(dur or 0),
                 'recording_time': rt.strftime('%H:%M') if rt else '',

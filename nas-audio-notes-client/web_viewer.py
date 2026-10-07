@@ -358,10 +358,37 @@ def get_system_status():
     with g_status_lock:
         return g_status_cache.copy()
 
+def _is_unknown_speaker(value):
+    """说话人是否为未识别(Unknown)。任何场景都不展示 Unknown 数据。"""
+    return str(value or '').strip().lower() == 'unknown'
+
+def _strip_unknown_segments(items):
+    """就地清洗每条转录里的 Unknown 数据, 返回同一列表:
+    - 剔除 spk=Unknown 的分段;
+    - 剔除逐模型投票里的 '模型 X: Unknown' 诊断项;
+    - 同步重写 segments_json 原始副本(含 Unknown 时不再对外暴露)。
+    统一在数据出口过滤, 避免各页面各自处理而遗漏。"""
+    for item in items or []:
+        segs = item.get('segments')
+        if not isinstance(segs, list):
+            continue
+        cleaned = []
+        for s in segs:
+            if _is_unknown_speaker(s.get('spk')):
+                continue
+            rd = s.get('recognition_details')
+            if isinstance(rd, list):
+                s['recognition_details'] = [d for d in rd if 'unknown' not in str(d).lower()]
+            cleaned.append(s)
+        item['segments'] = cleaned
+        if 'segments_json' in item:
+            item['segments_json'] = json.dumps(cleaned, ensure_ascii=False)
+    return items
+
 def get_transcripts(offset=0, limit=20):
-    """获取转录记录（使用PostgreSQL，支持分页）"""
+    """获取转录记录（使用PostgreSQL，支持分页）；出口统一剔除 Unknown 分段"""
     try:
-        return db_get_transcripts(offset, limit, CONFIG["DATABASE_URL"])
+        return _strip_unknown_segments(db_get_transcripts(offset, limit, CONFIG["DATABASE_URL"]))
     except Exception as e:
         logger_web.error(f"[Error] 获取转录记录失败: {e}")
         return []
@@ -378,11 +405,26 @@ def _parse_iso_datetime(value):
 def _item_datetime(item):
     return _parse_iso_datetime(item.get('recording_time')) or _parse_iso_datetime(item.get('created_at'))
 
+_KEYWORD_CONTENT_POS = {'n', 'v', 'a', 's', 't', 'b', 'z', 'i', 'l', 'j'}
+
 def _daily_keywords(text, limit=8):
-    stop_words = {'的', '了', '是', '在', '我', '你', '他', '她', '它', '们', '这', '那', '有', '个', '就', '不', '和', '与', '啊', '呀', '吗', '呢', '吧'}
-    cleaned = re.sub(r'\s+', '', text or '')
-    words = [cleaned[i:i + 2] for i in range(max(len(cleaned) - 1, 0))]
-    counter = Counter(w for w in words if len(w) == 2 and w not in stop_words)
+    """每日小报关键词：仅保留 jieba 词性分词切出的"实词"（名/动/形及子类，含成语/习用语/简称）。
+    旧版对整段文本做 2 字滑窗，会把 '，你' '了，' '吗？' 这类标点+虚词碎片也当成词，已废弃。
+    排除虚词（介词 p / 连词 c / 助词 u / 语气词 y）与代词 r、副词 d、数词 m、量词 q、拟声 o、叹词 e。"""
+    counter = Counter()
+    for block in re.findall(r'[\u4e00-\u9fff]+', text or ''):
+        for word, flag in _jieba_posseg().cut(block):
+            if len(word) < 2:
+                continue
+            if flag[0] not in _KEYWORD_CONTENT_POS:
+                continue
+            if word in GROWTH_STOP_TERMS:
+                continue
+            counter[word] += 1
+    for token in re.findall(r"[A-Za-z][A-Za-z']{1,19}", text or ''):
+        t = token.lower().strip("'")
+        if len(t) >= 2:
+            counter[t] += 1
     return [{'text': word, 'count': count} for word, count in counter.most_common(limit)]
 
 def _get_cry_events_for_date(date_str):
@@ -462,6 +504,10 @@ def build_daily_report(date_str):
         for seg in segments:
             text = (seg.get('text') or '').strip()
             speaker = seg.get('spk') or 'Unknown'
+            # 【2026-10-06】Unknown 不归属任何家人，每日小报不展示（与成长词典一致）
+            # 不入说话人统计/情绪统计/金句，也不计入总段数与时长
+            if speaker.lower() == 'unknown':
+                continue
             duration = max((seg.get('end', 0) - seg.get('start', 0)) / 1000.0, 0)
             emotion = seg.get('emotion')
 
@@ -638,6 +684,17 @@ def _jieba():
         jieba.setLogLevel(60)
         _JIEBA = jieba
     return _JIEBA
+
+_JIEBA_POSSEG = None
+
+def _jieba_posseg():
+    """惰性加载 jieba.posseg(带词性分词), 供每日小报关键词做实词过滤"""
+    global _JIEBA_POSSEG
+    if _JIEBA_POSSEG is None:
+        _jieba()  # 复用同一 tokenizer 并静默日志
+        import jieba.posseg as posseg
+        _JIEBA_POSSEG = posseg
+    return _JIEBA_POSSEG
 
 def _growth_text_terms(text):
     """提取严格的词语: 中文用 jieba 真分词(只留≥2字词), 英文只留纯字母单词。
@@ -2566,7 +2623,7 @@ def api_data_range():
         total_count = _total_in_range   # SQL COUNT(*) (时间范围内全量, 不受分页影响)
         paginated_items = filtered_items   # SQL 已完成 OFFSET/LIMIT 分页
 
-        # 展示层负样本过滤: 被用户标为"不是家里任何人"的句子 → spk 置 Unknown（前端自动隐藏）
+        # 展示层负样本过滤: 被用户标为"不是家里任何人"的句子 → spk 置 Unknown
         try:
             neg_paths = _load_spk_negative_paths()
             if neg_paths:
@@ -2576,6 +2633,9 @@ def api_data_range():
                             seg['spk'] = 'Unknown'
         except Exception:
             pass
+
+        # 任何场景都不展示 Unknown: 原生未识别段 + 上面的负样本段, 一并从出口剔除
+        _strip_unknown_segments(paginated_items)
 
         return jsonify({
             "transcripts": paginated_items,
@@ -2636,7 +2696,7 @@ def api_emotion_timeline():
         }
         
         # 获取所有转录记录
-        all_items = db_get_transcripts(offset=0, limit=10000)
+        all_items = _strip_unknown_segments(db_get_transcripts(offset=0, limit=10000))
         
         # 按日期分组统计
         daily_data = {}
@@ -2708,7 +2768,7 @@ def api_heatmap():
     """获取对话热力图数据（24小时 x 说话人）"""
     try:
         # 获取所有转录记录
-        all_items = db_get_transcripts(offset=0, limit=10000)
+        all_items = _strip_unknown_segments(db_get_transcripts(offset=0, limit=10000))
         
         # 初始化热力图数据
         hours = [f"{h:02d}:00" for h in range(24)]
@@ -2770,7 +2830,7 @@ def api_relationship_graph():
     try:
         start_date_str = request.args.get('start_date')
         end_date_str = request.args.get('end_date')
-        all_items = db_get_transcripts(offset=0, limit=10000)
+        all_items = _strip_unknown_segments(db_get_transcripts(offset=0, limit=10000))
 
         if start_date_str and end_date_str:
             try:
@@ -2805,7 +2865,7 @@ def api_growth_dictionary():
         if speaker in {'all', '全部'}:
             speaker = ''
 
-        all_items = db_get_transcripts(offset=0, limit=10000)
+        all_items = _strip_unknown_segments(db_get_transcripts(offset=0, limit=10000))
 
         if start_date_str and end_date_str:
             try:
