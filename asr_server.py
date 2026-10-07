@@ -1393,7 +1393,7 @@ def call_grok2api_image_api(prompt):
 
 
 def call_gemini_image_api(prompt):
-    """调用文生图 API (首选 NAS new-api agnes-image-2.5-flash，备选 CPA gemini-3.1-flash-image → grok2api grok-imagine-image-2.0，再回退 HF Space 链: mrfakename/Z-Image-Turbo → laruss5 → FLUX.2-klein-9B → 百度 ERNIE → DeepInfra)"""
+    """调用文生图 API (首选 grok2api grok-imagine-image-2.0，备选 NAS new-api agnes-image-2.5-flash → CPA gemini-3.1-flash-image，再回退 HF Space 链: mrfakename/Z-Image-Turbo → laruss5 → FLUX.2-klein-9B → 百度 ERNIE → DeepInfra)"""
     if not LLMConfig.USE_GEMINI_LLM:
         logger_a.warning("🎨 [插图生成] LLM 未启用，跳过")
         return None
@@ -1402,8 +1402,18 @@ def call_gemini_image_api(prompt):
         logger_a.info(f"🎨 [插图生成] 开始生成插图")
         logger_a.info(f"🎨 [插图生成] Prompt 长度：{len(prompt)} 字符")
 
-        # 首选：NAS new-api 网关（agnes-image-2.1-flash，OpenAI 兼容接口）
-        logger_a.info(f"🎨 [插图生成] 尝试使用 new-api ({os.getenv('IMAGE_NEWAPI_MODEL', 'agnes-image-2.1-flash')})...")
+        # 首选：NAS grok2api 的 grok-imagine-image-2.0（2026-10-07 用户指定提到第一）
+        logger_a.info(f"🎨 [插图生成] 尝试使用 Grok ({os.getenv('IMAGE_GROK2API_MODEL', 'grok-imagine-image-2.0')})...")
+        image_data = call_grok2api_image_api(prompt)
+
+        if image_data:
+            logger_a.info(f"🎨 [插图生成] ✅ Grok 成功!")
+            return image_data
+
+        logger_a.warning(f"🎨 [插图生成] Grok 失败，回退到 new-api...")
+
+        # 次选：NAS new-api 网关（agnes-image-2.5-flash，OpenAI 兼容接口）
+        logger_a.info(f"🎨 [插图生成] 尝试使用 new-api ({os.getenv('IMAGE_NEWAPI_MODEL', 'agnes-image-2.5-flash')})...")
         image_data = call_newapi_image_api(prompt)
 
         if image_data:
@@ -1419,16 +1429,7 @@ def call_gemini_image_api(prompt):
             logger_a.info(f"🎨 [插图生成] ✅ CPA Gemini 成功!")
             return image_data
 
-        logger_a.warning(f"🎨 [插图生成] CPA Gemini 失败，回退到 Grok...")
-
-        # 备选：NAS grok2api 的 grok-imagine-image-2.0
-        image_data = call_grok2api_image_api(prompt)
-
-        if image_data:
-            logger_a.info(f"🎨 [插图生成] ✅ Grok 成功!")
-            return image_data
-
-        logger_a.warning(f"🎨 [插图生成] Grok 失败，回退到 mrfakename/Z-Image-Turbo...")
+        logger_a.warning(f"🎨 [插图生成] CPA Gemini 失败，回退到 mrfakename/Z-Image-Turbo...")
 
         # 首选：mrfakename/Z-Image-Turbo (HuggingFace Spaces)
         logger_a.info(f"🎨 [插图生成] 尝试使用 mrfakename/Z-Image-Turbo...")
